@@ -10,10 +10,12 @@ set of components needed for building trading systems, whilst focusing on accept
 PolyPy's implementation is opinionated and biased towards a minimal implementation, which for real systems needs to 
 be extended by additional custom components such as logging, account balance management, etc.
   
-Although, *Polymarket's [Python Client](https://github.com/Polymarket/py-clob-client/tree/main) is quite convenient, it is also
-comparably slow, i.e. it uses JSON-parsing from stdlib instead of much faster 
+Although, [Polymarket's Python Client](https://github.com/Polymarket/py-clob-client/tree/main) is quite convenient, 
+it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of much faster 
 [msgspec](https://jcristharif.com/msgspec/), native dataclasses instead of 
 [attrs](https://www.attrs.org/en/stable/init.html), etc., and has some disadvantageous implementation details.
+  
+> Please mind, that PolyPy is just a hobby project!
 
 
 Disclaimer
@@ -33,25 +35,34 @@ Improved Implementation over `py_clob_client`
 - 3x faster order creation
 - Market Sell orders, which are not available `py_clob_client`
 - Market channel and user channel (WIP) stream implementation
+- Positions implementation (WIP)
 - Fixed erroneous rounding routines in `py_clob_client`, i.e. `round_floor(4.6, 2) == 4.59 != 4.6`
 - Fixed erroneous calculation of marketable price
 - Fixed bug in Orderbook hash in `py_clob_client` (especially, after receiving a "price_change" websocket message)
 
 Project Status
 --------------
-This project is under active development and its function and class signatures might be subject to future changes.
+This project is under active development and its function and class signatures, as well as the repository structure 
+might be subject to future changes.
+
+Install
+-------
+1) git clone
+2) pip install -e . (locally)
 
 Todo
 ----
 - [ ] Proper Git Tooling and Actions
+- [ ] Restructure repository
+- [ ] Documentation
 - [ ] Additional components
   - [ ] Rate Limiting
   - [ ] Positions
   - [ ] etc.
 
 Development
-----------------------
-### Tooling
+-----------
+### Developer Tooling
 - black
 - isort
 - [pytest-cov](https://pytest-cov.readthedocs.io/en/latest/): ```pytest --cov=polypy tests/``` or ```pytest --cov-report term-missing --cov=polypy tests/``` 
