@@ -1,0 +1,15 @@
+-r requirements.txt
+pandas~=2.1.4
+dash~=2.18.2
+plotly~=5.24.1
+matplotlib~=3.9.2
+pytest>=7.4.4
+seaborn~=0.13.2
+polypy~=0.0.0
+responses~=0.25.3
+eth-account>=0.13.4
+eth-keys>=0.6.0
+eth-typing>=5.0.1
+eth-utils>=5.1.0
+hexbytes>=1.2.1
+freezegun>=1.5.1

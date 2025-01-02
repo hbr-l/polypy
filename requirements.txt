@@ -1,0 +1,6 @@
+numpy>=1.26.3
+attrs~=23.2.0
+msgspec~=0.18.6
+websockets>=14.0
+requests>=2.31.0
+setuptools>=68.2.2
