@@ -16,3 +16,10 @@ class EventTypeException(PolyPyException):
 
 class OrderCreationException(PolyPyException):
     """Exception related to order creation."""
+
+
+class OrderUpdateException(PolyPyException):
+    """
+    Exception related to updating order.
+    Order is created and might or might not be posted/ submitted to exchange already.
+    """
