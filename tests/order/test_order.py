@@ -175,7 +175,7 @@ def test_gen_rand_float_dec():
     assert len(fixed_prices_generated) <= nb_decs - 1
 
 
-def test_polypy_max_allowed_decimals():
+def test_max_allowed_decimals():
     # sourcery skip: extract-duplicate-method
     # checks on 3 samples (3 * 10 * 100_000)
 
@@ -271,7 +271,7 @@ def round_clob(x_, sig_digits, extra_digits=4):
     return x_
 
 
-def test_polypy_round_floor_tenuis_ceil(patch_py_clob_client_rounding):
+def test_round_floor_tenuis_ceil(patch_py_clob_client_rounding):
     xs = [
         0.58,
         0.5799999,
@@ -300,7 +300,7 @@ def test_polypy_round_floor_tenuis_ceil(patch_py_clob_client_rounding):
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_limit_order_buy_against_clob(
+def test_limit_order_buy_against_clob(
     clob_client_factory,
     pth,
     patch_py_clob_client_rounding,
@@ -348,7 +348,7 @@ def test_polypy_limit_order_buy_against_clob(
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_limit_order_sell_against_clob(
+def test_limit_order_sell_against_clob(
     clob_client_factory,
     pth,
     patch_py_clob_client_rounding,
@@ -391,7 +391,7 @@ def test_polypy_limit_order_sell_against_clob(
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_market_buy_against_clob(
+def test_market_buy_against_clob(
     clob_client_factory,
     pth,
     patch_py_clob_client_rounding,
@@ -430,9 +430,7 @@ def test_polypy_market_buy_against_clob(
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_market_buy_quasi_equiv_deep_limit_buy(
-    clob_client_factory, pth, private_key
-):
+def test_market_buy_quasi_equiv_deep_limit_buy(clob_client_factory, pth, private_key):
     # Buy Order:
     #   makerAmount: total amount spent
     #   takerAmount: minimum size received
@@ -512,7 +510,7 @@ def test_polypy_market_buy_quasi_equiv_deep_limit_buy(
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
+def test_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
     # py_clob_client does not have market sell order,
     # so to test market sell order, we  compare against limit sell order
     token_id, complement_token_id, tick_size = get_token_ids(pth)
@@ -596,7 +594,7 @@ def test_polypy_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_market_sell_vs_clob_market_buy_complement(
+def test_market_sell_vs_clob_market_buy_complement(
     clob_client_factory,
     pth,
     patch_py_clob_client_rounding,
@@ -682,7 +680,7 @@ def test_polypy_market_sell_vs_clob_market_buy_complement(
         )
 
 
-def test_polypy_market_sell_raise_overspending(private_key):
+def test_market_sell_raise_overspending(private_key):
     # we sell at tick size:
     # size = amount / tick size
     with pytest.raises(OrderCreationException):
@@ -701,7 +699,7 @@ def test_polypy_market_sell_raise_overspending(private_key):
 
 
 @freeze_time("2024-12-19 17:05:55")
-def test_polypy_limit_order_decimals(private_key):
+def test_limit_order_decimals(private_key):
     buy = fix_seed(build_limit_order)(
         0.2, 20, "1234", SIDE.BUY, 0.01, private_key, CHAIN_ID.POLYGON, False
     )
@@ -745,7 +743,7 @@ def test_polypy_limit_order_decimals(private_key):
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_marketable(pth, private_key):
+def test_marketable(pth, private_key):
     book = OrderBook.from_dict(get_book(pth)[1])
     _, _, tick_size = get_token_ids(pth)
 
@@ -806,7 +804,7 @@ def test_polypy_marketable(pth, private_key):
     "pth",
     [test_pth / "data/book_data_a.txt", test_pth / "data/book_data_b.txt"],
 )
-def test_polypy_marketable_raise_not_enough_liquidity(pth, private_key):
+def test_marketable_raise_not_enough_liquidity(pth, private_key):
     book = OrderBook.from_dict(get_book(pth)[1])
     _, _, tick_size = get_token_ids(pth)
 
@@ -852,7 +850,7 @@ def test_polypy_marketable_raise_not_enough_liquidity(pth, private_key):
         (1.1, SIDE.SELL),
     ],
 )
-def test_polypy_order_raise_valid_price(price, side, private_key):
+def test_order_raise_valid_price(price, side, private_key):
     with pytest.raises(OrderCreationException):
         _ = build_market_order(
             10, "1234", side, 0.01, private_key, CHAIN_ID.POLYGON, False, price=price
@@ -875,7 +873,7 @@ def test_polypy_order_raise_valid_price(price, side, private_key):
         (-0.1, SIDE.SELL),
     ],
 )
-def test_polypy_order_raise_tick_size(tick_size, side, private_key):
+def test_order_raise_tick_size(tick_size, side, private_key):
     with pytest.raises(OrderCreationException):
         build_market_order(
             10, "1234", side, tick_size, private_key, CHAIN_ID.POLYGON, False
@@ -887,7 +885,7 @@ def test_polypy_order_raise_tick_size(tick_size, side, private_key):
         )
 
 
-def test_polypy_limit_order_price_size_auto_rounding(private_key):
+def test_limit_order_price_size_auto_rounding(private_key):
     limit_order = build_limit_order(
         0.231, 2.345, "1234", SIDE.BUY, 0.01, private_key, CHAIN_ID.POLYGON, False
     )
@@ -896,7 +894,7 @@ def test_polypy_limit_order_price_size_auto_rounding(private_key):
     assert limit_order.size == 2.34
 
 
-def test_polypy_market_order_amount_auto_rounding(private_key):
+def test_market_order_amount_auto_rounding(private_key):
     market_order = build_market_order(
         21.345, "1234", SIDE.BUY, 0.01, private_key, CHAIN_ID.POLYGON, False
     )

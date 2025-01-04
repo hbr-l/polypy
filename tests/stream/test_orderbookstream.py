@@ -13,7 +13,7 @@ from websockets.sync.client import connect
 
 from polypy.exceptions import EventTypeException, OrderBookException
 from polypy.orderbook import OrderBook, guess_check_orderbook_hash
-from polypy.stream import CheckHashParams, OrderBookStream
+from polypy.stream import STATUS_ORDERBOOK, CheckHashParams, OrderBookStream
 
 # cases
 # 1. delay randomly
@@ -75,7 +75,8 @@ def setup_streamer():
             url,
             book,
             check_hash_params,
-            endpoint=endpoint,
+            ws_channel="",
+            rest_endpoint=endpoint,
             ping_time=ping_time,
             nb_redundant_skt=nb_redundant_skt,
             callback_msg=callback_msg,
@@ -625,6 +626,38 @@ def test_orderbookstream_unknown_event_type_and_callback_exception(
     )
 
 
+def test_orderbookstream_status_orderbook_mode(
+    mock_server_click_on, setup_streamer, callback_exception_storage
+):
+    click_on, asset_id, data = mock_server_click_on(
+        data_pth=test_pth / "data/test_server_unknown_event_type.txt"
+    )
+    streamer, book = setup_streamer(
+        asset_id,
+        None,
+        None,
+        None,
+        2,
+        callback_exception=callback_exception_storage,
+    )
+
+    click_on.send()  # 1. send - book
+    with pytest.warns() as record:
+        # warning expected: wrong event_type causes internal exception
+        click_on.send()
+
+    assert "Exception in" in str(record[0].message)
+
+    assert streamer.status_orderbook(asset_id, mode="silent") is STATUS_ORDERBOOK.ERROR
+
+    with pytest.warns() as record:
+        streamer.status_orderbook(asset_id, mode="warn")
+    assert "Orderbook status invalidated" in str(record[0].message)
+
+    with pytest.raises(OrderBookException):
+        streamer.status_orderbook(asset_id, mode="except")
+
+
 @responses.activate
 def test_orderbookstream_rest_denial_and_callback_exception(
     mock_server_click_on, setup_streamer, callback_exception_storage
@@ -889,7 +922,8 @@ def test_orderbookstream_multi_book(mock_server_click_on):
         "ws://localhost:8002/",
         [book1, book2],
         CheckHashParams(3, 15),
-        endpoint=None,
+        ws_channel="",
+        rest_endpoint=None,
         ping_time=None,
         nb_redundant_skt=3,
     )

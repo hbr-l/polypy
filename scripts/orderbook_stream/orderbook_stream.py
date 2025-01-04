@@ -1,25 +1,32 @@
+import threading
 import time
 import timeit
 
 import numpy as np
 from matplotlib import pyplot as plt
 
+from polypy.constants import ENDPOINT
 from polypy.orderbook import OrderBook
 from polypy.stream import OrderBookStream
 
 
+def callback_thread_id(_, __):
+    print("ID: ", threading.get_ident())
+
+
 def main():
     book = OrderBook(
-        "72936048731589292555781174533757608024096898681344338816447372274344589246891",
+        "88458672007514219171605090869548159546185169218791748266793909997093690233909",
         0.01,
     )
 
     streamer = OrderBookStream(
-        "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+        ENDPOINT.WS,
         book,
-        (1, 15),
-        endpoint=None,
-        nb_redundant_skt=2,
+        (1, 250),
+        rest_endpoint=None,
+        nb_redundant_skt=5,
+        callback_msg=callback_thread_id,
     )
 
     streamer.start()
