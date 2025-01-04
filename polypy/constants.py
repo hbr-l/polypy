@@ -42,3 +42,8 @@ class ENDPOINT(StrEnum):
     CLOB = "https://clob.polymarket.com/"
     WS = "wss://ws-subscriptions-clob.polymarket.com/ws/"
     DATA = "https://data-api.polymarket.com/"
+
+
+class CHANNEL(StrEnum):
+    MARKET = "market"
+    USER = "user"
