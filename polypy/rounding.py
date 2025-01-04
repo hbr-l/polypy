@@ -88,8 +88,7 @@ def max_allowed_decimals(
     # return x * 10**max_ndecimals % 1
     # suffers from floating point imprecision: better solution see below
 
-    # todo revise: alternative implementation might be suited better because more accurate
-    # alternative implementation (more accurate but slower by 10x -> 1e-6 vs 1e-7 seconds):
+    # todo: alternative implementation (more accurate but slower by 10x -> 1e-6 vs 1e-7 seconds):
     # x_round = x * 10**ndecimal_digits
     # ndigits = max(0, 15 - abs(int(math.log10(abs(x_round)))) - 1)
     # x_round = round(x_round, ndigits)
