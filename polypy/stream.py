@@ -3,6 +3,7 @@ import datetime
 import threading
 import traceback
 import warnings
+from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 from enum import IntEnum
 from typing import Any, Callable, Literal, Self
@@ -12,15 +13,129 @@ import numpy as np
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 
-from polypy.exceptions import EventTypeException, OrderBookException
+from polypy.constants import CHANNEL, ENDPOINT
+from polypy.exceptions import (
+    EventTypeException,
+    OrderBookException,
+    OrderUpdateException,
+    PolyPyException,
+)
 from polypy.orderbook import (
     HASH_STATUS,
     OrderBook,
     guess_check_orderbook_hash,
     message_to_orderbook,
 )
+from polypy.ordermanager import OrderManagerProtocol
 from polypy.rest import get_orderbook
 from polypy.typing import ZerosFactoryFunc, ZerosProtocol
+
+
+class AbstractStreamer(ABC):
+    def __init__(
+        self,
+        url: str,
+        subscribe_params: dict[str, Any],
+        ping_time: float | None = 5,
+        callback_msg: Callable[[Self, dict[str, Any]], None] | None = None,
+        callback_exc: Callable[[Self, Exception], None] | None = None,
+    ) -> None:
+        self.url = url
+        self.subscribe_params = subscribe_params
+        self.ping_time = ping_time
+
+        self.callback_exc = callback_exc
+        self.callback_msg = callback_msg
+
+        self._stop_token = True
+        self.thread: threading.Thread | None = None
+
+    def _run(self) -> None:
+        while not self._stop_token:
+            try:
+                self._loop()
+            except Exception as e:
+                self._register_exception(e)
+                raise e
+
+    def _register_exception(self, exc: Exception) -> None:
+        if self._stop_token:
+            # no need to bother, we're exiting anyway
+            warnings.warn(
+                f"{datetime.datetime.now()} | Exception in {self.__class__.__name__} suppressed,"
+                f"since websocket is called to stop. "
+                f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
+            )
+
+        warnings.warn(
+            f"{datetime.datetime.now()} | Exception in {self.__class__.__name__}."
+            f"Traceback: {exc.__class__.__name__}({exc})."
+            f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}."
+        )
+
+        if self.callback_exc:
+            self.callback_exc(self, exc)
+
+    def _loop(self) -> None:
+        with connect(self.url) as ws:
+            ws.send(msgspec.json.encode(self.subscribe_params))
+
+            while not self._stop_token:
+                try:
+                    bytes_msg = ws.recv(self.ping_time, decode=False)
+                except TimeoutError:
+                    ws.ping("PING")
+                    continue
+                except ConnectionClosed as e:
+                    warnings.warn(
+                        f"{datetime.datetime.now()} | Re-connecting subscription: {self.subscribe_params}. "
+                        f"Traceback: {e.__class__.__name__}({e})."
+                        f"Full Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}"
+                    )
+                    break
+
+                self._process_bytes_msg(bytes_msg)
+
+    def _process_bytes_msg(self, bytes_msg: bytes) -> None:
+        # somehow, received JSON dict is wrapped in a list
+        msgs = msgspec.json.decode(bytes_msg)
+        for msg in msgs:
+            self.on_msg(msg)
+
+            if self.callback_msg:
+                self.callback_msg(self, msg)
+
+    @abstractmethod
+    def on_msg(self, msg: dict[Any, Any]) -> None:
+        ...
+
+    @abstractmethod
+    def pre_start(self) -> None:
+        ...
+
+    @abstractmethod
+    def post_stop(self) -> None:
+        ...
+
+    def start(self) -> None:
+        self.pre_start()
+        self._stop_token = False
+
+        if self.thread is not None:
+            raise PolyPyException("Internal error: self.thread is not None.")
+
+        self.thread = threading.Thread(target=self._run)
+        self.thread.start()
+
+    def stop(self, join: bool, timeout: float | None = None) -> None:
+        self._stop_token = True
+
+        if join:
+            self.thread.join(timeout)
+
+        self.post_stop()
+        self.thread = None
+
 
 CheckHashParams = namedtuple(
     "CheckHashParams", ["nth_price_change", "max_emission_delay"]
@@ -40,10 +155,11 @@ class STATUS_ORDERBOOK(IntEnum):
 class OrderBookStream:
     def __init__(
         self,
-        url: str,
+        ws_endpoint: ENDPOINT | str,
         books: list[OrderBook] | OrderBook,
         check_hash_params: CheckHashParams | None,
-        endpoint: str | None,
+        rest_endpoint: str | None,
+        ws_channel: CHANNEL | str = CHANNEL.MARKET,
         buffer_size: int = 10,
         ping_time: float | None = 5,
         nb_redundant_skt: int = 2,
@@ -55,11 +171,13 @@ class OrderBookStream:
 
         Parameters
         ----------
-        url
+        ws_endpoint: ENDPOINT
+            usually ENDPOINT.WS
         books
         check_hash_params
-        endpoint: str | None,
+        rest_endpoint: str | None,
             if None, no REST request to fetch orderbook in case orderbook hash cannot be confirmed
+        ws_channel
         buffer_size
         ping_time
         nb_redundant_skt
@@ -102,8 +220,11 @@ class OrderBookStream:
         if not isinstance(books, list):
             books = [books]
 
-        self.url = url
-        self.endpoint = endpoint
+        if ws_endpoint[-1] != "/":
+            ws_endpoint = f"{ws_endpoint}/"
+
+        self.url = f"{ws_endpoint}{ws_channel}"
+        self.endpoint = rest_endpoint
         self.buffer_size = buffer_size
         self.ping_time = ping_time
         self.nb_redundant_skt = nb_redundant_skt
@@ -124,7 +245,7 @@ class OrderBookStream:
         self.last_traded_price_arr: ZerosProtocol | None = None
         self.status_arr: ZerosProtocol | None = None
 
-        self._cleanup()
+        self._reset()
 
         if check_hash_params is not None:
             self.nth_price_change = check_hash_params[0]
@@ -140,7 +261,7 @@ class OrderBookStream:
             "type": "market",
         }
 
-    def _cleanup(self):
+    def _reset(self):
         self.buffer_dict = {
             book.token_id: deque(maxlen=self.buffer_size)
             for book in self.book_dict.values()
@@ -164,7 +285,7 @@ class OrderBookStream:
                 self._register_exception(e)
                 raise e
 
-    def _register_exception(self, exc: Exception):
+    def _register_exception(self, exc: Exception) -> None:
         if self._stop_token:
             # if we exit anyway, then no need to bother with exception
             warnings.warn(
@@ -190,7 +311,7 @@ class OrderBookStream:
         if self.callback_exception:
             self.callback_exception(exc, self)
 
-    def _socket_loop(self):
+    def _socket_loop(self) -> None:
         with connect(self.url) as ws:
             ws.send(msgspec.json.encode(self._ws_params))
 
@@ -220,6 +341,7 @@ class OrderBookStream:
         raw_messages = msgspec.json.decode(raw_messages)
 
         # somehow, received JSON dict is wrapped in a list
+        # todo parallelize here (ZMQ, mp.Queue, shared memory -> change locking to multiprocessing.Lock)
         for msg in raw_messages:
             if self.lock_dict[msg["asset_id"]].locked():
                 # todo necessary?
@@ -359,19 +481,25 @@ class OrderBookStream:
             "timestamp": self.last_traded_price_arr[arr_id, 3],
         }
 
-    def status_orderbook(self, token_id: str) -> STATUS_ORDERBOOK:
+    def status_orderbook(
+        self, token_id: str, mode: Literal["except", "silent", "warn"] = "except"
+    ) -> STATUS_ORDERBOOK:
         """Get current orderbook hash status.
 
         Parameters
         ----------
         token_id: str
             token ID (asset ID) of corresponding orderbook.
+        mode: Literal["except", "silent"], default="except"
+            if "except", raises OrderBookException if STATUS_ORDERBOOK.ERROR,
+            if "warn", emits warning,
+            if "silent", just returns STATUS_ORDERBOOK
 
         Returns
         -------
         STATUS_ORDERBOOK:
             -2: internal error -> raises OrderBookException
-            -1: corrupted orderbook hash (fetching REST request book)
+            -1: corrupted orderbook hash (needs to fetch REST request /book)
             0: no statement (not checked yet)
             1: verified orderbook hash
 
@@ -382,16 +510,24 @@ class OrderBookStream:
         status = STATUS_ORDERBOOK(self.status_arr[self._book_idx[token_id]])
 
         if status is STATUS_ORDERBOOK.ERROR:
-            raise OrderBookException(
-                f"Orderbook status invalidated. This indicates an exception "
-                f"within internal threads of {self.__class__.__name__}."
-            )
+            if mode == "except":
+                raise OrderBookException(
+                    f"Orderbook status invalidated. This indicates an exception "
+                    f"within internal threads of {self.__class__.__name__}."
+                )
+            elif mode == "warn":
+                warnings.warn(
+                    f"Orderbook status invalidated. This indicates an exception "
+                    f"within internal threads of {self.__class__.__name__}."
+                )
+            elif mode != "silent":
+                raise ValueError(f"Unknown mode: {mode}.")
 
         return status
 
     def start(self) -> None:
         self._stop_token = False
-        self._cleanup()
+        self._reset()
 
         self.threads = [
             threading.Thread(target=self._run_single_socket)
@@ -408,4 +544,90 @@ class OrderBookStream:
             for thread in self.threads:
                 thread.join(timeout)
 
-        self._cleanup()
+        self._reset()
+
+
+# todo multiple sockets really necessary (might be useful when REST call)? -> measure multi-book cases (nb sockets)
+#   -> revert back to one socket only?
+# todo rename to OrderBookStreamMultiSocket + implement OrderBookStream + measure
+# todo decouple in OrderBookStream message type from procedure
+
+
+class OrderStream(AbstractStreamer):
+    def __init__(
+        self,
+        ws_endpoint: ENDPOINT | str,
+        order_managers: OrderManagerProtocol | list[OrderManagerProtocol],
+        markets: str | list[str],
+        api_key: str,  # todo auth dataclass?
+        secret: str,
+        passphrase: str,
+        ws_channel: CHANNEL | str = CHANNEL.USER,
+        ping_time: float | None = 5,
+        auto_untrack_after: int | None = None,
+        update_mode: Literal["warn", "except"] = "except",
+        callback_msg: Callable[[dict[str, Any], Self], None] | None = None,
+        callback_exc: Callable[[Exception, Self], None] | None = None,
+    ) -> None:
+        if not isinstance(order_managers, list):
+            order_managers = [order_managers]
+
+        if not isinstance(markets, list):
+            markets = [markets]
+
+        if ws_endpoint[-1] != "/":
+            ws_endpoint = f"{ws_endpoint}/"
+
+        self.oms = order_managers
+        self.markets = markets
+        self.update_mode = update_mode
+        self.auto_untrack_after = auto_untrack_after
+        self.counter = 0
+
+        super().__init__(
+            url=f"{ws_endpoint}{ws_channel}",
+            subscribe_params={
+                "auth": {
+                    {"apiKey": api_key, "secret": secret, "passphrase": passphrase}
+                },
+                "markets": self.markets,
+                "assets_ids": [],
+                "type": "user",
+            },
+            ping_time=ping_time,
+            callback_msg=callback_msg,
+            callback_exc=callback_exc,
+        )
+
+    def pre_start(self) -> None:
+        self.counter = 0
+
+    def post_stop(self) -> None:
+        self.counter = 0
+
+    def on_msg(self, msg: dict[Any, Any]) -> None:
+        has_updated = sum(om.update(**msg) for om in self.oms)
+        self._update_mode(has_updated, msg)
+
+        if self.auto_untrack_after is not None:
+            self._auto_untrack()
+
+    def _update_mode(self, has_updated: int, msg: dict[Any, Any]) -> None:
+        if has_updated == 0 and self.update_mode == "explicit":
+            raise OrderUpdateException(
+                f"Order not contained in any OrderManager. Original message: {msg}."
+            )
+
+        if has_updated > 1:
+            raise OrderUpdateException(
+                f"Order should not be assigned to more than one OrderManager. Original message: {msg}."
+            )
+
+    def _auto_untrack(self) -> None:
+        self.counter += 1
+
+        if self.counter >= self.auto_untrack_after:
+            for om in self.oms:
+                om.auto_untrack()
+
+            self.counter = 0
