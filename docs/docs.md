@@ -1,25 +1,28 @@
-# Introduction
-## Installation
-## Authentication and Allowances
-## Floating Point Imprecision, Rounding and Decimal Type
+# Documentation
+>work in progress
 
-# Central Limit Order Book (CLOB)
+## Introduction
+### Installation
+### Authentication and Allowances
+### Floating Point Imprecision, Rounding and Decimal Type
 
-# Orders
-## Order Types
-## Creating Orders
-## Order Manager
+## Central Limit Order Book (CLOB)
 
-# Positions
-## Position Types
-## Creating Positions
-## Position Manager
+## Orders
+### Order Types
+### Creating Orders
+### Order Manager
 
-# Trades
+## Positions
+### Position Types
+### Creating Positions
+### Position Manager
+
+## Trades
 _tbd_
 
-# Streams
-## Market Stream
-## User Stream
+## Streams
+### Market Stream
+### User Stream
 
-# REST API functions
+## REST API functions

@@ -60,7 +60,7 @@ should be noticeable faster.
 
 Documentation
 -------------
-See [documentation](docs) and [examples](examples). (work in progress)
+See [documentation](docs/docs.md) and [examples](examples). (work in progress)
 
 Install
 -------
