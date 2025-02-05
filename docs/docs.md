@@ -5,6 +5,7 @@
 ### Installation
 ### Authentication and Allowances
 ### Floating Point Imprecision, Rounding and Decimal Type
+### Rate and Trading Limits
 
 ## Central Limit Order Book (CLOB)
 
