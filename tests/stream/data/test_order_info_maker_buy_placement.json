@@ -1,0 +1,20 @@
+{
+  "asset_id":"25742247876332768458781360292043764039507900813404980298479194684402595556451",
+  "associate_trades":null,
+  "created_at":1737678469,
+  "expiration":0,
+  "id":"0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+  "maker_address":"0x0000000000000000000000000000000000000000",
+  "market":"0x4cfe8afc969fc85f4aa92ef01e8c82b84f773ea1cdf198d694ef9da1155393eb",
+  "order_owner":"000000000-0000-0000-0000-000000000000",
+  "order_type":"GTC",
+  "original_size":"5",
+  "outcome":"Yes",
+  "owner":"000000000-0000-0000-0000-000000000000",
+  "price":"0.56",
+  "side":"BUY",
+  "size_matched":"0",
+  "status":"LIVE",
+  "timestamp":1737678469623,
+  "type":"PLACEMENT"
+}

@@ -1,0 +1,312 @@
+import datetime
+import math
+from typing import Any, Callable, NoReturn, Self
+
+import attrs
+from eth_account.types import PrivateKeyType
+from eth_keys.datatypes import PrivateKey
+from poly_eip712_structs import EIP712Struct
+
+from polypy.constants import ZERO_ADDRESS
+from polypy.exceptions import OrderCreationException, OrderUpdateException
+from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
+from polypy.order.eip712 import SIDE_INDEX, EIP712Order, order_signature
+from polypy.signing import SIGNATURE_TYPE, parse_private_key
+from polypy.typing import NumericAlias
+
+# in Polymarket documentation:
+# - Order: REST -> base order
+# - MakerOrder: REST -> only limit orders can (but not have to) be maker order
+# - OpenOrder: REST -> only limit orders can be open
+
+# - MakerOrder: WS -> only limit orders can (but not have to) be maker order
+# - Order: WS -> limit order (placement, update, cancellation), maker only will be matched immediately without placement
+
+
+def compute_expiration_timestamp(
+    tif: TIME_IN_FORCE,
+    expire: int | datetime.timedelta | datetime.datetime = 0,
+    security_millis: int = 60_000,
+) -> int:
+    # todo test
+    # in millis timestamp
+    if tif is not TIME_IN_FORCE.GTD:
+        return 0
+
+    if isinstance(expire, int):
+        return (
+            int(1_000 * datetime.datetime.now().timestamp()) + expire + security_millis
+        )
+    elif isinstance(expire, datetime.timedelta):
+        return (
+            int(1_000 * datetime.datetime.now().timestamp())
+            + int(expire.total_seconds() * 1_000)
+            + security_millis
+        )
+    elif isinstance(expire, datetime.datetime):
+        expire = expire - datetime.datetime.now()
+        if expire.total_seconds() < 0:
+            raise OrderCreationException("Delta to expiration is <0.")
+        return (
+            int(1_000 * datetime.datetime.now().timestamp())
+            + int(expire.total_seconds() * 1_000)
+            + security_millis
+        )
+    else:
+        raise OrderCreationException(
+            f"Unknown type for `delta`: {type(expire)}. Input: {expire}."
+        )
+
+
+def is_valid_price(price: NumericAlias, tick_size: NumericAlias) -> bool:
+    return tick_size <= price <= 1 - tick_size
+
+
+# todo move?
+def tick_size_digits(tick_size: NumericAlias) -> int:
+    if tick_size <= 0 or tick_size >= 1:
+        raise OrderCreationException("`tick_size` has to be in (0, 1)")
+
+    exp = math.log10(tick_size)
+    if exp != int(exp):
+        raise OrderCreationException("`tick_size` has to be base10.")
+
+    return -int(exp)
+
+
+def _cvt_numeric_type(val: Any, inst: "Order") -> NumericAlias:
+    return inst.numeric_type(val)
+
+
+def _validate_numeric_type(inst: "Order", attr, val: NumericAlias) -> None:
+    if not isinstance(val, inst.numeric_type):
+        raise OrderCreationException(
+            f"{attr.name} must be of same type as `numeric_type`={inst.numeric_type}."
+        )
+
+
+def _optional_frozen(inst: "Order", attr, val: Any) -> Any:
+    if getattr(inst, attr.name) is not None:
+        raise OrderUpdateException("Can only be set if None. Read-only if once set.")
+    return val
+
+
+def _frozen(_, attr, ___) -> NoReturn:
+    raise OrderUpdateException(f"Frozen attribute: {attr.name}.")
+
+
+# todo shared memory version
+@attrs.define
+class Order:
+    eip712order: EIP712Order = attrs.field(on_setattr=_frozen)
+
+    id: str | None = attrs.field(
+        converter=attrs.converters.optional(str),
+        on_setattr=[attrs.setters.convert, _optional_frozen],
+    )
+    """Will be created after posting the order."""
+    signature: str | None = attrs.field(
+        converter=attrs.converters.optional(str),
+        on_setattr=[attrs.setters.convert, _optional_frozen],
+    )
+    tif: TIME_IN_FORCE = attrs.field(converter=TIME_IN_FORCE, on_setattr=_frozen)
+
+    strategy_id: str | None = attrs.field(converter=attrs.converters.optional(str))
+    aux_id: str | None = attrs.field(converter=attrs.converters.optional(str))
+
+    status: INSERT_STATUS = attrs.field(converter=INSERT_STATUS)
+    created_at: int | None = attrs.field(
+        converter=attrs.converters.optional(int),
+        on_setattr=[attrs.setters.convert, _optional_frozen],
+    )
+    defined_at: int = attrs.field(converter=int, on_setattr=_frozen)
+
+    numeric_type: type[NumericAlias] | Callable[
+        [float | str], NumericAlias
+    ] = attrs.field(on_setattr=_frozen)
+
+    # noinspection PyTypeChecker
+    size_matched: NumericAlias = attrs.field(
+        validator=_validate_numeric_type,
+        converter=attrs.Converter(_cvt_numeric_type, takes_self=True),
+    )
+
+    @classmethod
+    def create(
+        cls,
+        token_id: str,
+        side: SIDE,
+        taker_amount: int,
+        maker_amount: int,
+        private_key: PrivateKey | str | PrivateKeyType,
+        maker: str | None,
+        signature_type: SIGNATURE_TYPE,
+        domain: EIP712Struct,
+        tif: TIME_IN_FORCE = TIME_IN_FORCE.GTC,
+        signature: str | None = None,
+        size_matched: NumericAlias | None = None,
+        strategy_id: str | None = None,
+        aux_id: str | None = None,
+        idx: str | None = None,
+        status: INSERT_STATUS = INSERT_STATUS.DEFINED,
+        created_at: int | None = None,
+        defined_at: int | None = None,
+        expiration: int = 0,
+        nonce: int = 0,
+        fee_rate_bps: int = 0,
+        taker: str = ZERO_ADDRESS,
+        signer: str | None = None,
+        numeric_type: type[NumericAlias] | Callable[[int], NumericAlias] = float,
+    ) -> Self:
+        private_key = parse_private_key(private_key)
+
+        # noinspection PyTypeChecker
+        side_idx: SIDE_INDEX = SIDE_INDEX[side]
+
+        eip712order = EIP712Order.create(
+            maker=maker,
+            signer=signer,
+            taker=taker,
+            token_id=int(token_id),
+            maker_amount=maker_amount,
+            taker_amount=taker_amount,
+            nonce=nonce,
+            fee_rate_bps=fee_rate_bps,
+            side=side_idx,
+            signature_type=signature_type,
+            expiration=expiration,
+            private_key=private_key,
+        )
+
+        if defined_at is None:
+            defined_at = int(1_000 * datetime.datetime.now().timestamp())
+
+        if signature is None:
+            signature = order_signature(eip712order, domain, private_key)
+
+        if size_matched is None:
+            size_matched = numeric_type(0)
+        elif type(size_matched) != numeric_type:
+            raise OrderCreationException(
+                f"Type of size_matched={type(size_matched)} does not match numeric_type={numeric_type}."
+            )
+
+        return cls(
+            eip712order=eip712order,
+            id=idx,
+            signature=signature,
+            tif=tif,
+            strategy_id=strategy_id,
+            aux_id=aux_id,
+            status=status,
+            created_at=created_at,
+            defined_at=defined_at,
+            size_matched=size_matched,
+            numeric_type=numeric_type,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        eip712_dict = self.eip712order.to_dict()
+        eip712_dict["signature"] = self.signature
+        eip712_dict["side"] = str(self.side)
+        eip712_dict["expiration"] = str(eip712_dict["expiration"])
+        eip712_dict["nonce"] = str(eip712_dict["nonce"])
+        eip712_dict["feeRateBps"] = str(eip712_dict["feeRateBps"])
+        eip712_dict["makerAmount"] = str(eip712_dict["makerAmount"])
+        eip712_dict["takerAmount"] = str(eip712_dict["takerAmount"])
+        eip712_dict["tokenId"] = str(eip712_dict["tokenId"])
+        eip712_dict["signatureType"] = int(eip712_dict["signatureType"])
+        return eip712_dict
+
+    def to_payload(self, api_key: str) -> dict[str, dict | str]:
+        return {"order": self.to_dict(), "owner": api_key, "orderType": self.tif.value}
+
+    @property
+    def price(self) -> NumericAlias:
+        # price = amount / size
+
+        # SELL:
+        #   maker_amt -> size
+        #   taker_amt -> amount
+        # BUY:
+        #   taker_amt -> size
+        #   maker_amt -> amount
+
+        taker_amt = self.numeric_type(self.taker_amount)
+        maker_amt = self.numeric_type(self.maker_amount)
+
+        if self.side is SIDE.SELL:
+            return taker_amt / maker_amt
+        else:
+            return maker_amt / taker_amt
+
+    @property
+    def size(self) -> NumericAlias:
+        if self.side is SIDE.SELL:
+            return self.numeric_type(self.maker_amount) / 1_000_000
+        else:
+            return self.numeric_type(self.taker_amount) / 1_000_000
+
+    @property
+    def size_open(self) -> NumericAlias:
+        return self.size - self.size_matched
+
+    @property
+    def amount(self) -> NumericAlias:
+        if self.side is SIDE.SELL:
+            return self.numeric_type(self.taker_amount) / 1_000_000
+        else:
+            return self.numeric_type(self.maker_amount) / 1_000_000
+
+    @property
+    def token_id(self) -> str:
+        return str(self.eip712order.tokenId)
+
+    @property
+    def asset_id(self) -> str:
+        """Alias to `token_id`."""
+        return str(self.eip712order.tokenId)
+
+    @property
+    def expiration(self) -> int:
+        return self.eip712order.expiration
+
+    @property
+    def side(self) -> SIDE:
+        return SIDE(self.eip712order.side.name)
+
+    @property
+    def signature_type(self) -> SIGNATURE_TYPE:
+        return self.eip712order.signatureType
+
+    @property
+    def fee_rate_bps(self) -> int:
+        return self.eip712order.feeRateBps
+
+    @property
+    def taker_amount(self) -> int:
+        return self.eip712order.takerAmount
+
+    @property
+    def maker_amount(self) -> int:
+        return self.eip712order.makerAmount
+
+    @property
+    def salt(self) -> int:
+        return self.eip712order.salt
+
+    @property
+    def maker(self) -> str:
+        return self.eip712order.maker
+
+    @property
+    def taker(self) -> str:
+        return self.eip712order.taker
+
+    @property
+    def signer(self) -> str:
+        return self.eip712order.signer
+
+    @property
+    def nonce(self) -> int:
+        return self.eip712order.nonce
