@@ -49,7 +49,7 @@ class MarketStream:
         ws_endpoint: ENDPOINT | str,
         books: list[OrderBook] | OrderBook,
         check_hash_params: CheckHashParams | None,
-        rest_endpoint: str | None,
+        rest_endpoint: ENDPOINT | str | None,
         ws_channel: CHANNEL | str = CHANNEL.MARKET,
         buffer_size: int = 10,
         ping_time: float | None = 5,

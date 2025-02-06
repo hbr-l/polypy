@@ -74,14 +74,14 @@ def setup_streamer():
         streamer = MarketStream(
             url,
             book,
-            check_hash_params,
-            ws_channel="",
+            check_hash_params=check_hash_params,
             rest_endpoint=endpoint,
+            ws_channel="",
+            buffer_size=buffer_size,
             ping_time=ping_time,
             nb_redundant_skt=nb_redundant_skt,
             callback_msg=callback_msg,
             callback_exception=callback_exception,
-            buffer_size=buffer_size,
         )
         stream_storage.val = streamer
         streamer.start()
@@ -923,9 +923,9 @@ def test_marketstream_multi_book(mock_server_click_on):
     streamer = MarketStream(
         "ws://localhost:8002/",
         [book1, book2],
-        CheckHashParams(3, 15),
-        ws_channel="",
+        check_hash_params=CheckHashParams(3, 15),
         rest_endpoint=None,
+        ws_channel="",
         ping_time=None,
         nb_redundant_skt=3,
     )
