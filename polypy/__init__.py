@@ -16,6 +16,7 @@ from polypy.rest.api import *
 from polypy.stream import (
     STATUS_ORDERBOOK,
     BufferSettings,
+    CheckHashParams,
     MarketAssetsInfo,
     MarketStream,
     TupleManager,
