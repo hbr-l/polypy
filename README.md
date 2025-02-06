@@ -18,6 +18,10 @@ it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of muc
 > Please mind, that PolyPy is just a hobby project!
 
 
+Quickstart
+----------
+
+
 Disclaimer
 ----------
 _PolyPy_ is written for educational purpose only. The author of this software and accompanying

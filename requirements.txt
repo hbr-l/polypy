@@ -8,4 +8,3 @@ eth-typing>=5.0.1
 eth-utils>=5.1.0
 hexbytes>=1.2.1
 requests>=2.32.3
-setuptools>=75.8.0
