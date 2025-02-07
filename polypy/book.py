@@ -19,6 +19,7 @@ from msgspec import json as msgspec_json
 
 from polypy.exceptions import EventTypeException, OrderBookException
 from polypy.rest.api import get_book_summaries, get_tick_size
+from polypy.rounding import round_half_even
 from polypy.typing import ArrayCoercible, NumericAlias, ZerosFactoryFunc, ZerosProtocol
 
 if TYPE_CHECKING:
@@ -58,6 +59,17 @@ def _zeroing_array(x: ArrayCoercible) -> ArrayCoercible:
     return x
 
 
+def _linspace_array(
+    start: float, stop: float, num: int, nb_digits: int, dtype: type
+) -> np.ndarray:
+    arr = np.round(np.linspace(start, stop, num), nb_digits)
+
+    if not isinstance(arr[0], dtype):
+        arr = np.array([round_half_even(dtype(x), nb_digits) for x in arr])
+
+    return arr
+
+
 def _infer_dtype(x: ArrayCoercible) -> type:
     dtype = type(x[0])
 
@@ -93,7 +105,7 @@ class OrderBook:
         - zeros_factory has to return sharedMemory array
         - zeros_factory returned array has to handle locking of getitem and setitem if necessary
 
-    Locking:
+    Threading:
         - zeros_factory returned array has to handle locking of getitem and setitem if necessary
 
     Dtype of sizes:
@@ -103,9 +115,8 @@ class OrderBook:
           >>>   return np.array([0] * x, dtype=float)
 
     Returned prices:
-        - returned 'prices' are always rounded floats according to min(allowed_tick_sizes). Though,
-          internally prices are stored as positions in an array, so de-facto no loss of precision.
-        - if Decimals (or any other type) required, convert them via ``Decimal(str(p)) for p in prices``
+        - returned 'prices' have same dtype as sizes and are rounded according to min(allowed_tick_sizes).
+          Though, internally prices are stored as positions in an array, so de-facto no loss of precision.
     """
 
     # todo implement __getstate__ and __setstate__ (pickling during multiprocessing)
@@ -121,6 +132,7 @@ class OrderBook:
     zeros_factory: ZerosProtocol | ZerosFactoryFunc = attrs.field(
         default=np.zeros, on_setattr=attrs.setters.frozen
     )  # dtype only affects size arrays, but not price arrays
+    """For decimal type use `polypy.typing.zeros_dec` as factory."""
     allowed_tick_sizes: tuple[float] = attrs.field(
         default=(0.01, 0.001),
         converter=_conv_set_float,
@@ -149,11 +161,11 @@ class OrderBook:
         self._dtype = type(self._bid_quantities[0])
 
         min_tick_digits = int(np.log10(self._inv_min_tick_size))
-        self._bid_quote_levels = np.round(
-            np.linspace(1, 0, len_quantities), min_tick_digits
+        self._bid_quote_levels = _linspace_array(
+            1, 0, len_quantities, min_tick_digits, self._dtype
         )
-        self._ask_quote_levels = np.round(
-            np.linspace(0, 1, len_quantities), min_tick_digits
+        self._ask_quote_levels = _linspace_array(
+            0, 1, len_quantities, min_tick_digits, self._dtype
         )
 
     @classmethod
@@ -221,17 +233,17 @@ class OrderBook:
         return self._ask_quote_levels[np.nonzero(self._ask_quantities)[0]]
 
     @property
-    def best_bid_price(self) -> float:
+    def best_bid_price(self) -> NumericAlias:
         # return np.nonzero(self._bid_quantities)[0][-1] / self._inv_min_tick_size
         return self._bid_quote_levels[np.nonzero(self._bid_quantities[::-1])[0][0]]
 
     @property
-    def best_ask_price(self) -> float:
+    def best_ask_price(self) -> NumericAlias:
         # return np.nonzero(self._ask_quantities)[0][0] / self._inv_min_tick_size
         return self._ask_quote_levels[np.nonzero(self._ask_quantities)[0][0]]
 
     @property
-    def midpoint_price(self) -> float:
+    def midpoint_price(self) -> NumericAlias:
         return (self.best_bid_price + self.best_ask_price) / 2
 
     @property

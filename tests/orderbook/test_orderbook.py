@@ -532,9 +532,9 @@ def test_orderbook_set_decimal():
     assert [Decimal(str(i)) for i in orderbook.ask_prices.tolist()] == [Decimal("0.12")]
     assert orderbook.ask_sizes.tolist() == [1000]
 
-    assert orderbook.best_bid_price == 0.1
+    assert orderbook.best_bid_price == Decimal("0.1")
     assert orderbook.best_bid_size == Decimal(10)
-    assert orderbook.best_ask_price == 0.12
+    assert orderbook.best_ask_price == Decimal("0.12")
     assert orderbook.best_ask_size == Decimal(1000)
 
 
@@ -584,9 +584,9 @@ def test_orderbook_reset_decimal():
     assert [Decimal(str(i)) for i in orderbook.ask_prices.tolist()] == [Decimal("0.12")]
     assert orderbook.ask_sizes.tolist() == [1000]
 
-    assert orderbook.best_bid_price == 0.1
+    assert orderbook.best_bid_price == Decimal("0.1")
     assert orderbook.best_bid_size == Decimal(10)
-    assert orderbook.best_ask_price == 0.12
+    assert orderbook.best_ask_price == Decimal("0.12")
     assert orderbook.best_ask_size == Decimal(1000)
 
 

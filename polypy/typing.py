@@ -11,6 +11,10 @@ def dec(x: NumericAlias | str) -> Decimal:
     return Decimal(str(x))
 
 
+def zeros_dec(x: int, *_) -> np.ndarray:
+    return np.array([Decimal(0)] * x, dtype=object)
+
+
 class ArrayInterface(Protocol):
     @property
     def __array_interface__(self) -> dict:
