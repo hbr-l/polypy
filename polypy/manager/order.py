@@ -3,7 +3,7 @@ import datetime
 import math
 import threading
 import warnings
-from typing import Any, KeysView, Literal, Protocol, Sequence, TypeAlias
+from typing import Any, Collection, KeysView, Literal, Protocol, TypeAlias
 
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
@@ -18,8 +18,10 @@ from polypy.exceptions import (
     PolyPyException,
 )
 from polypy.order.common import (
+    CANCELABLE_INSERT_STATI,
     INSERT_STATUS,
     SIDE,
+    TERMINAL_INSERT_STATI,
     TIME_IN_FORCE,
     FrozenOrder,
     OrderProtocol,
@@ -260,6 +262,7 @@ class OrderManagerProtocol(Protocol):
         Notes
         -----
         Call self.sync() beforehand if already posted (submitted) orders were added to the Order Manager.
+        Note, there is no implicit sync call inside the method.
 
         Raises
         ------
@@ -268,7 +271,9 @@ class OrderManagerProtocol(Protocol):
         """
 
     def cancel_all(
-        self, mode_not_canceled: Literal["except", "warn", "ignore"] = "except"
+        self,
+        mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
+        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
     ) -> tuple[list[FrozenOrder], CancelOrdersResponse]:
         """Cancel all orders tracked by the Order Manager. Orders are not automatically untracked.
         This only cancels all order of the Order Manager BUT NOT all orders of the associated account!
@@ -277,7 +282,9 @@ class OrderManagerProtocol(Protocol):
 
         Notes
         -----
-        Call self.sync() beforehand if already posted (submitted) orders were added to the Order Manager.
+        Call self.sync() beforehand if already posted (submitted) orders were added to the Order Manager or if
+        Order Manager contains orders in status DEFINED in order to determine current order status.
+        Note, there is no implicit sync call inside the method.
         """
         ...
 
@@ -315,7 +322,7 @@ class OrderManagerProtocol(Protocol):
 
     def clean(
         self,
-        statuses: Sequence[INSERT_STATUS] | None,
+        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         """Untrack all orders with specified status OR expiration. This does not cancel any orders.
@@ -827,6 +834,9 @@ class OrderManager(OrderManagerProtocol):
         self._validate()
         _single, orders = _parse_to_list(orders)
 
+        if not orders:
+            raise OrderUpdateException("`orders` is empty, did not receive any orders.")
+
         with self.lock:
             orders = self._uptrack_parse_batch(orders, _err_msg)
 
@@ -847,11 +857,22 @@ class OrderManager(OrderManagerProtocol):
         return orders, response
 
     def cancel_all(
-        self, mode_not_canceled: Literal["except", "warn", "ignore"] = "except"
+        self,
+        mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
+        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
     ) -> tuple[list[FrozenOrder], CancelOrdersResponse]:
         self._validate()
+
+        if isinstance(statuses, INSERT_STATUS):
+            statuses = [statuses]
+
         with self.lock:
-            return self.cancel(list(self.order_dict.values()), mode_not_canceled)
+            if orders := [
+                order for order in self.order_dict.values() if order.status in statuses
+            ]:
+                return self.cancel(orders, mode_not_canceled)
+            else:
+                return [], CancelOrdersResponse([], {})
 
     def _assert_mode_not_existent(
         self,
@@ -931,17 +952,14 @@ class OrderManager(OrderManagerProtocol):
 
     def clean(
         self,
-        statuses: Sequence[INSERT_STATUS] | None,
+        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         # filter out status and expiration
         self._validate()
-        if statuses is None:
-            statuses = {
-                INSERT_STATUS.MATCHED,
-                INSERT_STATUS.UNMATCHED,
-                INSERT_STATUS.CANCELED,
-            }
+
+        if isinstance(statuses, INSERT_STATUS):
+            statuses = [statuses]
 
         rem_orders = []
 

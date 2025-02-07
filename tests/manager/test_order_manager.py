@@ -859,6 +859,12 @@ def test_cancel(
     assert order_manager.get_by_id("16171819").status is INSERT_STATUS.LIVE
 
 
+def test_cancel_empty(order_manager):
+    with pytest.raises(OrderUpdateException) as record:
+        order_manager.cancel(orders=[])
+    assert "empty" in str(record)
+
+
 def test_cancel_all(order_manager, mock_cancel_order, sample_order):
     orders = [sample_order("1"), sample_order("2"), sample_order("3")]
     for x in orders:
@@ -887,6 +893,31 @@ def test_cancel_all(order_manager, mock_cancel_order, sample_order):
         assert order_manager.get_by_id(x).status == INSERT_STATUS.CANCELED
     assert len(order_manager.get(status=INSERT_STATUS.CANCELED)) == 4
     assert order_manager.get_by_id("5").status == INSERT_STATUS.LIVE
+
+
+def test_cancel_all_mixed_states(order_manager, mock_cancel_order, sample_order):
+    order1 = sample_order("1")
+    order2 = sample_order("2")
+    order3 = sample_order("3")
+
+    order1.status = INSERT_STATUS.DEFINED
+    order2.status = INSERT_STATUS.MATCHED
+    order3.status = INSERT_STATUS.LIVE
+
+    order_manager.track(order1, False)
+    order_manager.track(order2, False)
+    order_manager.track(order3, False)
+
+    mock_cancel_order(["3"], None)
+    order_manager.cancel_all(statuses=[INSERT_STATUS.LIVE])
+
+    assert order1.status is INSERT_STATUS.DEFINED
+    assert order2.status is INSERT_STATUS.MATCHED
+    assert order3.status is INSERT_STATUS.CANCELED
+
+
+def test_cancel_all_empty(order_manager):
+    order_manager.cancel_all()
 
 
 def test_sync(
@@ -1336,7 +1367,7 @@ def test_clean(
     mock_neg_risk(ASSET_ID_YES)
 
     # empty order manager
-    order_manager.clean(None)
+    order_manager.clean()
 
     # success: states
     orders = [
@@ -1355,7 +1386,7 @@ def test_clean(
     for x in orders:
         order_manager.track(x, False)
 
-    ret = order_manager.clean(None)
+    ret = order_manager.clean()
     assert list(order_manager.order_ids) == ["1", "2", "3"]
     assert len(ret) == 3
 
@@ -1382,11 +1413,11 @@ def test_clean(
     )
     assert list(order_manager.order_ids) == ["1", "2", "3", "1234"]
     assert order_manager.get_by_id("1234").size_matched == 0
-    order_manager.clean(None, 1001)
+    order_manager.clean(expiration=1001)
     assert list(order_manager.order_ids) == ["1", "2", "3"]
 
     # custom input
-    order_manager.clean([INSERT_STATUS.DEFINED])
+    order_manager.clean(INSERT_STATUS.DEFINED)
     assert list(order_manager.order_ids) == ["2", "3"]
 
     # empty input
