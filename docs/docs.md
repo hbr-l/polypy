@@ -25,24 +25,26 @@ or
 Note, that depending on your terminal/shell, you might need to run `pip install '.[examples]'` (quotation marks) instead.
 
 ### Allowances and Authentication
-_`Polypy` does neither support setting allowances, nor creating API keys, as this is outside the scope of this package.  
-Please refer to Polymarket's official documentation._  
-If you use Mail/Magic-Login, please refer to [Magic-Login](#magic-login), which simplifies allowances and authentication
-quite a lot (i.e., actually not necessary then).
-
-#### Allowances
-In order to be able to trade on Polymarket, the correct token allowances must be set before orders can be placed via the API.
+1) In order to be able to trade on Polymarket, the correct token allowances must be set before orders can be placed via the API.
+2) Certain functions and methods need an authentication via the account's api key, private key (for signing, will not 
+actually be sent in any payload), secret, passphrase and wallet address (__NEVER SHARE OR PUBLISH YOUR PRIVATE KEY__).
   
-`PolyPy`'s goal is to facilitate trading and to enable comfortably interacting with Polymarket's APIs (REST and websocket).  
-Therefore, `PolyPy` does not support setting or updating account allowances, which are needed for trading on Polymarket.
+_`Polypy` does neither support setting allowances, nor creating API keys, as this is outside the scope of this package._
   
-Please refer [py-clob-client](https://github.com/Polymarket/py-clob-client/tree/main), the official Polymarket documentation 
-and their Discord. If you are using Mail/Magic-Login, please refer to [Magic-Login](#magic-login).
-
-#### Authentication
-
+Please refer to [py-clob-client](https://github.com/Polymarket/py-clob-client/tree/main), the official 
+[Polymarket documentation ](https://docs.polymarket.com/#introduction) or Polymarket's Discord for allowances and authentication.  
+If you are using Mail/Magic-Login, please refer to [Magic-Login](#magic-login), which simplifies allowances and authentication
+quite a lot (i.e., actually not necessary when using Magic-Login).
 
 #### Magic-Login
+If you use Mail/Magic-Login (btw. __NEVER TYPE IN A NUMBER CODE FROM ANY MAIL INTO MAGIC'S LOGIN PAD THAT YOU HAVEN'T 
+REQUESTED YOURSELF OF FROM ANY THIRD PARTY__), you can obtain the necessary credentials by:
+1) Open DevTools of your browser and search for a websocket named "user". The first websocket message sent, contains
+your api key, secret and passphrase
+2) Your wallet address (usually used in `polypy` for `maker_funder`/`maker` argument) is displayed on Polymarket's website 
+beneath your profile image (starts with "0x...."). Be aware, that is not the same address as the address where you deposit to!
+3) Your private key (__NEVER SHARE YOUR PRIVATE KEY__) can be obtained via Polymarket's website: Go to your profile,
+click "Edit profile" and then "Export Private Key".
 
 ### Floating Point Imprecision, Rounding and Decimal Type
 ### Rate and Trading Limits
