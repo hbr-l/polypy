@@ -37,8 +37,8 @@ If you are using Mail/Magic-Login, please refer to [Magic-Login](#magic-login), 
 quite a lot (i.e., actually not necessary when using Magic-Login).
 
 #### Magic-Login
-If you use Mail/Magic-Login (btw. __NEVER TYPE IN A NUMBER CODE FROM ANY MAIL INTO MAGIC'S LOGIN PAD THAT YOU HAVEN'T 
-REQUESTED YOURSELF OF FROM ANY THIRD PARTY__), you can obtain the necessary credentials by:
+If you use Mail/Magic-Login (btw. __NEVER TYPE IN A NUMBER CODE INTO MAGIC'S LOGIN PAD THAT YOU HAVEN'T ACTIVELY 
+REQUESTED YOURSELF__), you can obtain the necessary credentials by:
 1) Open DevTools of your browser and search for a websocket named "user". The first websocket message sent, contains
 your api key, secret and passphrase
 2) Your wallet address (usually used in `polypy` for `maker_funder`/`maker` argument) is displayed on Polymarket's website 

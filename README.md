@@ -5,22 +5,25 @@
 
 Goals
 -----
-`PolyPy` is a Python wrapper around [Polymarket's API](https://docs.polymarket.com/) and aims to implement a minimal 
-set of components for facilitating trading on Polymarket, whilst focusing on acceptable (but not high-frequency) 
-runtime performance.
-`PolyPy`'s implementation is opinionated and biased with respect to architecture and design choices.
+`PolyPy` is a Python wrapper around [Polymarket's API](https://docs.polymarket.com/) and aims to implement a 
+set of components for facilitating trading on Polymarket, whilst focusing on decent runtime performance.
+`PolyPy`'s implementation is opinionated and biased regarding architecture and design choices.
   
 Although, [Polymarket's Python Client](https://github.com/Polymarket/py-clob-client/tree/main) is quite convenient, 
 it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of much faster 
 [msgspec](https://jcristharif.com/msgspec/), native dataclasses instead of 
 [attrs](https://www.attrs.org/en/stable/init.html), etc., and has some disadvantageous implementation details.
   
-> Please mind, that PolyPy is just a hobby project!
-
+> POLYPY IS NOT AN OFFICIAL POLYMARKET IMPLEMENTATION OR AFFILIATED WITH POLYMARKET IN ANY WAY!
+> Please mind, that PolyPy is just a hobby project and not professional software!
 
 Quickstart
 ----------
+> Work in progress
 
+Documentation
+-------------
+See [documentation](docs/guide.md) and [examples](examples).
 
 Disclaimer
 ----------
@@ -61,17 +64,6 @@ in the future.
 counteract this by appropriate rounding. Though, if precision is important, use Python's `decimal.Decimal` type.
 Future versions might implement fixed point types instead of floats. Due to rounding implementation, this also
 should be noticeable faster.
-
-Documentation
--------------
-See [documentation](docs/docs.md) and [examples](examples). (work in progress)
-
-Install
--------
-Currently, `PolyPy` can only be installed locally:
-1) git clone
-2) cd polypy
-3) pip install -e . (locally)
 
 Todo and Planned Features
 -------------------------
