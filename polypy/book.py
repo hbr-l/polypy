@@ -43,9 +43,15 @@ def _validate_tick_size(inst: "OrderBook", _, val: Any) -> None:
         )
 
 
+# noinspection PyProtectedMember
 def _on_setattr_tick_size(inst: "OrderBook", _, val: Any) -> NumericAlias:
-    # noinspection PyProtectedMember
-    return round_half_even(inst._dtype_item(val), inst._min_tick_digits)
+    if isinstance(val, inst._dtype_item):
+        return val
+
+    try:
+        return inst._dtype_item(str(val))
+    except ValueError:
+        return round_half_even(inst._dtype_item(val), inst._min_tick_digits)
 
 
 def _validate_allowed_tick_size(_, __, x: set[float]) -> None:
