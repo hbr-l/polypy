@@ -11,6 +11,7 @@ from polypy.constants import ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, OrderUpdateException
 from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
 from polypy.order.eip712 import SIDE_INDEX, EIP712Order, order_signature
+from polypy.rounding import round_half_even
 from polypy.signing import SIGNATURE_TYPE, parse_private_key
 from polypy.typing import NumericAlias
 
@@ -58,11 +59,14 @@ def compute_expiration_timestamp(
         )
 
 
-def is_valid_price(price: NumericAlias, tick_size: NumericAlias) -> bool:
-    return tick_size <= price <= 1 - tick_size
+def check_valid_price(price: NumericAlias, tick_size: NumericAlias) -> None:
+    if not (tick_size <= price <= 1 - tick_size):
+        raise OrderCreationException(
+            f"Invalid price. Must be 'tick_size <= price <= 1 - tick_size'. "
+            f"Got: price={type(price)}({price}) and tick_size={type(tick_size)}({tick_size})."
+        )
 
 
-# todo move?
 def tick_size_digits(tick_size: NumericAlias) -> int:
     if tick_size <= 0 or tick_size >= 1:
         raise OrderCreationException("`tick_size` has to be in (0, 1)")
@@ -72,6 +76,20 @@ def tick_size_digits(tick_size: NumericAlias) -> int:
         raise OrderCreationException("`tick_size` has to be base10.")
 
     return -int(exp)
+
+
+def cvt_tick_size(
+    tick_size: NumericAlias, numeric_type: type | Callable[[Any], NumericAlias]
+) -> tuple[NumericAlias, int]:
+    nb_digits = tick_size_digits(tick_size)
+
+    if not isinstance(tick_size, numeric_type):
+        try:
+            tick_size = numeric_type(str(tick_size))
+        except ValueError:
+            tick_size = round_half_even(numeric_type(tick_size), nb_digits)
+
+    return tick_size, nb_digits
 
 
 def _cvt_numeric_type(val: Any, inst: "Order") -> NumericAlias:

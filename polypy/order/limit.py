@@ -3,7 +3,7 @@ from eth_keys.datatypes import PrivateKey
 
 from polypy.constants import CHAIN_ID, SIG_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException
-from polypy.order.base import Order, is_valid_price, tick_size_digits
+from polypy.order.base import Order, check_valid_price, cvt_tick_size
 from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE, infer_numeric_type
 from polypy.rounding import (
     round_floor,
@@ -103,20 +103,15 @@ def create_limit_order(
     """
     domain = polymarket_domain(chain_id, neg_risk)
     numeric_type = infer_numeric_type(price)
+    tick_size, nb_tick_digits = cvt_tick_size(tick_size, numeric_type)
 
-    if not is_valid_price(price, numeric_type(tick_size)):
-        raise OrderCreationException(
-            f"Invalid price. Must be 'tick_size <= price <= 1 - tick_size'. "
-            f"Got: price={price} of type={type(price)} and tick_size={tick_size} of type={type(tick_size)}. "
-            f"Ensure, that numeric types are compatible and "
-            f"do not suffer from float imprecision (e.g., float vs Decimal)."
-        )
+    check_valid_price(price, tick_size)
 
     maker_amount, taker_amount = limit_order_taker_maker_amount(
         side,
         price,
         size,
-        tick_size_digits(tick_size),
+        nb_tick_digits,
         sig_digits_order_size,
         extra_precision_buffer,
     )
