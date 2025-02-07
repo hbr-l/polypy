@@ -537,6 +537,21 @@ def test_orderbook_set_decimal():
     assert orderbook.best_ask_price == Decimal("0.12")
     assert orderbook.best_ask_size == Decimal(1000)
 
+    assert orderbook.tick_size == Decimal("0.01")
+
+
+def test_tick_size_decimal():
+    def arr_factory(x: int, *_):
+        return np.array([Decimal(0)] * x, dtype=object)
+
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=arr_factory)
+
+    orderbook.tick_size = 0.001
+    assert orderbook.tick_size == Decimal("0.001")
+
+    orderbook.tick_size = 0.01
+    assert orderbook.tick_size == Decimal("0.01")
+
 
 # noinspection DuplicatedCode
 def test_orderbook_reset_decimal():

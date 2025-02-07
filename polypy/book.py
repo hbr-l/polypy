@@ -1,4 +1,5 @@
 import hashlib
+import math
 import warnings
 from decimal import Decimal
 from enum import Enum, auto
@@ -34,12 +35,17 @@ def _validate_base10(_, __, x: float) -> None:
         )
 
 
-def _validate_tick_size(inst, _, val) -> None:
+def _validate_tick_size(inst: "OrderBook", _, val: Any) -> None:
     _validate_base10(_, _, val)
     if val not in inst.allowed_tick_sizes:
         raise OrderBookException(
             f"`tick_size`={inst.tick_size} not in `allowed_tick_sizes`={inst.allowed_tick_sizes}."
         )
+
+
+def _on_setattr_tick_size(inst: "OrderBook", _, val: Any) -> NumericAlias:
+    # noinspection PyProtectedMember
+    return round_half_even(inst._dtype_item(val), inst._min_tick_digits)
 
 
 def _validate_allowed_tick_size(_, __, x: set[float]) -> None:
@@ -94,7 +100,6 @@ def _conv_set_float(x: Sequence[Any]) -> set[float]:
     return {float(x_i) for x_i in x}
 
 
-# todo docstring
 @attrs.define
 class OrderBook:
     """Order Book attrs data class.
@@ -124,9 +129,9 @@ class OrderBook:
     #   base 10 numbers even when float
 
     token_id: str
-    tick_size: float = attrs.field(
-        converter=float,
+    tick_size: NumericAlias = attrs.field(
         validator=_validate_tick_size,
+        on_setattr=[attrs.setters.validate, _on_setattr_tick_size],
     )
 
     zeros_factory: ZerosProtocol | ZerosFactoryFunc = attrs.field(
@@ -145,8 +150,10 @@ class OrderBook:
     _bid_quantities: np.ndarray = attrs.field(init=False)
     _ask_quantities: np.ndarray = attrs.field(init=False)
     _inv_min_tick_size: int = attrs.field(init=False)
+    _min_tick_digits: int = attrs.field(init=False)
     _dtype_quantities: type = attrs.field(init=False)
-    _dtype: type = attrs.field(init=False)
+    _dtype_arr: type = attrs.field(init=False)
+    _dtype_item: type = attrs.field(init=False)
 
     _bid_quote_levels: np.ndarray = attrs.field(init=False)
     _ask_quote_levels: np.ndarray = attrs.field(init=False)
@@ -158,15 +165,19 @@ class OrderBook:
         self._bid_quantities = _zeroing_array(self.zeros_factory(len_quantities))
         self._ask_quantities = _zeroing_array(self.zeros_factory(len_quantities))
         self._dtype_quantities = _infer_dtype(self._bid_quantities)
-        self._dtype = type(self._bid_quantities[0])
+        self._dtype_arr = type(self._bid_quantities[0])
 
-        min_tick_digits = int(np.log10(self._inv_min_tick_size))
+        self._min_tick_digits = int(math.log10(self._inv_min_tick_size))
+        self._dtype_item = type(self._bid_quantities.item(0))
         self._bid_quote_levels = _linspace_array(
-            1, 0, len_quantities, min_tick_digits, self._dtype
+            1, 0, len_quantities, self._min_tick_digits, self._dtype_item
         )
         self._ask_quote_levels = _linspace_array(
-            0, 1, len_quantities, min_tick_digits, self._dtype
+            0, 1, len_quantities, self._min_tick_digits, self._dtype_item
         )
+
+        # force casting via on_setattr
+        self.tick_size = self.tick_size
 
     @classmethod
     def from_dict(
@@ -188,7 +199,7 @@ class OrderBook:
 
         return _reset_event_type_book(book_msg_dict, order_book, order_book.dtype)
 
-    def update_tick_size(self, endpoint: str) -> float:
+    def update_tick_size(self, endpoint: str) -> NumericAlias:
         self.tick_size = get_tick_size(endpoint, self.token_id)
         return self.tick_size
 
@@ -200,7 +211,7 @@ class OrderBook:
     @property
     def dtype(self) -> type:
         # only dtype of quantities are relevant
-        return self._dtype
+        return self._dtype_arr
 
     @property
     def bids(self) -> tuple[np.ndarray, ArrayCoercible]:
@@ -332,11 +343,11 @@ class OrderBook:
 
     def null_bids(self) -> None:
         # noinspection PyTypeChecker
-        self._bid_quantities[:] = self._dtype("0")
+        self._bid_quantities[:] = self._dtype_arr("0")
 
     def null_asks(self) -> None:
         # noinspection PyTypeChecker
-        self._ask_quantities[:] = self._dtype("0")
+        self._ask_quantities[:] = self._dtype_arr("0")
 
     def reset_bids(
         self,
