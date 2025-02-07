@@ -1,4 +1,4 @@
-# Documentation
+# User Guide
 >work in progress
 
 ## Introduction
@@ -173,6 +173,14 @@ mid = book.midpoint_price       # numeric value
 tick_size = book.tick_size      # numeric value
 ````
 
+- Asks are sorted in ascending order: best ask (lowest) at index 0.  
+- Bids are sorted in descending order: best bid (highes) at index 0.  
+
+Thereby, if you want to plot an order book depth chart, then you can easily and directly use `np.cumsum` without the 
+need to re-sort any arrays.
+See [examples/order_book_streaming.py](../examples/order_book_streaming.py):    
+<img src="order_book_depth_chart.png" alt="depth_chart" width="1000"/>
+
 #### Marketable Price
 The `OrderBook` can also be used to calculate the marketable price, which is the price at which an order would be fill 
 in its entirety (immediate fill by crossing the spread):
@@ -188,7 +196,15 @@ If no marketable price can be calculated, e.g., the amount exceeds the liquidity
 #### Numeric Type: Float vs. Decimal
 The numeric type (cf. [Floating Point Imprecision](#floating-point-imprecision-rounding-and-decimal-type)) of the `OrderBook` 
 can be controlled via the `zeros_factory` argument in `__init__`.  
-By default, this is a zeros-array of type np.float32. 
+By default, this is a zeros-array of type np.float64, though it is recommended to use the Decimal type via `plp.zeros_dec` 
+as argument for `zeros_factory`:
+````python
+import polypy as plp
+
+book = plp.OrderBook("[token_id]", plp.dec(0.01), zeros_factory=plp.zeros_dec)
+book.dtype
+>> Decimal
+````
 
 #### Manipulating the OrderBook
 Whilst `OrderBook` exposes some methods to manipulate the order book directly (e.g., writing bids and asks into), usually 
@@ -202,6 +218,7 @@ Instead, the `OrderBook` should rather be assigned to a [MarketStream](#market-s
 in real time within a separate thread, s.t. the user does not have to care for updating or manipulating the order book manually.
 The `OrderBook` is designed s.t. only its properties and attributes should be accessed but not set (unless for a good reason).
   
+#### Manually Updating the OrderBook
 If you do not want to assign the order book to a `MarketStream`, then you still can update manually via:
 ````python
 import polypy as plp
@@ -212,12 +229,27 @@ book.sync(plp.ENDPOINT.REST)    # update bids and asks
 book.update_tick_size(plp.ENDPOINT.REST)    # update tick size
 ````
 
-- factory and dtype
-- param docs and properties and methods and attributes
-- advanced: hash and shared mem
-
 #### Advanced: Order Book Hash, Multiprocessing
-#### Docstring
+The current state of the order book (bids and asks) can be captured via hashing:
+````python
+import polypy as plp
+
+book = plp.OrderBook(...)
+
+market_id = "..."   # market ID to which the token belongs to
+timestamp = ...     # int: time of order book generation in millis
+book.hash(market_id, timestamp)
+````
+The timestamp denotes the time of order book generation, which is when the order book last changed.
+The hash can be used, to prove the conformity of a locally maintained order book (or can be used as e.g., a key for a dict).
+Usually, the user does not need to care about the hash as `polypy` will check hash conformity with incoming websocket 
+messages automatically.
+  
+The default implementation is not suitable for multiprocessing. If multiprocessing is necessary, the `zeros_factory` must 
+return an array of zeros which is capable of being used within multiprocessing - typically one would choose a shared memory 
+implementation for this purpose (_multiprocessing.SharedMemory_). Furthermore, the zeros array returned by `zeros_factory` 
+must implement adequate locking/mutex as `OrderBook` does not use any (and does not need) any sophisticated locking.
+
 
 ## Orders
 ### Order Types
