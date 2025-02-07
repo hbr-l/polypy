@@ -24,7 +24,26 @@ or
 ````
 Note, that depending on your terminal/shell, you might need to run `pip install '.[examples]'` (quotation marks) instead.
 
-### Authentication and Allowances
+### Allowances and Authentication
+_`Polypy` does neither support setting allowances, nor creating API keys, as this is outside the scope of this package.  
+Please refer to Polymarket's official documentation._  
+If you use Mail/Magic-Login, please refer to [Magic-Login](#magic-login), which simplifies allowances and authentication
+quite a lot (i.e., actually not necessary then).
+
+#### Allowances
+In order to be able to trade on Polymarket, the correct token allowances must be set before orders can be placed via the API.
+  
+`PolyPy`'s goal is to facilitate trading and to enable comfortably interacting with Polymarket's APIs (REST and websocket).  
+Therefore, `PolyPy` does not support setting or updating account allowances, which are needed for trading on Polymarket.
+  
+Please refer [py-clob-client](https://github.com/Polymarket/py-clob-client/tree/main), the official Polymarket documentation 
+and their Discord. If you are using Mail/Magic-Login, please refer to [Magic-Login](#magic-login).
+
+#### Authentication
+
+
+#### Magic-Login
+
 ### Floating Point Imprecision, Rounding and Decimal Type
 ### Rate and Trading Limits
 

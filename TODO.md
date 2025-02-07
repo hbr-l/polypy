@@ -42,6 +42,8 @@ _(backward-incompatible changes, changes in signatures)_
 - [ ] More specialized exception classes (esp. in OrderManager, PositionManager, UserStream)
 - [ ] More msgspec.Structs for decoding JSON
 - [ ] Use more TypeVar for better typing (e.g., `create_limit_order`, `create_market_order`)
+- [ ] Set defaults for ENDPOINT (really, only for testing used)
+- [ ] Remove INSERT_STATUS.DEFINED from `polypy.order.common.CANCELABLE_INSERT_STATI` (debatable...?, tend to keep)
 
 ## Fix
 _(backward-compatible changes, no changes in signatures)_
@@ -80,7 +82,7 @@ leads to iterating over timestamps in order to find the correct hash if and only
 ## Repository and Git
 - [ ] Documentation
 - [ ] Examples
-- [ ] Setup Github actions
+- [ ] Setup GitHub actions
 - [ ] Setup versioning
 - [ ] Rework profiling
 - [ ] Rework tests
