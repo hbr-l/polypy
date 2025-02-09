@@ -8,7 +8,12 @@ from collections import OrderedDict, deque, namedtuple
 from typing import Any, Callable, Literal, NoReturn, Self, TypeAlias, Union
 
 from polypy.constants import ENDPOINT
-from polypy.exceptions import EventTypeException, StreamException, SubscriptionException
+from polypy.exceptions import (
+    EventTypeException,
+    OrderGetException,
+    StreamException,
+    SubscriptionException,
+)
 from polypy.manager.order import OrderManagerProtocol
 from polypy.manager.position import PositionManagerProtocol
 from polypy.order import INSERT_STATUS, SIDE, OrderProtocol
@@ -243,6 +248,7 @@ _TradeOrderInfo = namedtuple(
 
 
 # todo spec untrack pos bool
+# todo order_manager see new todo necessary
 # todo clean really without canceled? -> Tracking Bug could also occur for others -> delete and rename callback
 
 
@@ -627,12 +633,20 @@ class UserStream(AbstractStreamer):
         tpl_mngs_idx = self._filter_tuple_mngs(msg.id)
 
         for tm_idx in tpl_mngs_idx:
-            self.tuple_mngs[tm_idx][0].update(
-                order_id=msg.id,
-                status=msg.status,
-                size_matched=msg.size_matched,
-                created_at=msg.created_at,
-            )
+            # in some cases, order_id still might be cached
+            #   that's wyh we use a try except
+            try:
+                self.tuple_mngs[tm_idx][0].update(
+                    order_id=msg.id,
+                    status=msg.status,
+                    size_matched=msg.size_matched,
+                    created_at=msg.created_at,
+                )
+            except OrderGetException:
+                # order_id still was in cache
+                # OrderGetException indicates, that order_id no longer in order manager
+                #   so we remove it manually from the list
+                tpl_mngs_idx.remove(tm_idx)
 
         # only untrack specific order id, but do not clean specific stati,
         #   because order objects might still be needed for self._trade_message
