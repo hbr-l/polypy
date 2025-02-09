@@ -3,7 +3,7 @@ import datetime
 import math
 import threading
 import warnings
-from typing import Any, Collection, KeysView, Literal, Protocol, TypeAlias
+from typing import Any, KeysView, Literal, Protocol, TypeAlias
 
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
@@ -273,7 +273,7 @@ class OrderManagerProtocol(Protocol):
     def cancel_all(
         self,
         mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
-        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
+        statuses: INSERT_STATUS | list[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
     ) -> tuple[list[FrozenOrder], CancelOrdersResponse]:
         """Cancel all orders tracked by the Order Manager. Orders are not automatically untracked.
         This only cancels all order of the Order Manager BUT NOT all orders of the associated account!
@@ -322,7 +322,7 @@ class OrderManagerProtocol(Protocol):
 
     def clean(
         self,
-        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = TERMINAL_INSERT_STATI,
+        statuses: INSERT_STATUS | list[INSERT_STATUS] = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         """Untrack all orders with specified status OR expiration. This does not cancel any orders.
@@ -382,7 +382,12 @@ class LimitOrderFactory(Protocol):
 
 
 def _parse_to_list(x: Any | list[Any]) -> tuple[bool, list[Any]]:
-    return (False, x) if isinstance(x, list) else (True, [x])
+    if isinstance(x, list):
+        return False, x
+    elif isinstance(x, (set, tuple)):
+        return False, list(x)
+
+    return True, [x]
 
 
 def _filter_update_kwargs(kwargs: dict) -> dict:
@@ -788,7 +793,7 @@ class OrderManager(OrderManagerProtocol):
         return frozen_order(order), response
 
     # noinspection SpellCheckingInspection
-    def _uptrack_objs(self, orders: list[AnyOrderProtocol]) -> None:
+    def _uptrack_orders(self, orders: list[AnyOrderProtocol]) -> None:
         untracked_orders = [
             order for order in orders if order.id not in self.order_dict.keys()
         ]
@@ -801,13 +806,13 @@ class OrderManager(OrderManagerProtocol):
             self.track(order, sync=False)
 
     # noinspection SpellCheckingInspection
-    def _uptrack_parse_batch(
+    def _uptrack_get_orders(
         self, orders: list[AnyOrderProtocol | str], err_msg: str
     ) -> list[OrderProtocol]:
         try:
             if not isinstance(orders[0], str):  # order objects
                 # handle untracked orders
-                self._uptrack_objs(orders)
+                self._uptrack_orders(orders)
 
                 # get order ids, because in case of frozen order,
                 #   we have to retrieve the original order object
@@ -832,13 +837,14 @@ class OrderManager(OrderManagerProtocol):
         )
 
         self._validate()
+
+        if isinstance(orders, (list, tuple, set)) and not orders:
+            return [], CancelOrdersResponse(None, {})
+
         _single, orders = _parse_to_list(orders)
 
-        if not orders:
-            raise OrderUpdateException("`orders` is empty, did not receive any orders.")
-
         with self.lock:
-            orders = self._uptrack_parse_batch(orders, _err_msg)
+            orders = self._uptrack_get_orders(orders, _err_msg)
 
             orders, response = cancel_orders(
                 endpoint=self.rest_endpoint,
@@ -859,12 +865,11 @@ class OrderManager(OrderManagerProtocol):
     def cancel_all(
         self,
         mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
-        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
+        statuses: INSERT_STATUS | list[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
     ) -> tuple[list[FrozenOrder], CancelOrdersResponse]:
         self._validate()
 
-        if isinstance(statuses, INSERT_STATUS):
-            statuses = [statuses]
+        _, statuses = _parse_to_list(statuses)
 
         with self.lock:
             if orders := [
@@ -909,7 +914,7 @@ class OrderManager(OrderManagerProtocol):
             _single, orders = False, list(self.order_dict.values())
         else:
             _single, orders = _parse_to_list(order)
-            orders = self._uptrack_parse_batch(orders, _err_msg)
+            orders = self._uptrack_get_orders(orders, _err_msg)
 
         # only sync DEFINED, LIVE, DELAYED
         orders = [
@@ -952,14 +957,16 @@ class OrderManager(OrderManagerProtocol):
 
     def clean(
         self,
-        statuses: INSERT_STATUS | Collection[INSERT_STATUS] = TERMINAL_INSERT_STATI,
+        statuses: INSERT_STATUS | list[INSERT_STATUS] = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         # filter out status and expiration
         self._validate()
 
-        if isinstance(statuses, INSERT_STATUS):
-            statuses = [statuses]
+        if isinstance(statuses, (list, set, tuple)) and not statuses:
+            return []
+
+        _, statuses = _parse_to_list(statuses)
 
         rem_orders = []
 

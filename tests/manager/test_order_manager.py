@@ -860,9 +860,7 @@ def test_cancel(
 
 
 def test_cancel_empty(order_manager):
-    with pytest.raises(OrderUpdateException) as record:
-        order_manager.cancel(orders=[])
-    assert "empty" in str(record)
+    order_manager.cancel(orders=[])
 
 
 def test_cancel_all(order_manager, mock_cancel_order, sample_order):
@@ -1423,6 +1421,15 @@ def test_clean(
     # empty input
     order_manager.clean([], 0)
     assert list(order_manager.order_ids) == ["2", "3"]
+
+
+def test_clean_empty(order_manager, sample_order):
+    order = sample_order("123")
+    order.status = INSERT_STATUS.UNMATCHED
+    order_manager.track(order, False)
+
+    order_manager.clean([])
+    assert "123" in order_manager.order_ids
 
 
 def test_contains(order_manager, sample_order):
