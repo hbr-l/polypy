@@ -643,9 +643,11 @@ class UserStream(AbstractStreamer):
                     created_at=msg.created_at,
                 )
             except OrderGetException:
-                # order_id still was in cache
+                # order_id was still in cache
                 # OrderGetException indicates, that order_id no longer in order manager
                 #   so we remove it manually from the list
+                #   we do not remove it from the cache because there might be a 'trade' message still be incoming
+                #   (and also we do not clean the cache if we untrack orders, so no need in general)
                 tpl_mngs_idx.remove(tm_idx)
 
         # only untrack specific order id, but do not clean specific stati,
