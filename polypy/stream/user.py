@@ -16,7 +16,7 @@ from polypy.order.common import TERMINAL_INSERT_STATI
 from polypy.position import PositionProtocol
 from polypy.stream.common import CHANNEL, AbstractStreamer
 from polypy.structs import MakerOrder, OrderWSInfo, TradeWSInfo
-from polypy.trade import TRADE_STATUS, TRADER_SIDE
+from polypy.trade import TRADER_SIDE
 
 
 def lru_cache_non_empty(max_size: int, copy_mode: Literal["deep", "copy"] | None):
@@ -56,7 +56,12 @@ MarketAssetsInfo = namedtuple(
     "MarketAssetsInfo", ["condition_id", "token_id_yes", "token_id_no"]
 )
 
-BufferSettings = namedtuple("BufferSettings", ["keep_s", "step_s", "max_len"])
+BufferThreadSettings = namedtuple("BufferSettings", ["keep_s", "max_len"])
+
+CleaningThreadSettings = namedtuple(
+    "CleaningThreadSettings",
+    ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"],
+)
 
 TupleManager: TypeAlias = tuple[
     OrderManagerProtocol | None, PositionManagerProtocol | None
@@ -173,9 +178,72 @@ def _numeric_type_balance_total(x: PositionManagerProtocol) -> type | None:
     return numeric_type if numeric_type is not int else float
 
 
+def _parse_buffer_settings(
+    x: BufferThreadSettings | tuple[float, int] | None
+) -> BufferThreadSettings:
+    return BufferThreadSettings(0, 0) if x is None or None in x else x
+
+
+def _parse_cleaning_settings(
+    x: CleaningThreadSettings
+    | tuple[float, list[INSERT_STATUS] | INSERT_STATUS, float]
+    | None
+) -> CleaningThreadSettings:
+    # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
+
+    if x is None or None in x:
+        x = CleaningThreadSettings(0, (), 0, False)
+
+    if isinstance(x[1], INSERT_STATUS):
+        x = CleaningThreadSettings(x[0], [x[1]], x[2], x[3])
+
+    if any(
+        x_i
+        not in [INSERT_STATUS.MATCHED, INSERT_STATUS.UNMATCHED, INSERT_STATUS.DEFINED]
+        for x_i in x[1]
+    ):
+        raise StreamException(
+            "Only INSERT_STATUS.MATCHED, INSERT_STATUS.UNMATCHED and INSERT_STATUS.DEFINED "
+            "allowed in CleaningThreadSettings."
+        )
+
+    return x
+
+
+def _parse_untrack_stati(
+    x: INSERT_STATUS | list[INSERT_STATUS] | None,
+) -> list[INSERT_STATUS]:
+    if x is None:
+        x = []
+
+    if isinstance(x, INSERT_STATUS):
+        x = [x]
+
+    if None in x:
+        x = []
+
+    if any(x_i not in TERMINAL_INSERT_STATI for x_i in x):
+        raise StreamException(
+            "Only INSERT_STATUS in TERMINAL_INSERT_STATI allowed for untrack_insert_status."
+        )
+
+    if any(x_i is INSERT_STATUS.MATCHED for x_i in x):
+        warnings.warn(
+            "INSERT_STATUS.MATCHED via untrack_insert_status might lead to exceptions "
+            "(if more than 128 new orders are submitted between receiving `order` websocket message "
+            "and `trade` websocket message - which is extremely unlikely to happen)."
+        )
+
+    return x
+
+
 _TradeOrderInfo = namedtuple(
     "_TradeOrderInfo", ["order_id", "size", "price", "asset_id", "side"]
 )
+
+
+# todo spec untrack pos bool
+# todo clean really without canceled? -> Tracking Bug could also occur for others -> delete and rename callback
 
 
 # todo allow_untracked_sell? -> allow_neg or allow_untracked_sell -> feature + doc: allow_neg in factory
@@ -189,10 +257,10 @@ class UserStream(AbstractStreamer):
         api_key: str,
         secret: str,
         passphrase: str,
-        untrack_order_terminal: bool = False,
-        clean_terminal_sates_s: float | None = None,
-        monitor_order_assets_s: float | None = 0.1,
-        buffer_settings: BufferSettings | None = (2, 0.01, 5_000),
+        untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
+        cleaning_thread_settings: CleaningThreadSettings | None = None,
+        monitor_assets_thread_s: float | None = 0.1,
+        buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
         ping_time: float | None = 5,
         update_mode: Literal["explicit", "implicit"] = "explicit",
         invalidate_on_exc: bool = True,
@@ -224,7 +292,7 @@ class UserStream(AbstractStreamer):
             for i, tm in enumerate(self.tuple_mngs)
         }  # we use balance_total as proxy to determine the numeric type
 
-        self.untrack_order_terminal = untrack_order_terminal
+        self.untrack_insert_status = _parse_untrack_stati(untrack_insert_status)
         self.callback_clean = callback_clean
 
         if ws_endpoint[-1] != "/":
@@ -233,18 +301,18 @@ class UserStream(AbstractStreamer):
         self.update_mode = update_mode
         self.invalidate_on_exc = invalidate_on_exc
 
-        self.buffer_settings = (
-            buffer_settings if buffer_settings is not None else (0, 0, 0)
-        )
-        self.buffer = deque(maxlen=self.buffer_settings[2])
+        self.buffer_thread_settings = _parse_buffer_settings(buffer_thread_settings)
+        self.buffer = deque(maxlen=self.buffer_thread_settings[1])
         self.buffer_thread: threading.Thread | None = None
         self.buffer_event = threading.Event()
 
         self.monitor_thread: threading.Thread | None = None
-        self.monitor_order_assets_s = monitor_order_assets_s
+        self.monitor_assets_thread_s = monitor_assets_thread_s
 
         self.cleaning_thread: threading.Thread | None = None
-        self.clean_terminal_states_s = clean_terminal_sates_s
+        self.cleaning_thread_settings = _parse_cleaning_settings(
+            cleaning_thread_settings
+        )
 
         self.api_key = api_key
         self.secret = secret
@@ -322,7 +390,7 @@ class UserStream(AbstractStreamer):
         self.buffer_thread.start()
 
     def pre_start(self) -> None:
-        self.buffer = deque(maxlen=self.buffer_settings[2])
+        self.buffer = deque(maxlen=self.buffer_thread_settings[1])
         self._start_aux_threads()
 
     def _stop_aux_threads(self) -> None:
@@ -348,17 +416,17 @@ class UserStream(AbstractStreamer):
 
     def post_stop(self) -> None:
         self._stop_aux_threads()
-        self.buffer = deque(maxlen=self.buffer_settings[2])
+        self.buffer = deque(maxlen=self.buffer_thread_settings[1])
 
     def _monitor_thread(self) -> None:
         if not self.tuple_mngs:
             # if no order managers assigned, we exit immediately
             return
 
-        if self.monitor_order_assets_s is None:
+        if self.monitor_assets_thread_s is None or self.monitor_assets_thread_s <= 0:
             return
 
-        while not self._stop_token.wait(self.monitor_order_assets_s):
+        while not self._stop_token.wait(self.monitor_assets_thread_s):
             for i, tm in enumerate(self.tuple_mngs):
                 if tm[0] is not None and not tm[0].token_ids <= self._asset_ids:
                     self.register_exception(
@@ -369,38 +437,49 @@ class UserStream(AbstractStreamer):
                         )
                     )
 
-    def _clean_thread(self) -> None:
-        if not self.tuple_mngs:
-            # if no order managers assigned, we exit immediately
-            return
+    def _clean_order_managers(self) -> list[OrderProtocol]:
+        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
 
-        if self.clean_terminal_states_s is None:
-            return
-
-        while not self._stop_token.wait(self.clean_terminal_states_s):
-            clean_orders = []
-            clean_positions = []
-            for tm in self.tuple_mngs:
-                if tm[0] is not None:
-                    clean_orders.extend(
-                        tm[0].clean(
-                            [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
-                            int((time.time() - 600) * 1_000),  # todo doc -600: 10 min
-                        )
+        clean_orders = []
+        for tm in self.tuple_mngs:
+            if tm[0] is not None:
+                clean_orders.extend(
+                    tm[0].clean(
+                        self.cleaning_thread_settings[1],
+                        int((time.time() - self.cleaning_thread_settings[2]) * 1_000),
                     )
+                )
+        return clean_orders
+
+    def _clean_position_managers(self) -> list[PositionProtocol]:
+        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
+
+        clean_positions = []
+        if self.cleaning_thread_settings[3]:
+            for tm in self.tuple_mngs:
                 if tm[1] is not None:
                     clean_positions.extend(tm[1].clean())
+        return clean_positions
+
+    def _clean_thread(self) -> None:
+        if not self.tuple_mngs:
+            # if no tuple managers assigned, we exit immediately
+            return
+
+        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
+        if self.cleaning_thread_settings[0] <= 0:
+            return
+
+        while not self._stop_token.wait(self.cleaning_thread_settings[0]):
+            clean_orders = self._clean_order_managers()
+            clean_positions = self._clean_position_managers()
 
             if self.callback_clean is not None and (clean_orders or clean_positions):
                 self.callback_clean(clean_orders, clean_positions)
 
     def _buffer_thread(self) -> None:
-        # buffer_settings: keep_s, step_s, max_len
-        if self.buffer_settings[1] == 0 or self.buffer.maxlen == 0:
+        if self.buffer.maxlen <= 0:
             return
-
-        dt = min(self.buffer_settings[1], self.ping_time)
-        # todo document
 
         while not self._stop_token.is_set():
             if not self.buffer:
@@ -423,7 +502,7 @@ class UserStream(AbstractStreamer):
 
                 # we do not use _stop_token.wait() because it has considerable jitter compared to time.sleep()
                 # therefore we sleep at max ping_time in order to be able to join thread when stop is called
-                time.sleep(dt)
+                time.sleep(0)
 
     @lru_cache_non_empty(max_size=128, copy_mode=None)
     def _filter_tuple_mngs(self, order_id: str) -> set[int]:
@@ -462,22 +541,17 @@ class UserStream(AbstractStreamer):
 
     def _untrack_order_id(
         self,
-        status: TRADE_STATUS | INSERT_STATUS,
+        status: INSERT_STATUS,
         order_id: str,
         ord_mngs_idx: set[int],
     ) -> None:
-        if not self.untrack_order_terminal:
+        if not self.untrack_insert_status:
             return
 
         if not ord_mngs_idx:
             return
 
-        if status not in [
-            TRADE_STATUS.CONFIRMED,
-            TRADE_STATUS.FAILED,
-            INSERT_STATUS.CANCELED,
-            INSERT_STATUS.UNMATCHED,
-        ]:
+        if status not in self.untrack_insert_status:
             return
 
         untracked_orders = [
@@ -485,14 +559,6 @@ class UserStream(AbstractStreamer):
             for tm_idx in ord_mngs_idx
         ]
         untracked_orders = [order for order in untracked_orders if order is not None]
-
-        if any(order.status not in TERMINAL_INSERT_STATI for order in untracked_orders):
-            self.register_exception(
-                StreamException(
-                    f"Internal exception: Not all untracked orders are in TERMINAL_INSERT_STATI. "
-                    f"Orders: {untracked_orders}."
-                )
-            )
 
         if self.callback_clean is not None and untracked_orders:
             self.callback_clean(untracked_orders, [])
@@ -528,8 +594,6 @@ class UserStream(AbstractStreamer):
 
             # should ideally be either be 1 or 0
             nb_updates.append(len(ord_mngs_idx))
-
-            self._untrack_order_id(msg.status, trade_order.order_id, ord_mngs_idx)
 
         min_updates, max_update = min(nb_updates), max(nb_updates)
         # ideally, both should be 1
@@ -595,10 +659,10 @@ class UserStream(AbstractStreamer):
 
         nb_updates = self._parse_msg(msg)
 
-        if nb_updates == 0 and self.buffer.maxlen != 0:
+        if nb_updates == 0 and self.buffer.maxlen > 0:
             # in this case we have not yet performed any update, and we have an active buffer
             # no updates were performed so we push to buffer thread to handle yet unprocessed message
-            self.buffer.append((msg, time.time() + self.buffer_settings[0]))
+            self.buffer.append((msg, time.time() + self.buffer_thread_settings[0]))
             self.buffer_event.set()
         else:
             # in this case we either have no active buffer or updates were performed
