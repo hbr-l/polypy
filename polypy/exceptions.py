@@ -80,6 +80,10 @@ class OrderTrackingException(ManagerException):
     """Exception related to tracking the order by, e.g. an Order Manager."""
 
 
+class OrderGetException(ManagerException):
+    """Exception related to retrieving order id from Order Manager"""
+
+
 class PositionTransactionException(ManagerException):
     """Exception during transacting position."""
 
