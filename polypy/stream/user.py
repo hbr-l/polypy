@@ -586,6 +586,7 @@ class UserStream(AbstractStreamer):
                 EventTypeException(f"Unknown event_type. Message: {msg}.")
             )
         except Exception as e:
+            e.add_note(f"Exception note: websocket received msg={msg}.")
             self.register_exception(e)
 
     def on_msg(self, msg: TradeWSInfo | OrderWSInfo) -> None:
