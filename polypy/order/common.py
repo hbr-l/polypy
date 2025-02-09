@@ -161,13 +161,15 @@ def update_order(
     if strategy_id is not None:
         order.strategy_id = strategy_id
 
-    if status is not None and order.status not in TERMINAL_INSERT_STATI:
-        order.status = status
-    elif status is not None:
-        warnings.warn(
-            f"Ignoring `status={status}`, order is in terminal state: {order.status}"
-        )
-    # else: status = None ignore
+    if status is not None:
+        if order.status not in TERMINAL_INSERT_STATI:
+            order.status = status
+        elif order.status is not status:
+            warnings.warn(
+                f"Ignoring `status={status}`, order is in terminal state: {order.status}"
+            )
+        # else: order_status = status = TERMINAL_INSERT_STATI -> ignore
+    # else: status = None -> ignore
 
     if size_matched is not None and size_matched >= order.size_matched:
         # todo use order.numeric_type(size_matched)? in all cases, size_matched is pre-casted outside plus
@@ -179,13 +181,15 @@ def update_order(
         )
     # else: size_matched = None ignore
 
-    if created_at is not None and (order.created_at is None or order.created_at <= 0):
-        order.created_at = created_at
-    elif created_at is not None:
-        warnings.warn(
-            f"Ignoring `created_at={created_at}`, order.created_at is already set: {order.created_at}"
-        )
-    # else: created_at = None ignore
+    if created_at is not None:
+        if order.created_at is None or order.created_at <= 0:
+            order.created_at = created_at
+        elif order.created_at != created_at:
+            warnings.warn(
+                f"Ignoring `created_at={created_at}`, order.created_at is already set: {order.created_at}"
+            )
+        # else: order.created_at == created_at -> ignore
+    # else: created_at = None -> ignore
 
     return order
 
