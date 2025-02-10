@@ -13,6 +13,7 @@ from polypy.constants import CHAIN_ID, ENDPOINT
 from polypy.exceptions import (
     ManagerInvalidException,
     OrderCreationException,
+    OrderGetException,
     OrderTrackingException,
     OrderUpdateException,
     PolyPyException,
@@ -558,6 +559,13 @@ class OrderManager(OrderManagerProtocol):
         if order.id not in self.order_dict:
             self._inc_token_id_count(order.token_id)
 
+        # we check, that for a given order_id the corresponding token_id hasn't changed:
+        #   at the time when the order is added, we increase the token counter for token A
+        #   if the token_id had changed at the time of popping the order to token B, we would
+        #   decrease the token counter for token B instead of token A, which would invalidate our token counter
+        # in use cases, where the order manager is solely used in tight conjunction with a UserStream,
+        #   the above scenario is extreme unlikely - though for more manual use, we still perform this check
+        #   to be safe
         if (
             order.id in self.order_dict
             and order.token_id != self.order_dict[order.id].token_id
@@ -640,7 +648,7 @@ class OrderManager(OrderManagerProtocol):
             return self.order_dict[order_id]
 
         except KeyError as e:
-            raise OrderTrackingException(
+            raise OrderGetException(
                 f"{datetime.datetime.now()} | Order not found for id: {order_id}."
             ) from e
 
@@ -798,16 +806,16 @@ class OrderManager(OrderManagerProtocol):
             order for order in orders if order.id not in self.order_dict.keys()
         ]
 
+        # first check all orders are trackable before adding any of the orders
         for order in untracked_orders:
-            if order.id not in self.order_dict.keys():
-                self._is_trackable(order)
+            self._is_trackable(order)
 
         for order in untracked_orders:
             self.track(order, sync=False)
 
     # noinspection SpellCheckingInspection
     def _uptrack_get_orders(
-        self, orders: list[AnyOrderProtocol | str], err_msg: str
+        self, orders: list[AnyOrderProtocol | str]
     ) -> list[OrderProtocol]:
         try:
             if not isinstance(orders[0], str):  # order objects
@@ -819,8 +827,18 @@ class OrderManager(OrderManagerProtocol):
                 orders = [order.id for order in orders]
 
             orders = [self.order_dict[order_id] for order_id in orders]
-        except (OrderTrackingException, KeyError) as e:
-            raise OrderTrackingException(err_msg) from e
+        except KeyError as e:
+            raise OrderGetException(
+                "Not all order ids tracked by the Order Manager. "
+                "Make sure to track orders first. "
+                "Orders have not been processed (no single REST call submitted)!"
+            ) from e
+        except OrderTrackingException as e:
+            raise OrderTrackingException(
+                "Not all orders trackable by the Order Manager. "
+                "Make sure that order objects are trackable or already tracked. "
+                "Orders have not been processed (no single REST call submitted)!"
+            ) from e
 
         return orders
 
@@ -829,13 +847,6 @@ class OrderManager(OrderManagerProtocol):
         orders: AnyOrderProtocol | str | list[AnyOrderProtocol | str],
         mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
     ) -> tuple[FrozenOrder | list[FrozenOrder], CancelOrdersResponse]:
-        _err_msg = (
-            "Not all order ids tracked or trackable by the Order Manager. "
-            "Make sure to track orders first when using order ids instead of order objects. "
-            "Make sure that orders objects are trackable or already tracked when using oder objects. "
-            "Orders have not been canceled (no single REST call submitted)!"
-        )
-
         self._validate()
 
         if isinstance(orders, (list, tuple, set)) and not orders:
@@ -844,7 +855,7 @@ class OrderManager(OrderManagerProtocol):
         _single, orders = _parse_to_list(orders)
 
         with self.lock:
-            orders = self._uptrack_get_orders(orders, _err_msg)
+            orders = self._uptrack_get_orders(orders)
 
             orders, response = cancel_orders(
                 endpoint=self.rest_endpoint,
@@ -903,18 +914,11 @@ class OrderManager(OrderManagerProtocol):
     def _parse_syncable_orders(
         self, order: AnyOrderProtocol | str | list[AnyOrderProtocol | str] | None
     ) -> tuple[bool, list[AnyOrderProtocol]]:
-        _err_msg = (
-            "Not all order ids tracked or trackable by the Order Manager. "
-            "Make sure to track orders first when using order ids instead of order objects. "
-            "Make sure that orders objects are trackable or already tracked when using oder objects. "
-            "Orders have not been synced (no single REST call submitted)!"
-        )
-
         if order is None:
             _single, orders = False, list(self.order_dict.values())
         else:
             _single, orders = _parse_to_list(order)
-            orders = self._uptrack_get_orders(orders, _err_msg)
+            orders = self._uptrack_get_orders(orders)
 
         # only sync DEFINED, LIVE, DELAYED
         orders = [

@@ -10,6 +10,7 @@ from polypy.constants import CHAIN_ID
 from polypy.exceptions import (
     ManagerInvalidException,
     OrderCreationException,
+    OrderGetException,
     OrderPlacementFailure,
     OrderPlacementUnmatched,
     OrderTrackingException,
@@ -329,7 +330,7 @@ def test_update(order_manager, sample_order):
 
     # order non existent
     assert "other" not in list(order_manager.order_ids)
-    with pytest.raises(OrderTrackingException):
+    with pytest.raises(OrderGetException):
         order_manager.update(order_id="other")
 
     # frozen attribute
@@ -374,7 +375,7 @@ def test_modify(order_manager, sample_order):
 
     # order non existent
     assert "other" not in list(order_manager.order_ids)
-    with pytest.raises(OrderTrackingException):
+    with pytest.raises(OrderGetException):
         order_manager.modify(order_id="other")
 
     # frozen attribute
@@ -606,7 +607,7 @@ def test_cancel(
     order = frozen_order(order)
     with pytest.raises(OrderTrackingException) as record:
         order_manager.cancel(order)
-    assert "Not all order ids tracked" in str(record)
+    assert "Not all orders trackable" in str(record)
     assert list(order_manager.order_ids) == ["1234"]
     assert order.status is INSERT_STATUS.LIVE
 
@@ -657,7 +658,7 @@ def test_cancel(
     orders[1] = frozen_order(orders[1])
     with pytest.raises(OrderTrackingException) as record:
         order_manager.cancel(orders)
-    assert "Not all order ids tracked" in str(record)
+    assert "Not all orders trackable" in str(record)
     assert list(order_manager.order_ids) == [
         "1234",
         "2345",
@@ -767,7 +768,7 @@ def test_cancel(
     # not yet tracked: fail
     order = sample_order("13141516")
     order.status = INSERT_STATUS.DEFINED
-    with pytest.raises(OrderTrackingException) as record:
+    with pytest.raises(OrderGetException) as record:
         order_manager.cancel("13141516")
     assert "Not all order" in str(record)
     assert order_manager.get_by_id("12131415").status is INSERT_STATUS.DEFINED
@@ -835,7 +836,7 @@ def test_cancel(
     assert list(ret_resp.not_canceled.keys()) == ["15161718", "16171819"]
 
     # partial not yet tracked: fail
-    with pytest.raises(OrderTrackingException) as record:
+    with pytest.raises(OrderGetException) as record:
         order_manager.cancel(
             ["15161718", "16171819", "17181920"], mode_not_canceled="ignore"
         )
@@ -937,7 +938,7 @@ def test_sync(
     order = frozen_order(sample_order("2", "strat"))
     with pytest.raises(OrderTrackingException) as record:
         order_manager.sync(order, "except")
-    assert "Not all order ids" in str(record)
+    assert "Not all orders trackable" in str(record)
     assert list(order_manager.order_ids) == ["1"]
     assert order_manager.get_by_id("1").size_matched == 0.5
 
@@ -1011,7 +1012,7 @@ def test_sync(
     )
     with pytest.raises(OrderTrackingException) as record:
         order_manager.sync(orders, "except")
-    assert "Not all order ids" in str(record)
+    assert "Not all orders trackable" in str(record)
     assert list(order_manager.order_ids) == ["1", "3", "4", "5", "6", "7", "8"]
 
     # tracked: success
@@ -1078,7 +1079,7 @@ def test_sync(
 
     # --- str ---
     # not yet tracked: fail
-    with pytest.raises(OrderTrackingException) as record:
+    with pytest.raises(OrderGetException) as record:
         order_manager.sync("15", "except")
     assert "Not all order ids" in str(record)
     assert list(order_manager.order_ids) == [
@@ -1147,7 +1148,7 @@ def test_sync(
 
     # --- list str ---
     # not yet tracked: fail
-    with pytest.raises(OrderTrackingException) as record:
+    with pytest.raises(OrderGetException) as record:
         order_manager.sync(["15", "16"], "except")
     assert "Not all order ids" in str(record)
     assert list(order_manager.order_ids) == [
