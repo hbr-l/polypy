@@ -83,13 +83,13 @@ def _split_market_assets(
         asset_ids = {market_assets[1], market_assets[2]}
 
     if not market_ids:
-        raise StreamException("No markets (condition_id) to subscribe to.")
+        raise SubscriptionException("No markets (condition_id) to subscribe to.")
 
     if None in market_ids:
-        raise StreamException("None not allowed in market ids (condition_id).")
+        raise SubscriptionException("None not allowed in market ids (condition_id).")
 
     if None in asset_ids:
-        raise StreamException("None not allowed in asset ids (token_id).")
+        raise SubscriptionException("None not allowed in asset ids (token_id).")
 
     return market_ids, asset_ids
 
@@ -112,7 +112,7 @@ def _parse_tuple_manager_list(
 def _assert_api_key_order_mng(tuple_manager: list[TupleManager], api_key: str) -> None:
     for tm in tuple_manager:
         if tm[0] is not None and tm[0].api_key != api_key:
-            raise StreamException(
+            raise SubscriptionException(
                 f"OrderManager.api_key={tm[0].api_key} does not match specified api_key={api_key}. "
                 f"Cannot receive stream data for that api_key."
             )
@@ -125,7 +125,9 @@ def _assert_unique_order_mngs(
     valid_tpl_mngs = [tm for tm in tuple_manager if tm[0] is not None]
     order_mngs = {id(tm[0]) for tm in valid_tpl_mngs}
     if len(order_mngs) != len(valid_tpl_mngs):
-        raise StreamException("All Order Managers in `tuple_manager` must be unique.")
+        raise SubscriptionException(
+            "All Order Managers in `tuple_manager` must be unique."
+        )
 
 
 def _assert_token_ids_order_mngs(
@@ -138,8 +140,15 @@ def _assert_token_ids_order_mngs(
     )
 
     if not token_ids.issubset(asset_ids):
-        raise StreamException(
+        raise SubscriptionException(
             "Not all token_ids of all Order Managers are contained in `market_assets`."
+        )
+
+
+def _check_max_subscriptions(market_ids: set[str], max_sub: int) -> None:
+    if len(market_ids) > max_sub:
+        raise SubscriptionException(
+            f"Exceeding max number of subscriptions (={max_sub}). Got: {len(market_ids)}"
         )
 
 
@@ -201,7 +210,7 @@ def _parse_untrack_insert_stati(
         x = []
 
     if any(x_i not in TERMINAL_INSERT_STATI for x_i in x):
-        raise StreamException(
+        raise SubscriptionException(
             "Only INSERT_STATUS in TERMINAL_INSERT_STATI allowed for untrack_insert_status."
         )
 
@@ -228,7 +237,7 @@ def _parse_untrack_trade_stati(
         x = []
 
     if any(x_i is TRADE_STATUS.RETRYING for x_i in x):
-        raise StreamException(
+        raise SubscriptionException(
             "TRADE_STATUS.RETRYING must not be in untrack_trade_status."
         )
 
@@ -279,10 +288,12 @@ class UserStream(AbstractStreamer):
         callback_untrack: Callable[[list[OrderProtocol], list[PositionProtocol]], None]
         | None = None,
         ws_channel: CHANNEL | str = CHANNEL.USER,
+        max_subscriptions: int = 500,
     ) -> None:
         market_ids, asset_ids = _split_market_assets(market_assets)
 
         tuple_manager = _parse_tuple_manager_list(tuple_manager)
+        _check_max_subscriptions(market_ids, max_subscriptions)
         _assert_api_key_order_mng(tuple_manager, api_key)
         _assert_unique_order_mngs(tuple_manager)
         _assert_token_ids_order_mngs(tuple_manager, asset_ids)
@@ -325,16 +336,20 @@ class UserStream(AbstractStreamer):
         self.passphrase = passphrase
 
         def _callback_invalidate_exc(stream: Self, exc: Exception) -> None:
+            reason = (
+                f"Exception in {self.__class__.__name__}. "
+                f"Original exception: {exc.__class__.__name__}({exc})."
+                f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
+            )
+
             if self.invalidate_on_exc:
                 for tm in self.tuple_mngs:
-                    if tm is None:
-                        continue
+                    if tm[0] is not None:
+                        tm[0].invalidate(reason)
 
-                    tm[0].invalidate(
-                        f"Exception in {self.__class__.__name__}. "
-                        f"Original exception: {exc.__class__.__name__}({exc})."
-                        f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
-                    )
+                    if tm[1] is not None:
+                        tm[1].invalidate(reason)
+
                 warnings.warn(
                     f"Exception in {self.__class__.__name__}. "
                     f"Invalidated all Order Managers."
