@@ -103,9 +103,9 @@ def _frozen(_, attr, ___) -> NoReturn:
 class Position:
     """Simple Position implementation.
 
-    Transactions will be immediately performed on TRADE_STATUS.MATCHED.
+    Transactions (settlement) will be immediately performed on TRADE_STATUS.MATCHED.
     Transactions will be reverted on TRADE_STATUS.FAILED.
-    All other TRADE_STATUS will be ignored
+    All other TRADE_STATUS will be ignored.
 
     This might lead to incorrect results, when:
     1) Any duplicate transaction performed will lead to incorrect results (double transaction).
@@ -255,11 +255,11 @@ class CSMPosition(Position):
     which tracks the entire lifecycle of the trade during transaction.
 
     This implementation mitigate false double transactions if a TRADE_STATE is repeated by accident and
-    is robust to missing at least preceding states to settlement.
+    is robust to missing at least preceding states up to settlement.
 
     Nonetheless, potential pitfalls are:
-    1) If settlement state is set to TRADE_STATUS.MINED, but missed all (!) states except TRADE_STATUS.CONFIRMED (hit),
-        then transaction will be missed.
+    1) If settlement state is set to TRADE_STATUS.MINED, but missed all (MATCHED AND! MINED) states except
+        TRADE_STATUS.CONFIRMED (received message), then transaction will be missed.
     2) If settlement state is set to TRADE_STATUS.MINED and trade has reached settlement, TRADE_STATUS.FAILED
         will have no effect, which results in not reverting the trade.
     """
