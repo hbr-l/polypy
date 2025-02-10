@@ -249,7 +249,7 @@ _TradeOrderInfo = namedtuple(
 
 
 # todo allow_untracked_sell? -> allow_neg or allow_untracked_sell -> feature + doc: allow_neg in factory
-# todo if one of multiple updates on_msg raise exception: transaction will be conducted, so manager states might be compromised -> doc
+# todo if one of multiple updates on_msg raise exception: transaction will be conducted, so manager states might be compromised -> if order_manager is invalidate, then it really is -> doc
 # todo doc: if clean manually, potential danger of position not being adjusted/transacted if order not anymore in order manager (in explicit mode: will raise exception)
 #   -> only manually clean if no websocket traffic is expected, especially cancel
 # todo doc: in notes: untrack_insert_status only works because of lru_cache, especially if cancel -> see point above
