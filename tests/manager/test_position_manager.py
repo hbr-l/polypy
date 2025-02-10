@@ -4,7 +4,11 @@ import pytest
 import responses
 
 from polypy.book import OrderBook
-from polypy.exceptions import PositionTrackingException, PositionTransactionException
+from polypy.exceptions import (
+    ManagerInvalidException,
+    PositionTrackingException,
+    PositionTransactionException,
+)
 from polypy.manager.position import PositionManager
 from polypy.order.common import SIDE
 from polypy.position import ACT_SIDE, USDC, CSMPosition, Position, frozen_position
@@ -327,3 +331,45 @@ def test_decimal():
     assert list(pm.asset_ids) == [USDC, "test"]
 
     assert pm.total({"test": Decimal("0.5")}, None) == Decimal("14.5")
+
+
+def test_invalidate():
+    pm = PositionManager(None, 10)
+
+    pm.invalidate()
+
+    with pytest.raises(ManagerInvalidException) as record:
+        pm.create_position("1234", 10)
+    assert "invalid" in str(record)
+    assert list(pm.asset_ids) == [USDC]
+
+    with pytest.raises(ManagerInvalidException) as record:
+        _ = pm.balance_total
+    assert "invalid" in str(record)
+    assert list(pm.asset_ids) == [USDC]
+
+    pm._invalid_token = False
+    pm.create_position("1234", 10)
+    assert list(pm.asset_ids) == [USDC, "1234"]
+    assert pm.balance_total == 10
+
+    pm.invalidate("pencil broke")
+    with pytest.raises(ManagerInvalidException) as record:
+        pm.untrack("1234")
+    assert "invalid" in str(record)
+    assert "pencil broke" in str(record)
+    assert list(pm.asset_ids) == [USDC, "1234"]
+
+    with pytest.raises(ManagerInvalidException) as record:
+        pm.transact("1234", 1, 0.5, "1234123", SIDE.BUY, TRADE_STATUS.MATCHED, False)
+    assert "invalid" in str(record)
+    assert list(pm.asset_ids) == [USDC, "1234"]
+
+    with pytest.raises(ManagerInvalidException) as record:
+        _ = pm.balance_total
+    assert "invalid" in str(record)
+    assert list(pm.asset_ids) == [USDC, "1234"]
+
+    pm._invalid_token = False
+    assert pm.balance_total == 10
+    assert pm.get_by_id("1234").size == 10

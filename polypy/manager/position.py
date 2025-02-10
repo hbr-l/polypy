@@ -5,16 +5,20 @@ from typing import TYPE_CHECKING, Any, KeysView, Literal, Protocol, Union
 
 from polypy.book import OrderBook
 from polypy.constants import ENDPOINT, SIG_DIGITS_SIZE
-from polypy.exceptions import PositionTrackingException, PositionTransactionException
+from polypy.exceptions import (
+    ManagerInvalidException,
+    PositionTrackingException,
+    PositionTransactionException,
+)
 from polypy.order.common import INSERT_STATUS, SIDE
 from polypy.position import (
     ACT_SIDE,
     USDC,
     FrozenPosition,
     Position,
+    PositionFactory,
     PositionProtocol,
     frozen_position,
-    PositionFactory,
 )
 from polypy.rest.api import get_midpoints
 from polypy.rounding import round_down, round_down_tenuis_up
@@ -59,6 +63,16 @@ class PositionManagerProtocol(Protocol):
     def balance_available(self) -> NumericAlias:
         """USDC balance minus pending withdrawals due to trades."""
         ...
+
+    @property
+    def valid(self) -> bool:
+        """True, if .invalidate() has not been called. False, if Position Manager has been invalidated."""
+        ...
+
+    def invalidate(self, reason: str | None = None) -> None:
+        """Invalidate Position Manager s.t. any successive call will raise an exception.
+        This method is mainly used for loose coupling of the Position Manager and the User Stream
+        """
 
     def transact(
         self,
@@ -187,6 +201,9 @@ def _is_position(x: Any) -> bool:
     return hasattr(x, "asset_id") and hasattr(x, "size") and hasattr(x, "act")
 
 
+_ERR_MSG_INVALID = "self.invalidate() was called. Position Manager is invalidated."
+
+
 # todo move lock to custom dict factory, make all operations atomic
 class PositionManager(PositionManagerProtocol):
     def __init__(
@@ -224,6 +241,9 @@ class PositionManager(PositionManagerProtocol):
 
         self.lock = threading.RLock()
 
+        self._invalid_token: bool = False
+        self._invalid_reason: str = _ERR_MSG_INVALID
+
     def __contains__(self, asset_id: str) -> bool:
         return asset_id in self.position_dict
 
@@ -240,6 +260,24 @@ class PositionManager(PositionManagerProtocol):
             raise PositionTrackingException(
                 f"{datetime.datetime.now()} | Position not found for id: {asset_id}."
             ) from e
+
+    @property
+    def valid(self) -> bool:
+        return not self._invalid_token
+
+    def invalidate(self, reason: str | None = None) -> None:
+        self._invalid_token = True
+
+        if reason is None:
+            reason = (
+                "E.g., transaction failed within the corresponding User Stream "
+                "that the Position Manager was assigned to."
+            )
+        self._invalid_reason = f"{_ERR_MSG_INVALID} Reason: {reason}"
+
+    def _validate(self) -> None:
+        if self._invalid_token:
+            raise ManagerInvalidException(self._invalid_reason)
 
     def _get_or_create_position(
         self, asset_id: str, allow_create: bool
@@ -274,6 +312,7 @@ class PositionManager(PositionManagerProtocol):
             )
 
         with self.lock:
+            self._validate()
             position = self._get_or_create_position(asset_id, allow_create)
 
             usdc = self._get_position(USDC)
@@ -307,20 +346,24 @@ class PositionManager(PositionManagerProtocol):
     @property
     def balance(self) -> NumericAlias:
         with self.lock:
+            self._validate()
             return self.position_dict[USDC].size
 
     @property
     def balance_available(self) -> NumericAlias:
         with self.lock:
+            self._validate()
             return self.position_dict[USDC].size_available
 
     @property
     def balance_total(self) -> NumericAlias:
         with self.lock:
+            self._validate()
             return self.position_dict[USDC].size_total
 
     def withdraw(self, amount: NumericAlias) -> None:
         with self.lock:
+            self._validate()
             self.position_dict[USDC].size = round_down(
                 self.position_dict[USDC].size - amount,
                 self.position_dict[USDC].size_sig_digits,
@@ -328,6 +371,7 @@ class PositionManager(PositionManagerProtocol):
 
     def deposit(self, amount: NumericAlias) -> None:
         with self.lock:
+            self._validate()
             self.position_dict[USDC].size = round_down(
                 self.position_dict[USDC].size + amount,
                 self.position_dict[USDC].size_sig_digits,
@@ -335,6 +379,7 @@ class PositionManager(PositionManagerProtocol):
 
     def clean(self) -> list[PositionProtocol]:
         with self.lock:
+            self._validate()
             rem_pos = [
                 position
                 for asset_id, position in self.position_dict.items()
@@ -349,6 +394,7 @@ class PositionManager(PositionManagerProtocol):
     # noinspection PyProtocol
     def get(self, **kwargs) -> list[FrozenPosition]:
         with self.lock:
+            self._validate()
             try:
                 return [frozen_position(self.position_dict[kwargs["asset_id"]])]
             except KeyError:
@@ -364,6 +410,7 @@ class PositionManager(PositionManagerProtocol):
     # noinspection PyTypeHints
     def get_by_id(self, asset_id: str | Literal[USDC]) -> FrozenPosition | None:
         with self.lock:
+            self._validate()
             try:
                 return frozen_position(self.position_dict[asset_id])
             except KeyError:
@@ -421,6 +468,7 @@ class PositionManager(PositionManagerProtocol):
         tick_size: float | None,
     ) -> NumericAlias:
         with self.lock:
+            self._validate()
             midpoints = self._parse_midpoints(midpoints)
 
             if tick_size is None:
@@ -442,6 +490,7 @@ class PositionManager(PositionManagerProtocol):
         _is_trackable(position)
 
         with self.lock:
+            self._validate()
             if len(self.position_dict) >= self.max_size:
                 raise PositionTrackingException(
                     f"Exceeding max_size={self.max_size}.  Either set a higher max_size, or use"
@@ -457,6 +506,7 @@ class PositionManager(PositionManagerProtocol):
             )
 
         with self.lock:
+            self._validate()
             return self.position_dict.pop(asset_id, None)
 
     # noinspection PyProtocol
@@ -480,6 +530,9 @@ class PositionManager(PositionManagerProtocol):
     ) -> NumericAlias:
         if not isinstance(order_managers, list):
             order_managers = [order_managers]
+
+        with self.lock:
+            self._validate()
 
         return buying_power(
             self, order_managers, self.position_dict[USDC].size_sig_digits, "available"
