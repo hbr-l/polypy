@@ -103,10 +103,10 @@ is implemented as a separate token, s.t. each market consists of two (or in case
   
 Each token has its own limit order book, though they are directly coupled via a complementary relationship:
 Buying 1 Yes share is equivalent to selling 1 No share, and vice versa.  
-Therefore, the bid of a Yes share (buy order) is directly related to the ask of a No share (sell order):
-$$p_{bid}^{yes} = 1 - p_{ask}^{no}$$
-and quantities:
-$$q_{bid}^{yes} = q_{ask}^{no}$$
+Therefore, the bid of a Yes share (buy order) is directly related to the ask of a No share (sell order):  
+$$p_{bid}^{yes} = 1 - p_{ask}^{no}$$  
+and quantities:  
+$$q_{bid}^{yes} = q_{ask}^{no}$$  
   
 Because of this complement, both tokens in essence point to the same unified limit order book.  
 By this, it is sufficient to only track the order book for one token, as the complement can easily be computed with above 
@@ -166,11 +166,20 @@ book = plp.OrderBook(token_id, tick_size)
 
 The `OrderBook` class stores price and quantities (=size) for bids and asks at each level, as well as the tick size:
 ````python
+import polypy as plp
+book: plp.OrderBook
+
 # book keeps track of (excerpt):
 best_ask_p = book.best_ask_price    # numeric value
 best_ask_q = book.best_ask_size     # numeric value
 mid = book.midpoint_price       # numeric value
 tick_size = book.tick_size      # numeric value
+
+arr_ask_prices = book.ask_prices    # array of ask prices: contains only prices with non-zero sizes 
+arr_ask_sizes = book.ask_sizes      # array of non-zero ask sizes
+
+arr_raw_prices, arr_raw_sizes = book.asks
+# raw arrays: contains zero-size elements as well and has therefore length (1/tick_size)+1
 ````
 
 - Asks are sorted in ascending order: best ask (lowest) at index 0.  
@@ -190,7 +199,7 @@ import polypy as plp
 book = plp.OrderBook(...)
 market_price = book.marketable_price(plp.SIDE.BUY, 100)
 ````
-Above example calculate the price at which a buy (marketable/aggressive limit) order of 100 USDC volume would fill immediately.
+Above example calculates the price at which a buy (marketable/aggressive limit) order of 100 USDC volume would fill immediately.
 If no marketable price can be calculated, e.g., the amount exceeds the liquidity in the book, an `OrderBookException` will be raised. 
   
 #### Numeric Type: Float vs. Decimal
@@ -269,3 +278,5 @@ _tbd_
 ### User Stream
 
 ## REST API functions
+
+## Full Example
