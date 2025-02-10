@@ -255,6 +255,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: in notes: untrack_insert_status only works because of lru_cache, especially if cancel -> see point above
 #   (if order is removed from order manager before websocket message has arrived, message cannot be assigned to the correct position manager anymore,
 #    resulting in lost position transaction)
+# todo doc: to above points -> regular manually cleaning can make sense, because untracking is not the most sound approach especially for positions
 # todo doc: use TERMINAL_X_STATI for untrack_x_status
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 class UserStream(AbstractStreamer):
