@@ -259,14 +259,19 @@ return an array of zeros which is capable of being used within multiprocessing -
 implementation for this purpose (_multiprocessing.SharedMemory_). Furthermore, the zeros array returned by `zeros_factory` 
 must implement adequate locking/mutex as `OrderBook` does not use any (and does not need) any sophisticated locking.
 
-
 ## Orders
 ### Order Types
+#### Maker Order vs Taker Order
+#### Limit Order vs Market Order
+#### Time-in-Force
+#### Notes on MakingAmount, TakingAmount and Precision
+### Order Implementation
+(note on SharedMemory)
 ### Creating Orders
 ### Order Manager
 
 ## Positions
-### Position Types
+### Position Implementations
 ### Creating Positions
 ### Position Manager
 
