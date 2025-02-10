@@ -15,7 +15,7 @@ from polypy.position import ACT_SIDE, USDC, CSMPosition, Position
 from polypy.rest.api import *
 from polypy.stream import (
     STATUS_ORDERBOOK,
-    BufferSettings,
+    BufferThreadSettings,
     CheckHashParams,
     MarketAssetsInfo,
     MarketStream,
