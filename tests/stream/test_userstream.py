@@ -13,6 +13,7 @@ from polypy.exceptions import (
     ManagerInvalidException,
     PositionNegativeException,
     StreamException,
+    SubscriptionException,
 )
 from polypy.manager import OrderManager, PositionManager
 from polypy.order import (
@@ -41,7 +42,9 @@ def market_id():
 @pytest.fixture
 def yes_asset_id():
     # can be any ID because we do not have any server in the background but instead simulate websocket
-    # via directly calling on_msg
+    #   via directly calling on_msg
+    # asset_ids are only used within monitor thread, which we turn off for regular testing and test
+    #   specifically in a dedicated test
     return (
         "72000000000000000000000000000000000000000000000000000000000000000000000000000"
     )
@@ -50,7 +53,9 @@ def yes_asset_id():
 @pytest.fixture
 def no_asset_id():
     # can be any ID because we do not have any server in the background but instead simulate websocket
-    # via directly calling on_msg
+    #   via directly calling on_msg
+    # asset_ids are only used within monitor thread, which we turn off for regular testing and test
+    #   specifically in a dedicated test
     return (
         "101000000000000000000000000000000000000000000000000000000000000000000000000000"
     )
@@ -92,7 +97,7 @@ def streamer(
     def _closure(
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
-        monitor_assets_thread_s: float | None = 0.1,
+        monitor_assets_thread_s: float | None = None,
         buffer_settings: BufferThreadSettings | None = (5, 5_000),
         update_mode: Literal["explicit", "implicit"] = "explicit",
         invalidate_on_exc: bool = True,
@@ -347,6 +352,7 @@ def test_buffer_trade_info_taker_order(
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
     assert (
         om.get_by_id(
             "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
@@ -454,7 +460,11 @@ def test_raise_no_buffer_trade_info_taker_order(
         time.sleep(0.1)
 
     assert om.valid is False
-    assert pm.balance_total == 100
+    assert pm.valid is False
+    assert pm.position_dict[USDC].size_total == 100
+
+    with pytest.raises(ManagerInvalidException):
+        _ = pm.balance_total
 
 
 def test_no_buffer_trade_info_taker_order(
@@ -467,6 +477,7 @@ def test_no_buffer_trade_info_taker_order(
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
     assert (
         om.get_by_id(
             "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
@@ -492,7 +503,11 @@ def test_raise_no_buffer_trade_info_maker_order(
         time.sleep(0.1)
 
     assert om.valid is False
-    assert pm.balance_total == 100
+    assert pm.valid is False
+    assert pm.position_dict[USDC].size_total == 100
+
+    with pytest.raises(ManagerInvalidException):
+        _ = pm.balance_total
 
 
 def test_no_buffer_trade_info_maker_order(
@@ -537,7 +552,11 @@ def test_raise_no_buffer_order_info_maker_order(
         time.sleep(0.1)
 
     assert om.valid is False
-    assert pm.balance_total == 100
+    assert pm.valid is False
+    assert pm.position_dict[USDC].size_total == 100
+
+    with pytest.raises(ManagerInvalidException):
+        _ = pm.balance_total
 
 
 def test_no_buffer_order_info_maker_order(
@@ -643,6 +662,9 @@ def test_untrack_trade_status_matched(
     assert len(om.token_ids) == 2
     assert callback_clean.cleaned_orders == []
     assert callback_clean.cleaned_positions == []
+
+    print(om.valid, pm.valid)
+    print(om._invalid_reason)
 
     assert (
         pm.get_by_id(
@@ -831,11 +853,13 @@ def test_raise_monitor_order_assets(streamer, mock_std_post_order):
         "1234",
     )
     assert om.valid is True
+    assert pm.valid is True
 
     om.limit_order(0.99, 5, "1234", SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
     time.sleep(0.1)
 
     assert om.valid is False
+    assert pm.valid is False
 
 
 def test_raise_multiple_updates_order_info(
@@ -939,6 +963,7 @@ def test_raise_multiple_updates_order_info(
     assert om2.get_by_id("1234").status is INSERT_STATUS.DEFINED
     assert om1.valid is True
     assert om2.valid is True
+    assert pm.valid is True
 
     # exception
     data = msgspec.structs.replace(data, id="1234")
@@ -950,6 +975,7 @@ def test_raise_multiple_updates_order_info(
     assert common_order.status is INSERT_STATUS.LIVE
     assert om1.valid is False
     assert om2.valid is False
+    assert pm.valid is False
 
     stream._stop_token.set()
     stream.post_stop()
@@ -964,7 +990,7 @@ def test_raise_multiple_updates_trade_info(
     market_id,
     yes_asset_id,
     no_asset_id,
-):
+):  # sourcery skip: extract-duplicate-method
     om1 = OrderManager(
         local_host_addr,
         private_key,
@@ -1044,6 +1070,7 @@ def test_raise_multiple_updates_trade_info(
     time.sleep(0.1)
     assert om1.valid is True
     assert om2.valid is True
+    assert pm.valid is True
     assert pm.balance_total == 100 - 3
     assert (
         pm.get_by_id(
@@ -1063,13 +1090,17 @@ def test_raise_multiple_updates_trade_info(
     assert "not be assigned to more than one" in str(record)
     assert om1.valid is False
     assert om2.valid is False
-    assert pm.balance_total == 100 - 9
+    assert pm.valid is False
+    assert pm.position_dict[USDC].size_total == 100 - 9
     assert (
-        pm.get_by_id(
+        pm.position_dict[
             "95786924372760057572092804419385993470890190892343223404877167501659835222533"
-        ).size
+        ].size_total
         == 15
     )
+
+    with pytest.raises(ManagerInvalidException):
+        _ = pm.balance_total
 
     stream._stop_token.set()
     stream.post_stop()
@@ -1288,6 +1319,7 @@ def test_multi_order_manager(
 
     assert om1.valid is True
     assert om2.valid is True
+    assert pm.valid is True
     assert (
         om1.get_by_id(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
@@ -1415,6 +1447,7 @@ def test_implicit_buffer_order_info(streamer, order_info_maker_buy_placement_upd
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
 
 
 def test_implicit_no_buffer_order_info(streamer, order_info_maker_buy_placement_update):
@@ -1425,6 +1458,7 @@ def test_implicit_no_buffer_order_info(streamer, order_info_maker_buy_placement_
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
 
 
 def test_implicit_buffer_trade_info(streamer, trade_info_taker_buy_matched):
@@ -1434,6 +1468,7 @@ def test_implicit_buffer_trade_info(streamer, trade_info_taker_buy_matched):
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
 
 
 def test_implicit_no_buffer_trade_info(streamer, trade_info_taker_buy_matched):
@@ -1443,6 +1478,7 @@ def test_implicit_no_buffer_trade_info(streamer, trade_info_taker_buy_matched):
     time.sleep(0.1)
 
     assert om.valid is True
+    assert pm.valid is True
 
 
 def test_raise_no_market_id(
@@ -1567,6 +1603,7 @@ def test_decimals(
     time.sleep(0.1)
 
     assert order_manager.valid is True
+    assert position_manager.valid is True
     assert order_manager.get_by_id(
         "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
     ).size_matched == dec(5)
@@ -1585,3 +1622,40 @@ def test_decimals(
 
     stream._stop_token.set()
     stream.post_stop()
+
+
+def test_raises_max_subscriptions(
+    local_host_addr,
+    private_key,
+    api_key,
+    secret,
+    passphrase,
+    market_id,
+    yes_asset_id,
+    no_asset_id,
+):  # sourcery skip: extract-duplicate-method
+    om = OrderManager(
+        local_host_addr,
+        private_key,
+        api_key,
+        secret,
+        passphrase,
+        None,
+        SIGNATURE_TYPE.EOA,
+        CHAIN_ID.POLYGON,
+    )
+    pm = PositionManager(local_host_addr, 100)
+
+    with pytest.raises(SubscriptionException) as record:
+        UserStream(
+            "ws://localhost:8002/",
+            (om, pm),
+            [(market_id, yes_asset_id, no_asset_id), ("123", "456", "789")],
+            api_key,
+            secret,
+            passphrase,
+            [INSERT_STATUS.UNMATCHED, INSERT_STATUS.CANCELED],
+            None,
+            max_subscriptions=1,
+        )
+    assert "Exceeding" in str(record)
