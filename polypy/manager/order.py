@@ -516,20 +516,19 @@ class OrderManager(OrderManagerProtocol):
         if reason is None:
             reason = (
                 "E.g., Order Manager tried to create an order for an asset ID that is "
-                "not tracked by the corresponding User Stream that it was assigned to.)."
+                "not tracked by the corresponding User Stream that it was assigned to."
             )
         self._invalid_reason = f"{_ERR_MSG_INVALID} Reason: {reason}"
 
     def _validate(self) -> None:
-        with self.lock:
-            if self._invalid_token:
-                raise ManagerInvalidException(self._invalid_reason)
+        if self._invalid_token:
+            raise ManagerInvalidException(self._invalid_reason)
 
     def track(self, order: OrderProtocol, sync: bool) -> None:
-        self._validate()
         self._is_trackable(order)
 
         with self.lock:
+            self._validate()
             if len(self.order_dict) >= self.max_size:
                 raise OrderTrackingException(
                     f"Exceeding max_size={self.max_size}. Either set a higher max_size, or use"
@@ -601,8 +600,8 @@ class OrderManager(OrderManagerProtocol):
         return order
 
     def untrack(self, order_id: str, sync: bool) -> OrderProtocol | None:
-        self._validate()
         with self.lock:
+            self._validate()
             if sync:
                 # sync first before popping from dict
                 try:
@@ -621,8 +620,8 @@ class OrderManager(OrderManagerProtocol):
 
     # noinspection PyProtocol
     def get(self, **kwargs) -> list[FrozenOrder]:
-        self._validate()
         with self.lock:
+            self._validate()
             try:
                 return [frozen_order(self.order_dict[kwargs["id"]])]
             except KeyError:
@@ -636,8 +635,8 @@ class OrderManager(OrderManagerProtocol):
                 ]
 
     def get_by_id(self, order_id: str) -> FrozenOrder | None:
-        self._validate()
         with self.lock:
+            self._validate()
             try:
                 return frozen_order(self.order_dict[order_id])
             except KeyError:
@@ -662,8 +661,8 @@ class OrderManager(OrderManagerProtocol):
         created_at: int | None = None,
         **kwargs,
     ) -> None:
-        self._validate()
         with self.lock:
+            self._validate()
             order = self._get_order(order_id)
             size_matched = _cvt_order_numeric(order, size_matched)
 
@@ -684,8 +683,8 @@ class OrderManager(OrderManagerProtocol):
 
     # noinspection PyProtocol
     def modify(self, order_id: str, **kwargs) -> None:
-        self._validate()
         with self.lock:
+            self._validate()
             order = self._get_order(order_id)
             missed_kwargs, order = _update_order_kwargs(order, kwargs)
 
@@ -711,7 +710,6 @@ class OrderManager(OrderManagerProtocol):
         -----
         Example for kwargs: aux_id='some additional info' in case of polypy.order.Order class.
         """
-        self._validate()
         if tick_size is None:
             if book is None:
                 tick_size = get_tick_size(self.rest_endpoint, token_id)
@@ -754,7 +752,6 @@ class OrderManager(OrderManagerProtocol):
         -----
         Example for kwargs: aux_id='some additional info' in case of polypy.order.Order class.
         """
-        self._validate()
         expiration = 0 if expiration is None else expiration
         if expiration < 0:
             raise OrderCreationException("`expiration` must be >= 0.")
@@ -783,8 +780,8 @@ class OrderManager(OrderManagerProtocol):
 
     def post(self, order: AnyOrderProtocol) -> tuple[FrozenOrder, PostOrderResponse]:
         # posting an order might raise an exception, i.e. server side error (e.g. order unmatched)
-        self._validate()
         with self.lock:
+            self._validate()
             try:
                 order, response = post_order(
                     endpoint=self.rest_endpoint,
@@ -847,14 +844,14 @@ class OrderManager(OrderManagerProtocol):
         orders: AnyOrderProtocol | str | list[AnyOrderProtocol | str],
         mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
     ) -> tuple[FrozenOrder | list[FrozenOrder], CancelOrdersResponse]:
-        self._validate()
-
         if isinstance(orders, (list, tuple, set)) and not orders:
             return [], CancelOrdersResponse(None, {})
 
         _single, orders = _parse_to_list(orders)
 
         with self.lock:
+            self._validate()
+
             orders = self._uptrack_get_orders(orders)
 
             orders, response = cancel_orders(
@@ -878,11 +875,10 @@ class OrderManager(OrderManagerProtocol):
         mode_not_canceled: Literal["except", "warn", "ignore"] = "except",
         statuses: INSERT_STATUS | list[INSERT_STATUS] = CANCELABLE_INSERT_STATI,
     ) -> tuple[list[FrozenOrder], CancelOrdersResponse]:
-        self._validate()
-
         _, statuses = _parse_to_list(statuses)
 
         with self.lock:
+            self._validate()
             if orders := [
                 order for order in self.order_dict.values() if order.status in statuses
             ]:
@@ -935,8 +931,8 @@ class OrderManager(OrderManagerProtocol):
         order: AnyOrderProtocol | str | list[AnyOrderProtocol | str] | None,
         mode_not_existent: Literal["except", "remove", "warn"],
     ) -> tuple[FrozenOrder | list[FrozenOrder], list[OrderProtocol]]:
-        self._validate()
         with self.lock:
+            self._validate()
             _single, orders = self._parse_syncable_orders(order)
 
             orders, responses = get_orders(
@@ -965,7 +961,6 @@ class OrderManager(OrderManagerProtocol):
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         # filter out status and expiration
-        self._validate()
 
         if isinstance(statuses, (list, set, tuple)) and not statuses:
             return []
@@ -974,7 +969,11 @@ class OrderManager(OrderManagerProtocol):
 
         rem_orders = []
 
-        for order in self.order_dict.values():
+        with self.lock:
+            self._validate()
+            orders = list(self.order_dict.values())
+
+        for order in orders:
             has_valid_expiration = order.expiration is not None and order.expiration > 0
 
             if order.status in statuses or (
