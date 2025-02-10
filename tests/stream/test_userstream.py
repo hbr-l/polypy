@@ -7,6 +7,7 @@ from typing import Callable, Literal
 import msgspec
 import pytest
 
+from polypy import TRADE_STATUS
 from polypy.constants import CHAIN_ID
 from polypy.exceptions import (
     ManagerInvalidException,
@@ -23,7 +24,7 @@ from polypy.order import (
 )
 from polypy.position import USDC, Position, PositionProtocol
 from polypy.signing import SIGNATURE_TYPE
-from polypy.stream.user import CHANNEL, BufferSettings, UserStream
+from polypy.stream.user import CHANNEL, BufferThreadSettings, UserStream
 from polypy.structs import OrderWSInfo, TradeWSInfo
 from polypy.typing import dec
 
@@ -32,20 +33,26 @@ test_pth = pathlib.Path(__file__).parent
 
 @pytest.fixture
 def market_id():
-    return "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8"
+    # can be any ID because we do not have any server in the background but instead simulate websocket
+    # via directly calling on_msg
+    return "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 
 @pytest.fixture
 def yes_asset_id():
+    # can be any ID because we do not have any server in the background but instead simulate websocket
+    # via directly calling on_msg
     return (
-        "72936048731589292555781174533757608024096898681344338816447372274344589246891"
+        "72000000000000000000000000000000000000000000000000000000000000000000000000000"
     )
 
 
 @pytest.fixture
 def no_asset_id():
+    # can be any ID because we do not have any server in the background but instead simulate websocket
+    # via directly calling on_msg
     return (
-        "101669189743438912873361127612589311253202068943959811456820079057046819967115"
+        "101000000000000000000000000000000000000000000000000000000000000000000000000000"
     )
 
 
@@ -81,11 +88,12 @@ def streamer(
 ):
     streams = []
 
+    # noinspection PyProtectedMember
     def _closure(
-        untrack_order_terminal: bool = True,
-        clean_terminal_sates_s: float | None = None,
-        monitor_order_assets_s: float | None = 0.1,
-        buffer_settings: BufferSettings | None = (5, 0.01, 5_000),
+        untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
+        untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
+        monitor_assets_thread_s: float | None = 0.1,
+        buffer_settings: BufferThreadSettings | None = (5, 5_000),
         update_mode: Literal["explicit", "implicit"] = "explicit",
         invalidate_on_exc: bool = True,
         callback_msg: Callable[[UserStream, TradeWSInfo | OrderWSInfo], None]
@@ -101,9 +109,9 @@ def streamer(
             api_key,
             secret,
             passphrase,
-            untrack_order_terminal,
-            clean_terminal_sates_s,
-            monitor_order_assets_s,
+            untrack_insert_status,
+            untrack_trade_status,
+            monitor_assets_thread_s,
             buffer_settings,
             5,
             update_mode,
@@ -126,9 +134,11 @@ def streamer(
 
     yield _closure
 
-    stream = streams[0]
-    stream._stop_token.set()
-    stream.post_stop()
+    if streams:
+        stream = streams[0]
+        # noinspection PyProtectedMember
+        stream._stop_token.set()
+        stream.post_stop()
 
 
 @pytest.fixture
@@ -179,6 +189,29 @@ def trade_info_taker_sell_matched(mock_std_post_order):
             "status": str(INSERT_STATUS.LIVE),
             "takingAmount": "3",
             "makingAmount": "5",
+        }
+    )
+
+    yield data
+
+
+@pytest.fixture
+def trade_info_maker_sell_matched(mock_std_post_order):
+    with open(test_pth / "data/test_trade_info_maker_buy_matched.json", "r") as f:
+        data = msgspec.json.decode(
+            json.dumps(json.load(f)), type=TradeWSInfo, strict=False
+        )
+    data = msgspec.structs.replace(data, side=SIDE.SELL)
+
+    mock_std_post_order(
+        {
+            "success": True,
+            "errorMsg": "",
+            "orderID": "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+            "transactionsHashes": None,
+            "status": str(INSERT_STATUS.LIVE),
+            "takingAmount": "",  # receive size
+            "makingAmount": "",  # spent amount
         }
     )
 
@@ -307,7 +340,7 @@ def callback_clean():
 def test_buffer_trade_info_taker_order(
     streamer, yes_asset_id, trade_info_taker_buy_matched
 ):
-    stream, om, pm = streamer(False)
+    stream, om, pm = streamer(None)
 
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
     om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
@@ -332,7 +365,7 @@ def test_buffer_trade_info_taker_order(
 def test_buffer_trade_info_maker_order(
     streamer, yes_asset_id, trade_info_maker_buy_matched
 ):
-    stream, om, pm = streamer(False)
+    stream, om, pm = streamer(None)
 
     stream.on_msg(trade_info_maker_buy_matched)
     om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
@@ -362,7 +395,7 @@ def test_buffer_trade_info_maker_order(
 def test_buffer_order_info_maker_order(
     streamer, yes_asset_id, order_info_maker_buy_placement_update
 ):
-    stream, om, pm = streamer(False)
+    stream, om, pm = streamer(None)
 
     data_placement, data_update = order_info_maker_buy_placement_update
 
@@ -539,70 +572,128 @@ def test_no_buffer_order_info_maker_order(
     )
 
 
-def test_untrack_order_at_terminal_trade_info(
+def test_untrack_trade_status_matched(
     streamer,
     yes_asset_id,
-    trade_info_maker_buy_confirmed,
-    order_info_maker_buy_placement_update,
+    trade_info_maker_sell_matched,
+    trade_info_taker_sell_matched,
     callback_clean,
-):  # sourcery skip: extract-duplicate-method
-    stream, om, pm = streamer(
-        clean_terminal_sates_s=None, callback_clean=callback_clean
-    )
-    pm.track(Position("1234567", 0, False, 2))
-    data_trade = trade_info_maker_buy_confirmed
-    data_placement, data_update = order_info_maker_buy_placement_update
-
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
-    stream.on_msg(data_placement)
-    stream.on_msg(data_update)
-    time.sleep(0.1)
-
-    assert len(om.token_ids) == 1
-    assert len(om.get(status=INSERT_STATUS.MATCHED)) == 1
-    assert len(callback_clean.cleaned_orders) == 0
-    assert len(callback_clean.cleaned_positions) == 0
-
-    stream.on_msg(data_trade)
-    time.sleep(0.1)
-
-    assert len(om.token_ids) == 0
-    assert len(callback_clean.cleaned_orders) == 1
-    assert len(callback_clean.cleaned_positions) == 0
-    assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.MATCHED
-    assert callback_clean.cleaned_orders[0].size_matched == 5
-
-
-def test_raise_untrack_order_not_at_terminal_trade_info(
-    streamer,
-    yes_asset_id,
-    trade_info_maker_buy_confirmed,
-    order_info_maker_buy_placement_update,
-    callback_clean,
+    private_key,
 ):
+    # empty vs non-empty
+    # other position empty not getting untracked
+    # maker vs tacker
+
     stream, om, pm = streamer(
-        clean_terminal_sates_s=None, callback_clean=callback_clean
+        callback_clean=callback_clean, untrack_trade_status=TRADE_STATUS.MATCHED
     )
-    data_trade = trade_info_maker_buy_confirmed
-    data_placement, _ = order_info_maker_buy_placement_update
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
-    stream.on_msg(data_placement)
-    time.sleep(0.1)
+    pm.track(Position.create("1234", 0))
+    # maker position
+    pos_maker = Position.create(
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        100,
+    )
+    pm.track(pos_maker)
+    # taker position
+    pos_taker = Position.create(
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        100,
+    )
+    pm.track(pos_taker)
 
+    # we only need some fake orders s.t. trade messages will be assigned to the correct position manager
+    order_maker = create_limit_order(
+        0.99,
+        10,
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+    )
+    order_taker = create_limit_order(
+        0.99,
+        10,
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+    )
+    order_maker.id = (
+        "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+    )
+    order_taker.id = (
+        "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+    )
+    om.track(order_maker, False)
+    om.track(order_taker, False)
+
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(0.2)
+
+    assert len(om.token_ids) == 2
+    assert callback_clean.cleaned_orders == []
+    assert callback_clean.cleaned_positions == []
+
+    assert (
+        pm.get_by_id(
+            "25742247876332768458781360292043764039507900813404980298479194684402595556451"
+        ).size_total
+        == 95
+    )
+    assert (
+        pm.get_by_id(
+            "95786924372760057572092804419385993470890190892343223404877167501659835222533"
+        ).size_total
+        == 95
+    )
+    assert pm.get_by_id("1234").size_total == 0
+    assert pm.balance_total == 106
+    assert len(pm.asset_ids) == 4
+
+    pos_taker.size = 5
+    pos_maker.size = 5
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(0.2)
+
+    assert len(om.token_ids) == 2
+    assert callback_clean.cleaned_orders == []
+    assert len(callback_clean.cleaned_positions) == 2
+    assert callback_clean.cleaned_positions[0].empty
+    assert callback_clean.cleaned_positions[1].empty
+
+    assert list(pm.asset_ids) == [USDC, "1234"]
+    assert pm.balance_total == 112
+    assert pm.get_by_id("1234").size_total == 0
+
+
+def test_raise_untrack_trade_status_wrong_init(streamer):
     with pytest.raises(StreamException) as record:
-        stream.on_msg(data_trade)
-        time.sleep(0.1)
-    assert "TERMINAL_INSERT_STATI" in str(record)
+        streamer(untrack_trade_status=TRADE_STATUS.RETRYING)
+    assert "TRADE_STATUS.RETRYING" in str(record)
+
+    with pytest.warns() as record:
+        streamer(untrack_trade_status=TRADE_STATUS.MATCHED)
+    assert "TERMINAL_TRADE_STATI" in str(record[0].message)
 
 
-def test_untrack_order_at_unmatched_order_info(
+def test_untrack_insert_status_at_unmatched_order_info(
     streamer, yes_asset_id, order_info_maker_buy_unmatched, callback_clean
 ):
     stream, om, pm = streamer(
-        clean_terminal_sates_s=None, callback_clean=callback_clean
+        untrack_insert_status=[INSERT_STATUS.UNMATCHED],
+        callback_clean=callback_clean,
     )
-    pm.track(Position("1234567", 0, False, 2))
     data = order_info_maker_buy_unmatched
 
     om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
@@ -622,12 +713,82 @@ def test_untrack_order_at_unmatched_order_info(
     assert pm.balance_total == 100
 
 
-def test_clean_terminal(
-    streamer, yes_asset_id, order_info_maker_buy_unmatched, callback_clean
+def test_untrack_insert_status_at_matched_order_info(
+    streamer,
+    yes_asset_id,
+    order_info_maker_buy_placement_update,
+    callback_clean,
+    trade_info_maker_buy_matched,
 ):
-    stream, om, pm = streamer(clean_terminal_sates_s=0.2, callback_clean=callback_clean)
-    pm.track(Position("1234567", 0, False, 2))
-    data = order_info_maker_buy_unmatched
+    stream, om, pm = streamer(
+        untrack_insert_status=[INSERT_STATUS.MATCHED],
+        callback_clean=callback_clean,
+    )
+    data_placement, data_update = order_info_maker_buy_placement_update
+
+    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    assert len(om.token_ids) == 1
+    assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
+    assert len(callback_clean.cleaned_orders) == 0
+    assert len(callback_clean.cleaned_positions) == 0
+
+    stream.on_msg(data_placement)
+    time.sleep(0.5)
+    assert len(om.token_ids) == 1
+    assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
+    assert len(callback_clean.cleaned_orders) == 0
+    assert len(callback_clean.cleaned_positions) == 0
+
+    stream.on_msg(data_update)
+    time.sleep(0.5)
+
+    assert len(om.token_ids) == 0
+    assert len(callback_clean.cleaned_orders) == 1
+    assert len(callback_clean.cleaned_positions) == 0
+    assert callback_clean.cleaned_orders[0].size_matched == 5
+    assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.MATCHED
+    assert pm.balance_total == 100  # no trade message, only order infos
+
+    stream.on_msg(trade_info_maker_buy_matched)
+    time.sleep(0.5)
+
+    assert pm.balance_total == 100 - 3
+
+
+def test_raises_untrack_instert_status_wrong_init(streamer):
+    with pytest.raises(StreamException) as record:
+        streamer(untrack_insert_status=[INSERT_STATUS.LIVE])
+    assert "TERMINAL_INSERT_STATI" in str(record)
+
+    with pytest.raises(StreamException) as record:
+        streamer(untrack_insert_status=INSERT_STATUS.DEFINED)
+    assert "TERMINAL_INSERT_STATI" in str(record)
+
+    with pytest.warns() as record:
+        streamer(untrack_insert_status=INSERT_STATUS.MATCHED)
+    assert "exceptions" in str(record[0].message)
+
+
+def test_untrack_insert_status_unmatched_trade_status_confirmed(
+    streamer,
+    yes_asset_id,
+    order_info_maker_buy_unmatched,
+    trade_info_maker_buy_confirmed,
+    callback_clean,
+):
+    stream, om, pm = streamer(
+        callback_clean=callback_clean,
+        untrack_insert_status=INSERT_STATUS.UNMATCHED,
+        untrack_trade_status=TRADE_STATUS.CONFIRMED,
+    )
+    pm.track(
+        Position(
+            "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+            0,
+            True,
+            2,
+        )
+    )
 
     om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
     assert len(om.token_ids) == 1
@@ -636,7 +797,9 @@ def test_clean_terminal(
     assert len(callback_clean.cleaned_orders) == 0
     assert len(callback_clean.cleaned_positions) == 0
 
-    stream.on_msg(data)
+    stream.on_msg(order_info_maker_buy_unmatched)
+    stream.on_msg(trade_info_maker_buy_confirmed)
+    # because trade info is in status CONFIRMED, no transactions will happen (only at MATCHED)
     time.sleep(0.25)
 
     assert len(om.token_ids) == 0
@@ -645,13 +808,16 @@ def test_clean_terminal(
     assert len(callback_clean.cleaned_positions) == 1
     assert callback_clean.cleaned_orders[0].size_matched == 0
     assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.UNMATCHED
-    assert callback_clean.cleaned_positions[0].asset_id == "1234567"
+    assert (
+        callback_clean.cleaned_positions[0].asset_id
+        == "95786924372760057572092804419385993470890190892343223404877167501659835222533"
+    )
     assert callback_clean.cleaned_positions[0].size == 0
     assert pm.balance_total == 100
 
 
 def test_raise_monitor_order_assets(streamer, mock_std_post_order):
-    stream, om, pm = streamer(monitor_order_assets_s=0.01)
+    stream, om, pm = streamer(monitor_assets_thread_s=0.01)
     mock_std_post_order(
         {
             "success": True,
@@ -711,7 +877,7 @@ def test_raise_multiple_updates_order_info(
         api_key,
         secret,
         passphrase,
-        True,
+        [INSERT_STATUS.UNMATCHED, INSERT_STATUS.CANCELED],
         None,
     )
     stream._stop_token.clear()
@@ -828,7 +994,7 @@ def test_raise_multiple_updates_trade_info(
         api_key,
         secret,
         passphrase,
-        True,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
         None,
     )
     stream._stop_token.clear()
@@ -929,9 +1095,9 @@ def test_order_manager_none(
         api_key,
         secret,
         passphrase,
-        True,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
         None,
-        buffer_settings=(0.01, 0.001, 10),
+        buffer_thread_settings=(0.01, 10),
         update_mode="implicit",
     )
     stream._stop_token.clear()
@@ -991,7 +1157,7 @@ def test_position_manager_none(
         api_key,
         secret,
         passphrase,
-        True,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
         None,
         update_mode="implicit",
     )
@@ -1074,7 +1240,7 @@ def test_multi_order_manager(
         api_key,
         secret,
         passphrase,
-        True,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
         None,
     )
     stream._stop_token.clear()
@@ -1159,7 +1325,7 @@ def test_raise_explicit_buffer_trade_info(streamer):
             self.x = True
 
     callback = Callback()
-    stream, om, _ = streamer(buffer_settings=(0.1, 0.001, 10), callback_exc=callback)
+    stream, om, _ = streamer(buffer_settings=(0.1, 10), callback_exc=callback)
 
     with open(test_pth / "data/test_trade_info_taker_buy_matched.json", "r") as f:
         data = msgspec.json.decode(
@@ -1205,7 +1371,7 @@ def test_raise_explicit_buffer_order_info(streamer):
             self.x = True
 
     callback = Callback()
-    stream, om, _ = streamer(buffer_settings=(0.1, 0.001, 10), callback_exc=callback)
+    stream, om, _ = streamer(buffer_settings=(0.1, 10), callback_exc=callback)
 
     with open(test_pth / "data/test_order_info_maker_buy_placement.json", "r") as f:
         data = msgspec.json.decode(
@@ -1242,7 +1408,7 @@ def test_raise_explicit_no_buffer_order_info(streamer):
 
 
 def test_implicit_buffer_order_info(streamer, order_info_maker_buy_placement_update):
-    stream, om, pm = streamer(update_mode="implicit", buffer_settings=(0.01, 0.001, 10))
+    stream, om, pm = streamer(update_mode="implicit", buffer_settings=(0.01, 10))
     data_placement, _ = order_info_maker_buy_placement_update
 
     stream.on_msg(data_placement)
@@ -1262,7 +1428,7 @@ def test_implicit_no_buffer_order_info(streamer, order_info_maker_buy_placement_
 
 
 def test_implicit_buffer_trade_info(streamer, trade_info_taker_buy_matched):
-    stream, om, pm = streamer(update_mode="implicit", buffer_settings=(0.01, 0.001, 10))
+    stream, om, pm = streamer(update_mode="implicit", buffer_settings=(0.01, 10))
 
     stream.on_msg(trade_info_taker_buy_matched)
     time.sleep(0.1)

@@ -16,12 +16,16 @@ from polypy.exceptions import (
 )
 from polypy.manager.order import OrderManagerProtocol
 from polypy.manager.position import PositionManagerProtocol
-from polypy.order import INSERT_STATUS, SIDE, OrderProtocol
-from polypy.order.common import TERMINAL_INSERT_STATI
+from polypy.order.common import (
+    INSERT_STATUS,
+    SIDE,
+    TERMINAL_INSERT_STATI,
+    OrderProtocol,
+)
 from polypy.position import PositionProtocol
 from polypy.stream.common import CHANNEL, AbstractStreamer
 from polypy.structs import MakerOrder, OrderWSInfo, TradeWSInfo
-from polypy.trade import TRADER_SIDE
+from polypy.trade import TERMINAL_TRADE_STATI, TRADE_STATUS, TRADER_SIDE
 
 
 def lru_cache_non_empty(max_size: int, copy_mode: Literal["deep", "copy"] | None):
@@ -62,11 +66,6 @@ MarketAssetsInfo = namedtuple(
 )
 
 BufferThreadSettings = namedtuple("BufferSettings", ["keep_s", "max_len"])
-
-CleaningThreadSettings = namedtuple(
-    "CleaningThreadSettings",
-    ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"],
-)
 
 TupleManager: TypeAlias = tuple[
     OrderManagerProtocol | None, PositionManagerProtocol | None
@@ -189,33 +188,7 @@ def _parse_buffer_settings(
     return BufferThreadSettings(0, 0) if x is None or None in x else x
 
 
-def _parse_cleaning_settings(
-    x: CleaningThreadSettings
-    | tuple[float, list[INSERT_STATUS] | INSERT_STATUS, float]
-    | None
-) -> CleaningThreadSettings:
-    # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
-
-    if x is None or None in x:
-        x = CleaningThreadSettings(0, (), 0, False)
-
-    if isinstance(x[1], INSERT_STATUS):
-        x = CleaningThreadSettings(x[0], [x[1]], x[2], x[3])
-
-    if any(
-        x_i
-        not in [INSERT_STATUS.MATCHED, INSERT_STATUS.UNMATCHED, INSERT_STATUS.DEFINED]
-        for x_i in x[1]
-    ):
-        raise StreamException(
-            "Only INSERT_STATUS.MATCHED, INSERT_STATUS.UNMATCHED and INSERT_STATUS.DEFINED "
-            "allowed in CleaningThreadSettings."
-        )
-
-    return x
-
-
-def _parse_untrack_stati(
+def _parse_untrack_insert_stati(
     x: INSERT_STATUS | list[INSERT_STATUS] | None,
 ) -> list[INSERT_STATUS]:
     if x is None:
@@ -242,18 +215,48 @@ def _parse_untrack_stati(
     return x
 
 
+def _parse_untrack_trade_stati(
+    x: TRADE_STATUS | list[TRADE_STATUS] | None,
+) -> list[TRADE_STATUS]:
+    if x is None:
+        x = []
+
+    if isinstance(x, TRADE_STATUS):
+        x = [x]
+
+    if None in x:
+        x = []
+
+    if any(x_i is TRADE_STATUS.RETRYING for x_i in x):
+        raise StreamException(
+            "TRADE_STATUS.RETRYING must not be in untrack_trade_status."
+        )
+
+    if any(x_i not in TERMINAL_TRADE_STATI for x_i in x):
+        warnings.warn(
+            "Depending on the PositionProtocol implementation used by Position Managers, "
+            "it is absolutely recommended to only use TRADE_STATUS contained in TERMINAL_TRADE_STATI "
+            "for untrack_trade_status (i.e., if position is settled at .CONFIRMED, using "
+            ".MATCHED in untrack_trade_status makes no sense and costs performance)."
+        )
+
+    return x
+
+
 _TradeOrderInfo = namedtuple(
     "_TradeOrderInfo", ["order_id", "size", "price", "asset_id", "side"]
 )
 
 
-# todo spec untrack pos bool
-# todo order_manager see new todo necessary
-# todo clean really without canceled? -> Tracking Bug could also occur for others -> delete and rename callback
-
-
 # todo allow_untracked_sell? -> allow_neg or allow_untracked_sell -> feature + doc: allow_neg in factory
-# todo if multiple updates raise exception: transaction will be conducted, so manager states might be compromised -> doc
+# todo if one of multiple updates in methods such as cancel raise exception: transaction will be conducted, so manager states might be compromised -> doc
+# todo doc: if clean manually, potential danger of position not being adjusted/transacted if order not anymore in order manager (in explicit mode: will raise exception)
+#   -> only manually clean if no websocket traffic is expected, especially cancel
+# todo doc: in notes: untrack_insert_status only works because of lru_cache, especially if cancel -> see point above
+#   (if order is removed from order manager before websocket message has arrived, message cannot be assigned to the correct position manager anymore,
+#    resulting in lost position transaction)
+# todo doc: use TERMINAL_X_STATI for untrack_x_status
+# todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 class UserStream(AbstractStreamer):
     def __init__(
         self,
@@ -264,7 +267,7 @@ class UserStream(AbstractStreamer):
         secret: str,
         passphrase: str,
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
-        cleaning_thread_settings: CleaningThreadSettings | None = None,
+        untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
         ping_time: float | None = 5,
@@ -272,7 +275,7 @@ class UserStream(AbstractStreamer):
         invalidate_on_exc: bool = True,
         callback_msg: Callable[[Self, TradeWSInfo | OrderWSInfo], None] | None = None,
         callback_exc: Callable[[Self, Exception], None] | None = None,
-        callback_clean: Callable[[list[OrderProtocol], list[PositionProtocol]], None]
+        callback_untrack: Callable[[list[OrderProtocol], list[PositionProtocol]], None]
         | None = None,
         ws_channel: CHANNEL | str = CHANNEL.USER,
     ) -> None:
@@ -298,8 +301,9 @@ class UserStream(AbstractStreamer):
             for i, tm in enumerate(self.tuple_mngs)
         }  # we use balance_total as proxy to determine the numeric type
 
-        self.untrack_insert_status = _parse_untrack_stati(untrack_insert_status)
-        self.callback_clean = callback_clean
+        self.untrack_insert_status = _parse_untrack_insert_stati(untrack_insert_status)
+        self.untrack_trade_status = _parse_untrack_trade_stati(untrack_trade_status)
+        self.callback_untrack = callback_untrack
 
         if ws_endpoint[-1] != "/":
             ws_endpoint = f"{ws_endpoint}/"
@@ -314,11 +318,6 @@ class UserStream(AbstractStreamer):
 
         self.monitor_thread: threading.Thread | None = None
         self.monitor_assets_thread_s = monitor_assets_thread_s
-
-        self.cleaning_thread: threading.Thread | None = None
-        self.cleaning_thread_settings = _parse_cleaning_settings(
-            cleaning_thread_settings
-        )
 
         self.api_key = api_key
         self.secret = secret
@@ -379,16 +378,8 @@ class UserStream(AbstractStreamer):
                 StreamException("Internal exception: self.buffer_thread is not None.")
             )
 
-        if self.cleaning_thread is not None:
-            self.register_exception(
-                StreamException("Internal exception: self.clean_thread is not None.")
-            )
-
         self.monitor_thread = threading.Thread(target=self._monitor_thread, daemon=True)
         self.monitor_thread.start()
-
-        self.cleaning_thread = threading.Thread(target=self._clean_thread, daemon=True)
-        self.cleaning_thread.start()
 
         self.buffer_event.clear()
 
@@ -404,7 +395,6 @@ class UserStream(AbstractStreamer):
 
         self.monitor_thread.join(self.ping_time + 0.01)
         self.buffer_thread.join(self.ping_time + 0.01)
-        self.cleaning_thread.join(self.ping_time + 0.01)
 
         if self.monitor_thread.is_alive():
             self.register_exception(StreamException("Cannot join() monitoring thread."))
@@ -412,13 +402,9 @@ class UserStream(AbstractStreamer):
         if self.buffer_thread.is_alive():
             self.register_exception(StreamException("Cannot join() buffer thread."))
 
-        if self.cleaning_thread.is_alive():
-            self.register_exception(StreamException("Cannot join() cleaning thread."))
-
         self.monitor_thread = None
         self.buffer_thread = None
         self.buffer_event.clear()
-        self.cleaning_thread = None
 
     def post_stop(self) -> None:
         self._stop_aux_threads()
@@ -442,46 +428,6 @@ class UserStream(AbstractStreamer):
                             f"Asset_ids of stream: {self._asset_ids}."
                         )
                     )
-
-    def _clean_order_managers(self) -> list[OrderProtocol]:
-        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
-
-        clean_orders = []
-        for tm in self.tuple_mngs:
-            if tm[0] is not None:
-                clean_orders.extend(
-                    tm[0].clean(
-                        self.cleaning_thread_settings[1],
-                        int((time.time() - self.cleaning_thread_settings[2]) * 1_000),
-                    )
-                )
-        return clean_orders
-
-    def _clean_position_managers(self) -> list[PositionProtocol]:
-        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
-
-        clean_positions = []
-        if self.cleaning_thread_settings[3]:
-            for tm in self.tuple_mngs:
-                if tm[1] is not None:
-                    clean_positions.extend(tm[1].clean())
-        return clean_positions
-
-    def _clean_thread(self) -> None:
-        if not self.tuple_mngs:
-            # if no tuple managers assigned, we exit immediately
-            return
-
-        # ["interval_s", "insert_statuses", "expired_since_s", "bool_positions"]
-        if self.cleaning_thread_settings[0] <= 0:
-            return
-
-        while not self._stop_token.wait(self.cleaning_thread_settings[0]):
-            clean_orders = self._clean_order_managers()
-            clean_positions = self._clean_position_managers()
-
-            if self.callback_clean is not None and (clean_orders or clean_positions):
-                self.callback_clean(clean_orders, clean_positions)
 
     def _buffer_thread(self) -> None:
         if self.buffer.maxlen <= 0:
@@ -546,10 +492,7 @@ class UserStream(AbstractStreamer):
         return []
 
     def _untrack_order_id(
-        self,
-        status: INSERT_STATUS,
-        order_id: str,
-        ord_mngs_idx: set[int],
+        self, status: INSERT_STATUS, order_id: str, ord_mngs_idx: set[int]
     ) -> None:
         if not self.untrack_insert_status:
             return
@@ -566,8 +509,30 @@ class UserStream(AbstractStreamer):
         ]
         untracked_orders = [order for order in untracked_orders if order is not None]
 
-        if self.callback_clean is not None and untracked_orders:
-            self.callback_clean(untracked_orders, [])
+        if self.callback_untrack is not None and untracked_orders:
+            self.callback_untrack(untracked_orders, [])
+
+    def _untrack_position(
+        self, status: TRADE_STATUS, asset_id: str, pos_mngs_idx: set[int]
+    ) -> None:
+        if not self.untrack_trade_status:
+            return
+
+        if not pos_mngs_idx:
+            return
+
+        if status not in self.untrack_trade_status:
+            return
+
+        untracked_positions = [
+            self.tuple_mngs[tm_idx][1].untrack(asset_id)
+            for tm_idx in pos_mngs_idx
+            if self.tuple_mngs[tm_idx][1].get_by_id(asset_id).empty
+        ]  # only untrack empty positions
+        untracked_positions = [pos for pos in untracked_positions if pos is not None]
+
+        if self.callback_untrack is not None and untracked_positions:
+            self.callback_untrack([], untracked_positions)
 
     def _trade_message(self, msg: TradeWSInfo) -> int:
         trade_order_info = self._filter_orders_trade_info(msg)
@@ -578,12 +543,12 @@ class UserStream(AbstractStreamer):
         nb_updates = []
 
         for trade_order in trade_order_info:
-            ord_mngs_idx = self._filter_tuple_mngs(trade_order.order_id)
+            tpl_mngs_idx = self._filter_tuple_mngs(trade_order.order_id)
 
             # each order should only be updated by exactly one order manager
             # more (order tracked by multiple order managers) or fewer (order not tracked by any order manager)
             #  updates indicates an error
-            for tm_idx in ord_mngs_idx:
+            for tm_idx in tpl_mngs_idx:
                 if self.tuple_mngs[tm_idx][1] is None:
                     continue
 
@@ -598,8 +563,10 @@ class UserStream(AbstractStreamer):
                     allow_create=True,
                 )  # will raise exception if transact fails
 
-            # should ideally be either be 1 or 0
-            nb_updates.append(len(ord_mngs_idx))
+            # should ideally be either 1 or 0
+            nb_updates.append(len(tpl_mngs_idx))
+
+            self._untrack_position(msg.status, trade_order.asset_id, tpl_mngs_idx)
 
         min_updates, max_update = min(nb_updates), max(nb_updates)
         # ideally, both should be 1
@@ -682,7 +649,7 @@ class UserStream(AbstractStreamer):
             self.buffer_event.set()
         else:
             # in this case we either have no active buffer or updates were performed
-            # so we do not need to push to buffer but check directly
+            # so we do not push to buffer but check directly
             self._evict_trade_message(msg)
             _check_update_mode(
                 nb_updates, msg, self.update_mode, self.register_exception
