@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 import msgspec
 
@@ -52,20 +52,20 @@ class OpenOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
 
 class TokenInfo(msgspec.Struct, forbid_unknown_fields=True):
     token_id: str
-    outcome: Literal["Yes", "No"]
-    price: str
+    outcome: str
+    price: float
     winner: bool
 
 
 class RewardRate(msgspec.Struct, forbid_unknown_fields=True):
     asset_address: str
-    rewards_daily_rate: str
+    rewards_daily_rate: float
 
 
 class Rewards(msgspec.Struct, forbid_unknown_fields=True):
-    rates: RewardRate
-    min_size: str
-    max_spread: str
+    rates: list[RewardRate] | None
+    min_size: float | None
+    max_spread: float | None
 
 
 class MarketInfo(msgspec.Struct, forbid_unknown_fields=True):
@@ -74,37 +74,37 @@ class MarketInfo(msgspec.Struct, forbid_unknown_fields=True):
     closed: bool
     archived: bool
     accepting_orders: bool
-    accepting_order_timestamp: datetime.datetime
-    minimum_order_size: str
-    minimum_tick_size: str
+    accepting_order_timestamp: datetime.datetime | None
+    minimum_order_size: float
+    minimum_tick_size: float
     condition_id: str
     question_id: str
     question: str
     description: str
     market_slug: str
-    end_date_iso: datetime.datetime
-    game_start_time: Optional[datetime.datetime]
-    seconds_delay: str
+    end_date_iso: datetime.datetime | None
+    game_start_time: datetime.datetime | None
+    seconds_delay: float
     fpmm: str
-    maker_base_fee: str
-    taker_base_fee: str
+    maker_base_fee: float
+    taker_base_fee: float
     notifications_enabled: bool
     neg_risk: bool
     neg_risk_market_id: str
     neg_risk_request_id: str
     icon: str
     image: str
-    rewards: Rewards
+    rewards: Rewards | None
     is_50_50_outcome: bool
-    tokens: tuple[TokenInfo]
-    tags: tuple[str]
+    tokens: list[TokenInfo]
+    tags: list[str] | None
 
 
 class MarketsResponse(msgspec.Struct):
     limit: int
     count: int
     next_cursor: str
-    data: tuple[MarketInfo]
+    data: list[MarketInfo]
 
 
 class MakerOrder(

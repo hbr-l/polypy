@@ -1,4 +1,5 @@
 import datetime
+import math
 import warnings
 from functools import lru_cache
 from typing import Any, Callable, Literal
@@ -39,7 +40,6 @@ from polypy.structs import (
 )
 from polypy.typing import NumericAlias
 
-# todo integrate rate_limiter
 # todo msgspec create specialized Decoders
 
 
@@ -117,20 +117,28 @@ def get_market(endpoint: str | ENDPOINT, market: str) -> MarketInfo:
 def get_markets(
     endpoint: str | ENDPOINT,
     next_cursor: str | None,
+    max_pages: int | None,
 ) -> list[MarketInfo]:
     if next_cursor is None:
         next_cursor = ""
 
-    ret = []
+    if max_pages is None:
+        max_pages = math.inf
 
-    while next_cursor != END_CURSOR:
+    ret = []
+    i = 0
+
+    while next_cursor != END_CURSOR and i < max_pages:
+        i += 1
         resp = _request(
             f"{endpoint}/markets?next_cursor={next_cursor}",
             "GET",
             None,
             None,
         )
-        market_response = msgspec.json.decode(resp.text, type=MarketsResponse)
+        market_response = msgspec.json.decode(
+            resp.text, type=MarketsResponse, strict=False
+        )
 
         next_cursor = market_response.next_cursor
         ret.extend(market_response.data)
