@@ -52,7 +52,9 @@ Improved Implementation over `py_clob_client`
 Project Status
 --------------
 This project is under active development and its function and class signatures, as well as the repository structure 
-will be subject to future changes.
+will be subject to future changes.  
+Quite a few of the REST calls are not yet implemented (e.g., get_spread), as development currently focuses features 
+needed for personal projects/trading bots - though implementing REST calls by oneself should be relatively easy.
 
 Known Issues
 ------------

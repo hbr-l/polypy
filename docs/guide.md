@@ -164,7 +164,8 @@ tick_size = 0.01
 book = plp.OrderBook(token_id, tick_size)
 ````
 
-The `OrderBook` class stores price and quantities (=size) for bids and asks at each level, as well as the tick size:
+The `OrderBook` class stores price and quantities (=size) for bids and asks at each level, as well as the tick size, as 
+properties:
 ````python
 import polypy as plp
 book: plp.OrderBook
@@ -185,7 +186,7 @@ arr_raw_prices, arr_raw_sizes = book.asks
 - Asks are sorted in ascending order: best ask (lowest) at index 0.  
 - Bids are sorted in descending order: best bid (highes) at index 0.  
 
-Thereby, if you want to plot an order book depth chart, then you can easily and directly use `np.cumsum` without the 
+Thereby, if you want to plot an order book depth chart, you can easily and directly use `np.cumsum` without the 
 need to re-sort any arrays.
 See [examples/order_book_streaming.py](../examples/order_book_streaming.py):    
 <img src="order_book_depth_chart.png" alt="depth_chart" width="1000"/>
@@ -260,7 +261,24 @@ implementation for this purpose (_multiprocessing.SharedMemory_). Furthermore, t
 must implement adequate locking/mutex as `OrderBook` does not use any (and does not need) any sophisticated locking.
 
 ## Orders
+In general, to perform a trade, an order has to be submitted to the order book, which then either gets (partially) matched 
+directly to a resting limit order in the order book, will be posted to the order book as a resting limit order until it 
+gets (partially) matched by a taker order, or will be canceled if not filled or expired - the concrete behavior will 
+depend on the very order type.
+  
+Thereby, an order is just a quote to buy or sell a token/asset, and only results in a real monetary transaction (aka position) 
+if a counterparty is matched at the quoted price.
+  
+In the following section, we first define some nomenclature regarding different order types and their behavior, and then 
+showcase how to place and manage orders. The section following this section will then elaborate on positions and how to 
+manage those.
+
 ### Order Types
+On Polymarket, order types differ in the following:
+1) Maker vs Taker: 
+2) Limit vs Market:
+3) Time-in-Force/ expiration:
+
 #### Maker Order vs Taker Order
 #### Limit Order vs Market Order
 #### Time-in-Force

@@ -44,7 +44,6 @@ if trade was split into multiple separate transactions -> debatable: use `callba
 _(backward-incompatible changes, changes in signatures)_
 - [ ] __Standardize naming of `asset_id` vs `token_id`, `market_id` vs `condition_id`__
 - [ ] __More specialized exception classes (esp. in OrderManager, PositionManager, UserStream)__
-- [ ] __Set defaults for ENDPOINT (really, only used for testing)__
 - [ ] More msgspec.Structs for decoding JSON
 - [ ] Use more TypeVar for better typing (e.g., `create_limit_order`, `create_market_order`)
 - [ ] Remove INSERT_STATUS.DEFINED from `polypy.order.common.CANCELABLE_INSERT_STATI` (debatable...?, tend to keep)
