@@ -19,7 +19,76 @@ it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of muc
 
 Quickstart
 ----------
-> Work in progress
+````python
+import time
+import polypy as plp
+
+# create an order book, which keeps tracks of resting limit orders
+# due to the complementary character of the unified order book for YES and NO tokens,
+# we only need to track one them
+book = plp.OrderBook(token_id="...", tick_size=0.01)
+
+# assign order book to a market stream, which updates the order book automatically in a separate thread
+# this way, the order book is always up-to-date (including tick size)
+market_stream = plp.MarketStream(
+    ws_endpoint=plp.ENDPOINT.WS, books=book, check_hash_params=None, rest_endpoint=plp.ENDPOINT.REST
+)
+market_stream.start()
+
+# create an order manager, which is used to create and manipulate orders, store and manage them
+order_manager = plp.OrderManager(
+    rest_endpoint=plp.ENDPOINT.REST,
+    private_key="...",
+    api_key="...",
+    secret="...",
+    passphrase="...",
+    maker_funder="your_wallet_addr",
+    signature_type=plp.SIGNATURE_TYPE.POLY_PROXY,
+    chain_id=plp.CHAIN_ID.POLYGON
+)
+
+# create a position_manager with an initial bankroll (100 USDC), which stores and manages current positions (holdings)
+position_manager = plp.PositionManager(rest_endpoint=plp.ENDPOINT.REST, usdc_position=100)
+
+# assign order_manager and position_manager to a user stream
+# this way, orders in order_manager and positions in position_manager will be updated automatically (e.g. if an 
+# order is executed, the corresponding position will be created and/or updated in the position manager, and the
+# order will be updated in the order_manager)
+user_stream = plp.UserStream(
+    ws_endpoint=plp.ENDPOINT.WS,
+    tuple_manager=(order_manager, position_manager),
+    market_assets=("market_id", "yes_token_id", "no_token_id"),
+    api_key="...",
+    secret="...",
+    passphrase="..."
+)
+user_stream.start()
+
+# post an order 1 tick size above current best bid
+best_bid = book.best_bid_price
+order, response = order_manager.limit_order(
+    price=best_bid + book.tick_size,
+    size=10,
+    token_id="yes_token_id",
+    side=plp.SIDE.BUY,
+    tick_size=book.tick_size,
+    tif=plp.TIME_IN_FORCE.GTC,
+    expiration=None
+)
+
+# check after 10 seconds
+time.sleep(10)
+
+# check order status
+order_manager.get(order).status
+
+# check cash position
+position_manager.balance
+
+# check buying power (to submit next buy order)
+position_manager.buying_power(order_manager)
+````
+
 
 Documentation
 -------------
