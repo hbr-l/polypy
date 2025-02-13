@@ -171,17 +171,40 @@ import polypy as plp
 book: plp.OrderBook
 
 # book keeps track of (excerpt):
-best_ask_p = book.best_ask_price    # numeric value
-best_ask_q = book.best_ask_size     # numeric value
-mid = book.midpoint_price       # numeric value
-tick_size = book.tick_size      # numeric value
+best_ask_p = book.best_ask_price    # numeric value, same type as book.dtype (see next paragraphs)
+>> np.float64(0.254)
+
+best_ask_q = book.best_ask_size     # numeric value, same type as book.dtype
+>> np.float64(150.0)
+
+mid = book.midpoint_price       # numeric value, same type as book.dtype
+>> np.float64(0.235)
+
+tick_size = book.tick_size      # numeric value, same type as book.dtype
+>> 0.001
 
 arr_ask_prices = book.ask_prices    # array of ask prices: contains only prices with non-zero sizes 
-arr_ask_sizes = book.ask_sizes      # array of non-zero ask sizes
+>> array([0.254, 0.37 , 0.4  , 0.999])
+
+arr_ask_sizes = book.ask_sizes      # array of non-zero ask sizes, same type as book.dtype
+>> array([150, 200, 125, 150000])
 
 arr_raw_prices, arr_raw_sizes = book.asks
+>> (array([0., 0.001, 0.002, ..., 0.998,   0.999, 1.], shape=(1001,)),
+    array([0.,    0.,    0., ...,    0., 150000., 0.], shape=(1001,)))
 # raw arrays: contains zero-size elements as well and has therefore length (1/tick_size)+1
+
+bid_q = book.bid_size(0.2)          # get bid size at bid price = 0.2, same type as book.dtype (not dependent on input type)
+>> np.float64(200.0)
+
+bids_summary = book.bids_summary    # list of {"price": str(...), "size": str(...)} dicts per level
+>> [{'price': '0.001', 'size': '211.27'},
+    {'price': '0.002', 'size': '222'},
+     ...,
+    {'price': '0.216', 'size': '20'}]
 ````
+_*Note: return type depends on which `zeros_factory` was defined at \_\_init\_\_ (see [Numeric Type](#numeric-type-float-vs-decimal)) 
+and, in case of np.float64 vs np.float32, on your system._
 
 - Asks are sorted in ascending order: best ask (lowest) at index 0.  
 - Bids are sorted in descending order: best bid (highes) at index 0.  
@@ -192,15 +215,18 @@ See [examples/order_book_streaming.py](../examples/order_book_streaming.py):
 <img src="order_book_depth_chart.png" alt="depth_chart" width="1000"/>
 
 #### Marketable Price
-The `OrderBook` can also be used to calculate the marketable price, which is the price at which an order would be fill 
+The `OrderBook` can also be used to calculate the marketable price, which is the price at which an order would be filled 
 in its entirety (immediate fill by crossing the spread):
 ````python
 import polypy as plp
 
 book = plp.OrderBook(...)
-market_price = book.marketable_price(plp.SIDE.BUY, 100)
+market_price = book.marketable_price(plp.SIDE.BUY, 150)
+>> (np.float64(0.4), np.float64(162.1))
+# marketable price, cumulative size, i.e.: 
+#   there are currently 162.1 shares at price 0.4, which would match an order of size 150 immediately
 ````
-Above example calculates the price at which a buy (marketable/aggressive limit) order of 100 USDC volume would fill immediately.
+Above example calculates the price at which a buy (marketable/aggressive limit) order of 150 USDC volume would fill immediately.
 If no marketable price can be calculated, e.g., the amount exceeds the liquidity in the book, an `OrderBookException` will be raised. 
   
 #### Numeric Type: Float vs. Decimal
@@ -221,8 +247,8 @@ Whilst `OrderBook` exposes some methods to manipulate the order book directly (e
 there is absolutely no need to do so manually.
 ````python
 # methods to manipulate book manually (excerpt):
-book.set_asks(list_ask_prices, list_ask_sizes)
-book.update_tick_size()
+book.set_asks(list_ask_prices, list_ask_sizes)      # override just new values
+book.reset_asks(list_ask_prices, list_ask_sizes)    # override with new values and set all other values to zero
 ````
 Instead, the `OrderBook` should rather be assigned to a [MarketStream](#market-stream), which updates the order book 
 in real time within a separate thread, s.t. the user does not have to care for updating or manipulating the order book manually.
@@ -235,8 +261,8 @@ import polypy as plp
 
 book = plp.OrderBook(...)
 
-book.sync(plp.ENDPOINT.REST)    # update bids and asks
-book.update_tick_size(plp.ENDPOINT.REST)    # update tick size
+book.sync(plp.ENDPOINT.REST)    # update bids and asks (fetches data)
+book.update_tick_size(plp.ENDPOINT.REST)    # update tick size (fetches data)
 ````
 
 #### Advanced: Order Book Hash, Multiprocessing
@@ -246,7 +272,7 @@ import polypy as plp
 
 book = plp.OrderBook(...)
 
-market_id = "..."   # market ID to which the token belongs to
+market_id = "..."   # market ID to which the token belongs to (do not confuse it with the token ID!)
 timestamp = ...     # int: time of order book generation in millis
 book.hash(market_id, timestamp)
 ````
@@ -258,12 +284,12 @@ messages automatically.
 The default implementation is not suitable for multiprocessing. If multiprocessing is necessary, the `zeros_factory` must 
 return an array of zeros which is capable of being used within multiprocessing - typically one would choose a shared memory 
 implementation for this purpose (_multiprocessing.SharedMemory_). Furthermore, the zeros array returned by `zeros_factory` 
-must implement adequate locking/mutex as `OrderBook` does not use any (and does not need) any sophisticated locking.
+must implement adequate locking/mutex as `OrderBook` does not use (and does not need) any sophisticated locking.
 
 ## Orders
-In general, to perform a trade, an order has to be submitted to the order book, which then either gets (partially) matched 
-directly to a resting limit order in the order book, will be posted to the order book as a resting limit order until it 
-gets (partially) matched by a taker order, or will be canceled if not filled or expired - the concrete behavior will 
+In general, to perform a trade, an order has to be submitted to the order book, which then either 1) gets (partially) matched 
+directly to a resting limit order in the order book, 2) will be posted to the order book as a resting limit order until it 
+gets (partially) matched by a taker order, or 3) will be canceled if not filled or expired - the concrete behavior will 
 depend on the very order type.
   
 Thereby, an order is just a quote to buy or sell a token/asset, and only results in a real monetary transaction (aka position) 
@@ -275,12 +301,30 @@ manage those.
 
 ### Order Types
 On Polymarket, order types differ in the following:
-1) Maker vs Taker: 
-2) Limit vs Market:
-3) Time-in-Force/ expiration:
+1) Maker vs Taker: whether an order does not match and will be posted on the order book ('makes' liquidity on the book), 
+or order matches immediately ('takes' liquidity out of the book)
+2) Limit vs Market: whether a number of shares ('size') at a corresponding price or just an amount in USDC ('amount') 
+is specified in the order (note: Polymarket's definition of limit and market order differs from the conventional definition)
+3) Time-in-Force/ expiration: When the order expires
 
 #### Maker Order vs Taker Order
+If you post an order and there is no counterparty willing to trade at your specified price and size, then no monetary
+transaction will take place and the order will be resting on the order book. Therefore, you provide (aka 'make') liquidity 
+in the order book, until a counterparty comes along willing to trade at your specified price and size. This 
+is called a __maker order__.
+  
+If you instead post an order, which can be matched to a resting order on the order book, the transaction will take place 
+and therefore, you take liquidity from the order book. Apart from the clearing and settlement mechanism (i.e. mining and 
+confirming the trade on the blockchain), the transaction takes place immediately. This is called a __taker order__.
+  
+Note, that maker as well as taker order can be matched partially, e.g. if your order specifies 10 shares, it might be 
+the case, that a counterparty is only willing to trade 5 shares, such that you remain with an open order of 5 shares. 
+If you want to avoid partial fills, you can set the "Time-in-Force" to FOK - "Fill-Or-Kill", which is always a 
+taker order and either will be matched in its entirety or will be canceled immediately.
+
 #### Limit Order vs Market Order
+
+
 #### Time-in-Force
 #### Notes on MakingAmount, TakingAmount and Precision
 ### Order Implementation
