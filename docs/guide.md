@@ -323,10 +323,72 @@ If you want to avoid partial fills, you can set the "Time-in-Force" to FOK - "Fi
 taker order and either will be matched in its entirety or will be canceled immediately.
 
 #### Limit Order vs Market Order
+A limit order defines a specific price and number of shares at which you want to buy or sell. If the order can be 
+matched against resting orders on the order book sufficient to your specified price or better, then the order will 
+be executed immediately (meaning transaction of shares and currency with one or more counterparties). In this 
+case the limit order is a _taker order_. Note, that your order can be matched against multiple other orders at 
+different price levels (as long as they are equal or better to your limit price e.g., if you want to buy for 0.5 USDC,
+every price level <= 0.5 USDC), as well as being matched only partially if not enough size is available, which means 
+the remaining order size will sit as a resting limit order on the order book.
+  
+If a limit order cannot be matched directly (e.g., bid (buy order) is lower than current best ask (resting sell order), 
+or vice versa), it will be resting on the order book. In this case, the limit order is a _maker order_, and will only 
+be matched against an arriving taker order.  
+  
+A market order is essentially just a limit order with a marketable price - which means it can be matched directly as a 
+_taker order_. Therefore, market orders are always _taker orders_.  
+  
+Conversely, to common definition in e.g., stock exchanges, Polymarket makes the following distinction between both:
+1) __Limit order__: defines limit price and size (number of shares)
+2) __Market order__: defines an amount in USDC (and will execute as many shares for the given USDC amount as possible at 
+the current market price)
 
+|              | taker order     | maker order         | definition            |
+|--------------|-----------------|---------------------|-----------------------|
+| market order | always          | never               | define amount         |
+| limit        | if marketable   | if not marketable   | define price and size |
+| definition   | immediate match | resting on the book |                       |
 
 #### Time-in-Force
+_Time in Force_ (TiF) defines the order behavior regarding matching and expiration.
+On Polymarket, there are three _TiF_ options available:
+1) __GTC__: "good till cancel", the order remains open/live/resting until canceled or fully matched (a partially matched 
+order remains open for its remaining size to be matched).
+2) __GTD__: "good til day", the order remains open/live/resting until a pre-set expiration date, canceled or fully matched.
+3) __FOK__: "fill or kill", the order gets filled immediately or otherwise will be automatically canceled. This option is 
+only valid for taker orders! (because non-marketable limit orders will be automatically canceled as they cannot be 
+matched immediately) 
+
 #### Notes on MakingAmount, TakingAmount and Precision
+The size argument of an order has up to 2 decimal places of precision. Everything beyond that will be rounded to 2 decimal 
+places (floor).  
+The price argument of an order has either 2 or 3 decimal places of precision depending on the current [tick size](#tick-sizes) 
+of the market. If the current market price is within \[0.4, 0.96], then `tick_size = 0.01`, which results in a precision 
+of 2 decimal places. If the market price is in (0, 0.4) or (0.96, 1), then `tick_size = 0.001`, which results in 
+3 decimal places (sub-cent) of precision.  
+As the amount is the product of _size * price_, it has a precision of 4 or 5 decimal places, depending on the current 
+tick size.
+  
+_MakingAmount_ and _TakingAmount_ are terms, that should not be confused with _Taker Order_ and _Maker Order_, as those 
+terms have NOTHING in common.  
+_MakingAmount_ and _TakingAmount_ are terms often used in digital order protocols (e.g., 0x) and have the following meaning:
+1) __MakingAmount__: The amount of USDC (in case of buy order) or the size/number of shares (in case of sell order) that you 
+transfer to the counterparty of a trade ('making' the amount/size to the counterparty)
+2) __TakingAmount__: The amount of USDC (in case of a sell order) or the size/number of shares (in case of buy order) that you
+receive from the counterpart of a trade ('taking' the amount/size from the counterparty)
+
+Thereby, these terms specify the flows that occur at a trade:
+
+|            | MakingAmount | TakingAmount    |
+|------------|--------------|-----------------|
+| Buy order  | USDC spent   | shares received |
+| Sell order | shares spent | USDC received   |
+
+_MakingAmount_ and _TakingAmount_ are usually scaled by 1e06 and are integers without decimal places.  
+Usually, the user of `polypy` will never have to (and should never directly) interact with the terms _MakingAmount_ and 
+_TakingAmount_ directly, as everything is handled automatically by `polypy` under the hood.   
+Nonetheless, it is good to be familiar with these terms.
+
 ### Order Implementation
 (note on SharedMemory)
 ### Creating Orders

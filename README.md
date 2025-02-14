@@ -7,7 +7,8 @@ Goals
 -----
 `PolyPy` is a Python wrapper around [Polymarket's API](https://docs.polymarket.com/) and aims to implement a 
 set of components for facilitating trading on Polymarket, whilst focusing on decent runtime performance.
-`PolyPy`'s implementation is opinionated and biased regarding architecture and design choices.
+`PolyPy`'s implementation is opinionated and biased regarding architecture and design choices, and therefore tailored
+towards personal projects/ use in trading bots.
   
 Although, [Polymarket's Python Client](https://github.com/Polymarket/py-clob-client/tree/main) is quite convenient, 
 it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of much faster 
@@ -15,7 +16,7 @@ it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of muc
 [attrs](https://www.attrs.org/en/stable/init.html), etc., and has some disadvantageous implementation details.
   
 > POLYPY IS NOT AN OFFICIAL POLYMARKET IMPLEMENTATION OR AFFILIATED WITH POLYMARKET IN ANY WAY!
-> Please mind, that PolyPy is just a hobby project and not professional software!
+> Please mind, that PolyPy is just a hobby project, might be subject to bugs, and is no professional software!
 
 Quickstart
 ----------
@@ -122,7 +123,7 @@ Project Status
 --------------
 This project is under active development and its function and class signatures, as well as the repository structure 
 will be subject to future changes.  
-Quite a few of the REST calls are not yet implemented (e.g., get_spread), as development currently focuses on features 
+Quite a few of the REST calls are not yet implemented (e.g., _get_spread()_), as development currently focuses on features 
 needed for personal projects/trading bots - though implementing REST calls by oneself should be relatively easy.
 
 Known Issues

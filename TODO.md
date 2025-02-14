@@ -57,8 +57,8 @@ _(backward-compatible changes, no changes in signatures)_
   - [ ] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [ ] __Port `polypy.stream.common.AbstractStreamer` to async (performance and buffering)__
 - [ ] __Replace usage of `PolyPyException` with more specific (base) exceptions__
+- [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
 - [ ] Fix typing of `FrozenOrder` and `FrozenPosition` (currently, autocomplete does not work for class attributes and methods)
-- [ ] Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)
 - [ ] Rounding routines cost a lot of compute time
 - [ ] Premature double rounding in `polypy.order.limit.limit_order_taker_maker_amount` and `polypy.order.market.market_order_taker_maker_amount`
 - [ ] Lack of idempotency in `Position` and `CSMPosition` (see class docstring e.g., if duplicate transaction with identical trade_id is performed twice), 
