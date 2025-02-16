@@ -77,6 +77,7 @@ enables trading positions as soon as they hit MATCHED - at least given limited a
   - https://github.com/Polymarket/ctf-utils/blob/main/src/utils.ts
   - https://github.com/Polymarket/ctf-utils/blob/main/test/util.test.ts
   - https://chatgpt.com/c/678d8f6d-c324-8001-b919-d9b35a3772d1
+  - makes supplying token_ids to UserStream obsolete (more convenient if only market id needs to be supplied)
 - [ ] When `price_change` market stream message is received, the `timestamp` field does not conform with the `hash`. This 
 leads to iterating over timestamps in order to find the correct hash if and only if the local book is still in sync. Assumption:
 `timestamp` is the _time of message emission_ and not the _time of book generation_. 

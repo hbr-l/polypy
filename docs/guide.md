@@ -407,7 +407,8 @@ The rest of this documentation refers to the standard order class implementation
 #### Attributes
 An order object has the following __read-only__ attributes:
 - `tif: plp.TIME_IN_FORCE`: see [Time-in-Force](#time-in-force)
-- `defined_at: int`: time in _millis_ at which order was initialized
+- `defined_at: int`: time in _millis_ at which order was initialized. This is only kept as reference for the user and is neither 
+used anywhere else in `polypy`, nor sent to the Polymarket API.
 - `numeric_type: type[plp.NumericAlias]`: Python type which is used for decimal numbers e.g., `float` or `Decimal`
 - `price: plp.NumericAlias`: specified price for order, same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
 - `size: plp.NumericAlias`: specified size for order, same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
@@ -434,7 +435,7 @@ An order object has the following __write-once__ attributes (which are frozen on
 - `signature: str | None`: will be computed automatically if factory or Order Manager is used, else user has to compute and provide signature when initializing directly
 - `created_at: int | None`: time in _seconds_ at which order is created on the exchange/Polymarket and will be returned within the response message when submitting an order
 
-An order object has the following _read-and-write__ attributes:
+An order object has the following __read-and-write__ attributes:
 - `status`
 - `size_matched`
 - `strategy_id`
@@ -443,11 +444,13 @@ An order object has the following _read-and-write__ attributes:
 #### Methods
 
 #### Notes on `price`, `size` and `amount` - market vs limit order
-(defined once)
+(defined only once and then set forever)
 (market vs limit order)
 #### Notes on Multithreading and Multiprocessing
 
 ### Creating Orders
+### Computing Expiration Timestamp
+(expiration: compute_expiration_timestamp)
 ### Order Manager
 
 ## Positions
@@ -457,6 +460,19 @@ An order object has the following _read-and-write__ attributes:
 
 ## Trades
 _tbd_
+
+## Timestamps and Units
+Polymarket uses different time scales for different timestamps. This is also reflected in `polypy`.
+  
+In __seconds__ unit:
+- `Order.created_at`: timestamp at which the order is submitted to the exchange. This timestamp is generated and returned by Polymarket.
+- `Order.expiration`: timestamp at which a `GTD` order will expire (minus security threshold of 60 seconds). This timestamp is computed by the user and sent to Polymarket.
+`polypy.compute_expiration_timestamp(...)` (see [Creating Orders](#creating-orders)) can be used as a convenience function therefore.
+
+In __millis__ unit:
+- `timestamp` in `market` websocket message: timestamp of order book generation (aka when order book changed). This timestamp is generated and returned by Polymarket.
+If an [order book](#clob-in-polypy-polypyorderbook) is assigned to a [market stream](#market-stream), then this will be handled automatically.
+- `Order.defined_at`: timestamp at which the order object was initialized. This is only kept for reference and is not further used in `polypy`, not sent to Polymarket.
 
 ## Streams
 ### Market Stream

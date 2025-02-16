@@ -74,7 +74,8 @@ order, response = order_manager.limit_order(
     side=plp.SIDE.BUY,
     tick_size=book.tick_size,
     tif=plp.TIME_IN_FORCE.GTC,
-    expiration=None
+    expiration=None,
+    neg_risk=None
 )
 
 # check after 10 seconds
