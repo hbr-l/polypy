@@ -199,7 +199,7 @@ def get_tick_size(endpoint: str | ENDPOINT, asset_id: str) -> float:
     return msgspec.json.decode(resp.text)["minimum_tick_size"]
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=64)
 def get_neg_risk(endpoint: str | ENDPOINT, asset_id: str) -> bool:
     resp = _request(f"{endpoint}/neg-risk?token_id={asset_id}", "GET", None, None)
     return msgspec.json.decode(resp.text)["neg_risk"]
