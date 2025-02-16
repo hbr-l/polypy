@@ -26,33 +26,39 @@ from polypy.typing import NumericAlias
 
 def compute_expiration_timestamp(
     tif: TIME_IN_FORCE,
-    expire: int | datetime.timedelta | datetime.datetime = 0,
-    security_millis: int = 60_000,
+    expire: int | datetime.timedelta | datetime.datetime,
+    security_s: int = 60,
 ) -> int:
-    # todo test
-    # in millis timestamp
+    """Compute expiration timestamp.
+
+    Parses `expire` into a timestamp and adds `security_s` on top (required by Polymarket).
+
+    Parameters
+    ----------
+    tif: TIME_IN_FORCE,
+        if not GTD, then always returns 0
+    expire: int | datetime.timedelta | datetime.datetime,
+        - int: duration in seconds until order expires
+        - datetime.timedelta: duration until order expires
+        - datetime.datetime: order expires at specified datetime
+    security_s: int, default = 60
+
+    Returns
+    -------
+    int: timestamp of expiration, ready to be sent via REST call
+    """
+    # in second timestamp
     if tif is not TIME_IN_FORCE.GTD:
         return 0
 
     if isinstance(expire, int):
-        return (
-            int(1_000 * datetime.datetime.now().timestamp()) + expire + security_millis
-        )
+        return int(datetime.datetime.now().timestamp()) + expire + security_s
     elif isinstance(expire, datetime.timedelta):
-        return (
-            int(1_000 * datetime.datetime.now().timestamp())
-            + int(expire.total_seconds() * 1_000)
-            + security_millis
-        )
+        return int((datetime.datetime.now() + expire).timestamp()) + security_s
     elif isinstance(expire, datetime.datetime):
-        expire = expire - datetime.datetime.now()
-        if expire.total_seconds() < 0:
-            raise OrderCreationException("Delta to expiration is <0.")
-        return (
-            int(1_000 * datetime.datetime.now().timestamp())
-            + int(expire.total_seconds() * 1_000)
-            + security_millis
-        )
+        if expire <= datetime.datetime.now():
+            raise OrderCreationException("Expiration date is in the past.")
+        return int(expire.timestamp()) + security_s
     else:
         raise OrderCreationException(
             f"Unknown type for `delta`: {type(expire)}. Input: {expire}."
