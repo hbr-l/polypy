@@ -72,7 +72,7 @@ Additionally, both classes build upon the assumption, that FAILED is always prec
 enables trading positions as soon as they hit MATCHED - at least given limited and manual testing so far: repeat experiments) -> evaluate need
 
 ## Open Unknowns
-- [ ] __GTC security threshold for expiration? c.f. `polypy.order.base.compute_expiration_timestamp` and change if necessary__
+- [x] GTC security threshold for expiration? c.f. `polypy.order.base.compute_expiration_timestamp` and change if necessary -> always add 1 minute
 - [ ] __Computation of token_id based on condition_id?__
   - https://github.com/Polymarket/ctf-utils/blob/main/src/utils.ts
   - https://github.com/Polymarket/ctf-utils/blob/main/test/util.test.ts
