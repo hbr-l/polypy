@@ -181,7 +181,7 @@ class OrderManagerProtocol(Protocol):
         tick_size: float | NumericAlias | None,
         book: OrderBook | None,
         max_size: NumericAlias | None,
-        neg_risk: bool | None,
+        neg_risk: bool | None = None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a market order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -218,7 +218,7 @@ class OrderManagerProtocol(Protocol):
         tick_size: float | NumericAlias | None,
         tif: TIME_IN_FORCE,
         expiration: int | None,
-        neg_risk: bool | None,
+        neg_risk: bool | None = None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a limit order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -707,7 +707,7 @@ class OrderManager(OrderManagerProtocol):
         tick_size: float | NumericAlias | None,
         book: OrderBook | None,
         max_size: NumericAlias | None,
-        neg_risk: bool | None,
+        neg_risk: bool | None = None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a market order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -753,7 +753,7 @@ class OrderManager(OrderManagerProtocol):
         tick_size: float | NumericAlias | None,
         tif: TIME_IN_FORCE,
         expiration: int | None,
-        neg_risk: bool | None,
+        neg_risk: bool | None = None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a limit order, posts it to the exchange and adds it to the Order Manager to be tracked.
