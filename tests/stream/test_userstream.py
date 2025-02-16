@@ -342,13 +342,16 @@ def callback_clean():
 # - order only assigned to one order manager (raise)
 
 
+# noinspection DuplicatedCode
 def test_buffer_trade_info_taker_order(
     streamer, yes_asset_id, trade_info_taker_buy_matched
 ):
     stream, om, pm = streamer(None)
 
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     time.sleep(0.1)
 
     assert om.valid is True
@@ -374,7 +377,9 @@ def test_buffer_trade_info_maker_order(
     stream, om, pm = streamer(None)
 
     stream.on_msg(trade_info_maker_buy_matched)
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     time.sleep(0.1)
 
     assert (
@@ -407,7 +412,9 @@ def test_buffer_order_info_maker_order(
 
     # this simulates websocket msg recv which first will be buffered until rest call returns
     stream.on_msg(data_placement)
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     time.sleep(0.1)
 
     assert (
@@ -472,7 +479,9 @@ def test_no_buffer_trade_info_taker_order(
 ):
     stream, om, pm = streamer(buffer_settings=None)
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
     time.sleep(0.1)
 
@@ -515,7 +524,9 @@ def test_no_buffer_trade_info_maker_order(
 ):
     stream, om, pm = streamer(buffer_settings=None)
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     stream.on_msg(trade_info_maker_buy_matched)
     time.sleep(0.1)
 
@@ -566,7 +577,9 @@ def test_no_buffer_order_info_maker_order(
 
     data_placement, data_update = order_info_maker_buy_placement_update
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     stream.on_msg(data_placement)
     time.sleep(0.1)
     stream.on_msg(data_update)  # this simulates websocket msg recv
@@ -718,7 +731,9 @@ def test_untrack_insert_status_at_unmatched_order_info(
     )
     data = order_info_maker_buy_unmatched
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     assert len(om.token_ids) == 1
     assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
     assert len(callback_clean.cleaned_orders) == 0
@@ -748,7 +763,9 @@ def test_untrack_insert_status_at_matched_order_info(
     )
     data_placement, data_update = order_info_maker_buy_placement_update
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     assert len(om.token_ids) == 1
     assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
     assert len(callback_clean.cleaned_orders) == 0
@@ -812,7 +829,9 @@ def test_untrack_insert_status_unmatched_trade_status_confirmed(
         )
     )
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     assert len(om.token_ids) == 1
     assert len(pm.asset_ids) == 2
     assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
@@ -855,7 +874,9 @@ def test_raise_monitor_order_assets(streamer, mock_std_post_order):
     assert om.valid is True
     assert pm.valid is True
 
-    om.limit_order(0.99, 5, "1234", SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, "1234", SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     time.sleep(0.1)
 
     assert om.valid is False
@@ -1198,7 +1219,9 @@ def test_position_manager_none(
     order_placement, order_update = order_info_maker_buy_placement_update
 
     stream.on_msg(order_placement)
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
     stream.on_msg(trade_info_maker_buy_matched)
     time.sleep(0.0001)
 
@@ -1340,7 +1363,9 @@ def test_raise_explicit_sell_market_position_not_yet_created(
 
     data = trade_info_taker_sell_matched
 
-    om.limit_order(0.99, 5, yes_asset_id, SIDE.SELL, 0.01, TIME_IN_FORCE.GTC, None)
+    om.limit_order(
+        0.99, 5, yes_asset_id, SIDE.SELL, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+    )
 
     with pytest.raises(PositionNegativeException):
         stream.on_msg(data)
@@ -1598,7 +1623,14 @@ def test_decimals(
 
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
     order_manager.limit_order(
-        dec(0.99), dec(5), yes_asset_id, SIDE.BUY, dec(0.01), TIME_IN_FORCE.GTC, None
+        dec(0.99),
+        dec(5),
+        yes_asset_id,
+        SIDE.BUY,
+        dec(0.01),
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
     )
     time.sleep(0.1)
 

@@ -431,7 +431,14 @@ def test_market_order(
     )
 
     order_manager.market_order(
-        100, ASSET_ID_YES, SIDE.BUY, None, None, None, strategy_id="strat"
+        100,
+        ASSET_ID_YES,
+        SIDE.BUY,
+        None,
+        None,
+        None,
+        strategy_id="strat",
+        neg_risk=None,
     )
     assert list(order_manager.order_ids) == ["1234"]
     assert order_manager.get_by_id("1234").id == "1234"
@@ -451,7 +458,14 @@ def test_market_order(
     )
     with pytest.raises(OrderPlacementUnmatched):
         order_manager.market_order(
-            20, ASSET_ID_YES, SIDE.SELL, None, None, math.inf, strategy_id="tactic"
+            20,
+            ASSET_ID_YES,
+            SIDE.SELL,
+            None,
+            None,
+            math.inf,
+            strategy_id="tactic",
+            neg_risk=None,
         )
     assert list(order_manager.order_ids) == ["1234", "2345"]
     assert order_manager.get_by_id("2345").status == INSERT_STATUS.UNMATCHED
@@ -462,7 +476,9 @@ def test_market_order(
 
     mock_post_order({"error": "order 2345 is invalid. Duplicated."}, 400)
     with pytest.raises(OrderPlacementFailure):
-        order_manager.market_order(20, ASSET_ID_YES, SIDE.SELL, None, None, math.inf)
+        order_manager.market_order(
+            20, ASSET_ID_YES, SIDE.SELL, None, None, math.inf, neg_risk=None
+        )
     assert list(order_manager.order_ids) == ["1234", "2345"]
 
 
@@ -478,12 +494,7 @@ def test_market_order_raise_book(
     book = OrderBook("9876543212", 0.01)
     with pytest.raises(OrderCreationException) as record:
         order_manager.market_order(
-            100,
-            ASSET_ID_YES,
-            SIDE.SELL,
-            None,
-            book,
-            math.inf,
+            100, ASSET_ID_YES, SIDE.SELL, None, book, math.inf, neg_risk=None
         )
     assert "book.token_id" in str(record)
 
@@ -520,6 +531,7 @@ def test_limit_order(
         None,
         TIME_IN_FORCE.GTC,
         None,
+        neg_risk=None,
         strategy_id="strat",
     )
     assert list(order_manager.order_ids) == ["1234"]
@@ -547,6 +559,7 @@ def test_limit_order(
             None,
             TIME_IN_FORCE.GTC,
             None,
+            neg_risk=None,
             strategy_id="tactic",
         )
     assert list(order_manager.order_ids) == ["1234", "2345"]
@@ -568,6 +581,7 @@ def test_limit_order(
             None,
             TIME_IN_FORCE.GTC,
             None,
+            neg_risk=None,
         )
     assert list(order_manager.order_ids) == ["1234", "2345"]
 
@@ -1291,6 +1305,7 @@ def test_sync_decimal(
         None,
         TIME_IN_FORCE.GTC,
         None,
+        neg_risk=None,
     )
     assert order_manager.get_by_id("1234").size_matched == 0.5
 
@@ -1353,7 +1368,9 @@ def test_market_sell_max_size(order_manager, mock_tick_size, mock_neg_risk):
     mock_neg_risk(ASSET_ID_YES)
 
     with pytest.raises(OrderCreationException) as record:
-        order_manager.market_order(100, ASSET_ID_YES, SIDE.SELL, None, None, 0.01)
+        order_manager.market_order(
+            100, ASSET_ID_YES, SIDE.SELL, None, None, 0.01, neg_risk=None
+        )
 
     assert "exceeds" in str(record)
 
@@ -1409,6 +1426,7 @@ def test_clean(
         None,
         TIME_IN_FORCE.GTC,
         1000,
+        neg_risk=None,
     )
     assert list(order_manager.order_ids) == ["1", "2", "3", "1234"]
     assert order_manager.get_by_id("1234").size_matched == 0
@@ -1491,7 +1509,9 @@ def test_invalidate(sample_order, order_manager):
     assert list(order_manager.token_ids) == [ASSET_ID_YES]
 
     with pytest.raises(ManagerInvalidException) as record:
-        order_manager.market_order(12, ASSET_ID_YES, SIDE.BUY, 0.01, None, math.inf)
+        order_manager.market_order(
+            12, ASSET_ID_YES, SIDE.BUY, 0.01, None, math.inf, neg_risk=None
+        )
     assert "invalid" in str(record)
     assert list(order_manager.order_ids) == ["2345"]
     assert list(order_manager.token_ids) == [ASSET_ID_YES]

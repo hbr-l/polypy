@@ -181,6 +181,7 @@ class OrderManagerProtocol(Protocol):
         tick_size: float | NumericAlias | None,
         book: OrderBook | None,
         max_size: NumericAlias | None,
+        neg_risk: bool | None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a market order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -195,7 +196,10 @@ class OrderManagerProtocol(Protocol):
         tick_size: float | NumericAlias | None
             if None: first tries to infer tick_size from `book`, and if no `book` specified, then performs REST call
         book
-        max_size
+        max_size: NumericAlias | None
+            only necessary if side=SIDE.SELL. Maximal number of shares to sell (should not be greater than current
+            position size)
+        neg_risk
 
         Notes
         -----
@@ -214,6 +218,7 @@ class OrderManagerProtocol(Protocol):
         tick_size: float | NumericAlias | None,
         tif: TIME_IN_FORCE,
         expiration: int | None,
+        neg_risk: bool | None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a limit order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -702,6 +707,7 @@ class OrderManager(OrderManagerProtocol):
         tick_size: float | NumericAlias | None,
         book: OrderBook | None,
         max_size: NumericAlias | None,
+        neg_risk: bool | None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a market order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -716,13 +722,16 @@ class OrderManager(OrderManagerProtocol):
             else:
                 tick_size = book.tick_size
 
-        # get_neg_risk is lru cached
+        if neg_risk is None:
+            # get_neg_risk is lru cached
+            neg_risk = get_neg_risk(self.rest_endpoint, token_id)
+
         order = self._create_market_order(
             amount=amount,
             token_id=token_id,
             side=side,
             tick_size=tick_size,
-            neg_risk=get_neg_risk(self.rest_endpoint, token_id),
+            neg_risk=neg_risk,
             chain_id=self.chain_id,
             private_key=self.private_key,
             maker=self.maker_funder,
@@ -744,6 +753,7 @@ class OrderManager(OrderManagerProtocol):
         tick_size: float | NumericAlias | None,
         tif: TIME_IN_FORCE,
         expiration: int | None,
+        neg_risk: bool | None,
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a limit order, posts it to the exchange and adds it to the Order Manager to be tracked.
@@ -759,14 +769,17 @@ class OrderManager(OrderManagerProtocol):
         if tick_size is None:
             tick_size = get_tick_size(self.rest_endpoint, token_id)
 
-        # get_neg_risk is lru cached
+        if neg_risk is None:
+            # get_neg_risk is lru cached
+            neg_risk = get_neg_risk(self.rest_endpoint, token_id)
+
         order = self._create_limit_order(
             price=price,
             size=size,
             token_id=token_id,
             side=side,
             tick_size=tick_size,
-            neg_risk=get_neg_risk(self.rest_endpoint, token_id),
+            neg_risk=neg_risk,
             chain_id=self.chain_id,
             private_key=self.private_key,
             maker=self.maker_funder,
