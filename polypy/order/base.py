@@ -143,7 +143,9 @@ class Order:
         converter=attrs.converters.optional(int),
         on_setattr=[attrs.setters.convert, _optional_frozen],
     )
+    """In seconds"""
     defined_at: int = attrs.field(converter=int, on_setattr=_frozen)
+    """In millis"""
 
     numeric_type: type[NumericAlias] | Callable[
         [float | str], NumericAlias
@@ -293,6 +295,7 @@ class Order:
 
     @property
     def expiration(self) -> int:
+        """In seconds"""
         return self.eip712order.expiration
 
     @property
