@@ -320,7 +320,8 @@ confirming the trade on the blockchain), the transaction takes place immediately
 Note, that maker as well as taker order can be matched partially, e.g. if your order specifies 10 shares, it might be 
 the case, that a counterparty is only willing to trade 5 shares, such that you remain with an open order of 5 shares. 
 If you want to avoid partial fills, you can set the "Time-in-Force" to FOK - "Fill-Or-Kill", which is always a 
-taker order and either will be matched in its entirety or will be canceled immediately.
+taker order and either will be matched in its entirety or will be canceled immediately (though, it is not possible to 
+define FOK for resting limit orders - those can always incur partial fills).
 
 #### Limit Order vs Market Order
 A limit order defines a specific price and number of shares at which you want to buy or sell. If the order can be 
@@ -343,19 +344,19 @@ Conversely, to common definition in e.g., stock exchanges, Polymarket makes the 
 2) __Market order__: defines an amount in USDC (and will execute as many shares for the given USDC amount as possible at 
 the current market price)
 
-|              | taker order     | maker order         | definition            |
-|--------------|-----------------|---------------------|-----------------------|
-| market order | always          | never               | define amount         |
-| limit        | if marketable   | if not marketable   | define price and size |
-| definition   | immediate match | resting on the book |                       |
+|              | taker order     | maker order         | definition             |
+|--------------|-----------------|---------------------|------------------------|
+| market order | always          | never               | specify amount         |
+| limit        | if marketable   | if not marketable   | specify price and size |
+| definition   | immediate match | resting on the book |                        |
 
 #### Time-in-Force
 _Time in Force_ (TiF) defines the order behavior regarding matching and expiration.
 On Polymarket, there are three _TiF_ options available:
-1) __GTC__: "good till cancel", the order remains open/live/resting until canceled or fully matched (a partially matched 
+1) __GTC__ "good till cancel": the order remains open/live/resting until canceled or fully matched (a partially matched 
 order remains open for its remaining size to be matched).
-2) __GTD__: "good til day", the order remains open/live/resting until a pre-set expiration date, canceled or fully matched.
-3) __FOK__: "fill or kill", the order gets filled immediately or otherwise will be automatically canceled. This option is 
+2) __GTD__ "good til day": the order remains open/live/resting until a pre-set expiration date, canceled or fully matched.
+3) __FOK__ "fill or kill": the order gets filled immediately or otherwise will be automatically canceled. This option is 
 only valid for taker orders! (because non-marketable limit orders will be automatically canceled as they cannot be 
 matched immediately) 
 
@@ -366,8 +367,11 @@ The price argument of an order has either 2 or 3 decimal places of precision dep
 of the market. If the current market price is within \[0.4, 0.96], then `tick_size = 0.01`, which results in a precision 
 of 2 decimal places. If the market price is in (0, 0.4) or (0.96, 1), then `tick_size = 0.001`, which results in 
 3 decimal places (sub-cent) of precision.  
+Prices will be round to the corresponding decimal places via half even.
 As the amount is the product of _size * price_, it has a precision of 4 or 5 decimal places, depending on the current 
-tick size.
+tick size.  
+All inputs will be round to the corresponding decimal places automatically when an order is created in `polypy`, so the 
+user does not have to worry about decimal places and precision when specifying an order.
   
 _MakingAmount_ and _TakingAmount_ are terms, that should not be confused with _Taker Order_ and _Maker Order_, as those 
 terms have NOTHING in common.  
@@ -390,7 +394,59 @@ _TakingAmount_ directly, as everything is handled automatically by `polypy` unde
 Nonetheless, it is good to be familiar with these terms.
 
 ### Order Implementation
-(note on SharedMemory)
+`polpy`s standard order implementation class is located under `polypy.order.base.Order`.
+Users can (if they really want to...) implement their own order implementation by following `polypy.order.commom.OrderProtocol`, 
+which defines a standard interface such that the implementation can be used trough out all `polpy` functions and methods.
+    
+It is highly recommended, __not__ to initiate or manipulate `polypy.order.base.Order` directly (which is why it is not 
+directly importable from package namespace), but instead either use a factory (see [Creating Orders](#creating-orders)), 
+or even better use an `plp.OrderManager` (see [Order Manager](#order-manager)).  
+  
+The rest of this documentation refers to the standard order class implementation of `polypy`.
+
+#### Attributes
+An order object has the following __read-only__ attributes:
+- `tif: plp.TIME_IN_FORCE`: see [Time-in-Force](#time-in-force)
+- `defined_at: int`: time in _millis_ at which order was initialized
+- `numeric_type: type[plp.NumericAlias]`: Python type which is used for decimal numbers e.g., `float` or `Decimal`
+- `price: plp.NumericAlias`: specified price for order, same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
+- `size: plp.NumericAlias`: specified size for order, same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
+- `size_open: plp.NumericAlias`: order size which is not yet matched and therefore open/remaining (`size == size_open + size_matched`), 
+same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
+- `amount: plp.NumericAlias`: specified amount for order, same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-on-price-size-and-amount---market-vs-limit-order)
+- `token_id: str`: token id
+- `asset_id: str`: token id (alias for `token_id`)
+- `expiration: int`: expiration time in _seconds_, if not `plp.TIME_IN_FORCE.GTD` then `=0`
+- `side: plp.SIDE`: buy or sell order
+- `eip712order: plp.order.eip712.EIP712Order`: special class implementing signing etc., usually irrelevant for the user
+- `signature_type: plp.SIGNATURE_TYPE`: signature type which was used to sign the order
+- `fee_rate_bps: int`: fee rate in basis points (usually =0)
+- `taker_amount: int`: [TakerAmount](#notes-on-makingamount-takingamount-and-precision)
+- `maker_amount: int`: [MakerAmount](#notes-on-makingamount-takingamount-and-precision)
+- `salt: int`: salt which was used to sign the order
+- `maker: str`: maker (funder) address (if [Magic Login](#magic-login) is used, then this is the user's wallet address displayed on Polymarket)
+- `taker: str`: taker address, usually zero-address (all zeros)
+- `signer: str`: signer address, usually address associated with private key
+- `nonce: int`: Nonce which was used to sign the order
+
+An order object has the following __write-once__ attributes (which are frozen once they are set):
+- `id: str | None`: will be assigned by the exchange/Polymarket and returned within the response message when submitting an order
+- `signature: str | None`: will be computed automatically if factory or Order Manager is used, else user has to compute and provide signature when initializing directly
+- `created_at: int | None`: time in _seconds_ at which order is created on the exchange/Polymarket and will be returned within the response message when submitting an order
+
+An order object has the following _read-and-write__ attributes:
+- `status`
+- `size_matched`
+- `strategy_id`
+- `aux_id`
+
+#### Methods
+
+#### Notes on `price`, `size` and `amount` - market vs limit order
+(defined once)
+(market vs limit order)
+#### Notes on Multithreading and Multiprocessing
+
 ### Creating Orders
 ### Order Manager
 
@@ -404,6 +460,7 @@ _tbd_
 
 ## Streams
 ### Market Stream
+(order book only at one market stream)
 ### User Stream
 
 ## REST API functions
