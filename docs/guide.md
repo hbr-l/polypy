@@ -41,7 +41,7 @@ If you use Mail/Magic-Login (btw. __NEVER TYPE IN A NUMBER CODE INTO MAGIC'S LOG
 REQUESTED YOURSELF__), you can obtain the necessary credentials by:
 1) Open DevTools of your browser and search for a websocket named "user". The first websocket message sent, contains
 your api key, secret and passphrase
-2) Your wallet address (usually used in `polypy` for `maker_funder`/`maker` argument) is displayed on Polymarket's website 
+2) Your wallet address (usually used in `polypy` as `maker_funder`/`maker` argument) is displayed on Polymarket's website 
 beneath your profile image (starts with "0x...."). Be aware, that is not the same address as the address where you deposit to!
 3) Your private key (__NEVER SHARE YOUR PRIVATE KEY__) can be obtained via Polymarket's website: Go to your profile,
 click "Edit profile" and then "Export Private Key".
@@ -375,7 +375,7 @@ user does not have to worry about decimal places and precision when specifying a
   
 _MakingAmount_ and _TakingAmount_ are terms, that should not be confused with _Taker Order_ and _Maker Order_, as those 
 terms have NOTHING in common.  
-_MakingAmount_ and _TakingAmount_ are terms often used in digital order protocols (e.g., 0x) and have the following meaning:
+_MakingAmount_ and _TakingAmount_ are terms often used in crypto order protocols (e.g., 0x) and have the following meaning:
 1) __MakingAmount__: The amount of USDC (in case of buy order) or the size/number of shares (in case of sell order) that you 
 transfer to the counterparty of a trade ('making' the amount/size to the counterparty)
 2) __TakingAmount__: The amount of USDC (in case of a sell order) or the size/number of shares (in case of buy order) that you
@@ -406,7 +406,7 @@ The rest of this documentation refers to the standard order class implementation
 
 #### Attributes
 An order object has the following __read-only__ attributes:
-- `tif: plp.TIME_IN_FORCE`: see [Time-in-Force](#time-in-force)
+- `tif: plp.TIME_IN_FORCE`: see [Time-in-Force](#time-in-force) and [Order TiF](#order-tif-plptime_in_force)
 - `defined_at: int`: time in _millis_ at which order was initialized. This is only kept as reference for the user and is neither 
 used anywhere else in `polypy`, nor sent to the Polymarket API.
 - `numeric_type: type[plp.NumericAlias]`: Python type which is used for decimal numbers e.g., `float` or `Decimal`
@@ -418,7 +418,7 @@ same type as `numeric_type`, cf. below [notes on market vs limit order](#notes-o
 - `token_id: str`: token id
 - `asset_id: str`: token id (alias for `token_id`)
 - `expiration: int`: expiration time in _seconds_, if not `plp.TIME_IN_FORCE.GTD` then `=0`
-- `side: plp.SIDE`: buy or sell order
+- `side: plp.SIDE`: buy or sell order, see [Order Side](#order-side-plpside)
 - `eip712order: plp.order.eip712.EIP712Order`: special class implementing signing etc., usually irrelevant for the user
 - `signature_type: plp.SIGNATURE_TYPE`: signature type which was used to sign the order
 - `fee_rate_bps: int`: fee rate in basis points (usually =0)
@@ -436,22 +436,97 @@ An order object has the following __write-once__ attributes (which are frozen on
 - `created_at: int | None`: time in _seconds_ at which order is created on the exchange/Polymarket and will be returned within the response message when submitting an order
 
 An order object has the following __read-and-write__ attributes:
-- `status`
-- `size_matched`
-- `strategy_id`
-- `aux_id`
+- `status: plp.INSERT_STATUS`: insert status w.r.t. to Polymarket's exchange engine, see [Order Status](#order-status-plpinsert_status)
+- `size_matched: plp.NumericAlias`: number of shares of a resting limit order, that have already been matched, must be same type as `Order.numeric_type` (else exception)
+- `strategy_id: str | None`: user-specified strategy ID. Only as reference for user, will not be used anywhere throughout `polypy`
+- `aux_id: str | None`: user-specified e.g. for auxiliary IDs or notes. Only as reference for user, will not be used anywhere throughout `polypy`
+
+Whilst `strategy_id` and `aux_id` are fields that can be used and manipulated freely by the user, and which are not used 
+anywhere else in `polypy`, it is highly recommended __NOT__ to manipulate `status` and `size_matched` directly, but 
+instead to use an `plp.OrderManager` and assign it to `plp.MarketStream` (at \_\_init__). This way, `status` 
+and `size_matched` will be automatically updated with the newest messages from a websocket connection to Polymarket.
+
+#### Order Side: `plp.SIDE`
+For buy orders, specify `plp.SIDE.BUY`, and for sell orders `plp.SIDE.SELL` (enum)-
+
+#### Order Status: `plp.INSERT_STATUS`
+An order is in one of the following insert stati at any given time (roughly in order of the life cycle of an order):
+- `plp.INSERT_STATUS.DEFINED`: order is defined and initialized (object), but not yet submitted to Polymarket's exchange
+- `plp.INSERT_STATUS.LIVE`: order was submitted, is placed, and is live in the order book. If order has partially 
+matched size, it is still counted as `LIVE` until fully matched. Note: market orders will be matched directly.
+- `plp.INSERT_STATUS.MATCHED`: order was matched in its entirety. Note: market orders will be matched directly.
+- `plp.INSERT_STATUS.DELAYED`: order is marketable, but subject to matching delay. Note: order might not be cancelable in this state.
+- `plp.INSERT_STATUS.UNMATCHED`: placement not successful, order has not been matched and is __NOT__ `LIVE`
+- `plp.INSERT_STATUS.CANCELED`: order was canceled
+
+__Note: `CANCELED` and `DEFINED` are insert stati defined by `polypy` and are not official Polymarket stati. Though, they make 
+handling the 'order life cycle' a lot easier, which is why they are actively implemented and meant for active use in `polypy`.__
+
+#### Order TiF: `plp.TIME_IN_FORCE`
+The following TiF-variants exist on Polymarket (implemented as enum):
+- `plp.TIME_IN_FORCE.GTC`: Good-till-Cancel
+- `plp.TIME_IN_FORCE.GTD`: Good-till-Day
+- `plp.TIME_IN_FORCE.FOK`: Fill-or-Kill
+For more details, please refer to [Time-in-Force](#time-in-force)
+
+#### Order signature type: `plp.SIGNATURE_TYPE` 
+Based on the credentials (private_key, api_key, maker, etc.), the following signature types exist to sign an order 
+before submitting it to Polymarket (implemented as enum):
+- `plp.SIGNATURE_TYPE.EOA`: if trading directly from an EOA address
+  - private_key: private key for the EOA that holds the funds
+  - maker (funder): set `None` (will default to EOA address)
+- `plp.SIGNATURE_TYPE.POLYPROXY`: if trading from an account with Magic Login (email)
+  - private_key: private key exported from magic
+  - maker (funder): wallet address from Polymarket profile (associated with magic login)
+- `plp.SIGNATURE_TYPE.POLY_GNOSIS_SAFE`: if trading from an account with browser wallet (metamask, coinbase wallet)
+  - private_key: private key exported from browser wallet
+  - maker (funder): Polymarket address associated with the browser wallet
+
+For more details, please see [FAQ Polymarket Documentation](https://docs.polymarket.com/#how-do-i-initialize-the-clob-client).  
+If you are using [Magic Login](#magic-login), you most likely want to set `plp.SIGNATURE_TYPE.POLYPROXY`.
 
 #### Methods
+It is not recommended to use `polypy.order.base.Order` object directly. For completeness’s sake, the following methods 
+exist:
+- `create_order(...)`: factory to create an order (better use `plp.create_limit_order`, `plp.create_market_order`, or use `plp.OrderManager`)
+- `to_dict()`: returns a dict (used in `to_payload()`)
+- `to_payload()`: returns payload, including order as a dict, to be sent to Polymarket REST API
 
 #### Notes on `price`, `size` and `amount` - market vs limit order
-(defined only once and then set forever)
-(market vs limit order)
+The attributes `price`, `size` and `amount` are read-only, because once an order is defined and submitted, it cannot be 
+changed. In this case, one would need to cancel and re-submit a modified order.  
+For checking, how much an order has already filled, please refer to `size_matched` and `size_open` attributes.  
+  
+Note, if order is a [Market Order](#limit-order-vs-market-order), `price` is either _tick size_ or _1 - tick size_ (lowest 
+or highest possible price) depending on the order side (buy or sell). Also, `size` is statically pre-computed as $size = \frac{amount}{price}$.  
+Because a market order gets as many shares as possible for a given amount, there might be the case that `size_matched < size` 
+at the time the market order is filled. This is not a bug, but a result of the definition of a market order. Therefore,
+`price`, `size`, `size_matched` and `size_open` do not make really sense for market orders.
+
+Vice versa, `amount` is meaningless for a [Limit Order](#limit-order-vs-market-order). Imagine, that a limit order is 
+filled with multiple counterparty orders at different price levels. Then, the _realized_ `amount` would differ from the 
+statically pre-computed $amount = size * price$.  
+
+| attribute      | Market Order | Limit Order |
+|----------------|--------------|-------------|
+| `price`        | meaningless  | in use      |
+| `size`         | meaningless  | in use      |
+| `size_matched` | meaningless  | in use      |
+| `size_open`    | meaningless  | in use      |
+| `amount`       | in use       | meaningless |
+
 #### Notes on Multithreading and Multiprocessing
+The standard `polypy` order object does not implement locks/mutex. If you want to use it in a _multithreading_ context, 
+implement appropriate locking/mutex yourself, or use `plp.OrderManager`, which does so.  
+  
+Note, that the standard order object implementation does not use shared memory, and is therefore __NOT__ suited for 
+_multiprocessing_ (updates on an order object in one _process_ will not be reflected in the same order in other _processes_).
 
 ### Creating Orders
 ### Computing Expiration Timestamp
 (expiration: compute_expiration_timestamp)
 ### Order Manager
+#### Credentials and Signature Type
 
 ## Positions
 ### Position Implementations
