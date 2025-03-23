@@ -1,5 +1,6 @@
 import datetime
 import math
+import time
 import warnings
 from functools import lru_cache
 from typing import Any, Callable, Literal
@@ -118,7 +119,32 @@ def get_markets(
     endpoint: str | ENDPOINT,
     next_cursor: str | None,
     max_pages: int | None,
-) -> list[MarketInfo]:
+    throttle_s: float | None,
+) -> tuple[list[MarketInfo], str]:
+    """Query markets.
+
+    Parameters
+    ----------
+    endpoint: str | Endpoint,
+        REST endpoint to use, most likely polypy.ENDPOINT.REST
+    next_cursor: str | None
+        Pagination item to retrieve the next page base64 encoded. 'LTE=' means the end and empty ('')
+        means the beginning. None will be parsed to "".
+    max_pages: int | None
+        maximum number of pages to query. If None, no upper limit.
+    throttle_s: float | None
+        sleep duration (seconds) to throttle for-loop inbetween pages. None defaults to 0.
+
+    Returns
+    -------
+    tuple[list[MarketInfo], str]
+        - list of market info structs
+        - last cursor returned to retrieve next page
+
+    Notes
+    -----
+    datetime in MarketInfo (e.g., MarketInfo.end_date_iso) are timezone-aware.
+    """
     if next_cursor is None:
         next_cursor = ""
 
@@ -127,6 +153,7 @@ def get_markets(
 
     ret = []
     i = 0
+    throttle_s = 0 if throttle_s is None else throttle_s
 
     while next_cursor != END_CURSOR and i < max_pages:
         i += 1
@@ -143,7 +170,9 @@ def get_markets(
         next_cursor = market_response.next_cursor
         ret.extend(market_response.data)
 
-    return ret
+        time.sleep(throttle_s)
+
+    return ret, next_cursor
 
 
 def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> dict[str, Any]:
