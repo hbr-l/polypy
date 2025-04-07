@@ -12,12 +12,12 @@ from eth_account._utils.signing import sign_message_hash
 from eth_account.datastructures import SignedMessage
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
-from eth_typing import Hash32
+from eth_typing import ChecksumAddress, Hash32
 from eth_utils import ValidationError, to_checksum_address
 from hexbytes import HexBytes
 from poly_eip712_structs import EIP712Struct, make_domain
 
-from polypy.constants import CHAIN_ID, EXCHANGE_ADDRESS
+from polypy.constants import CHAIN_ID, EXCHANGE
 from polypy.exceptions import PolyPyException
 
 
@@ -46,6 +46,14 @@ def prepend_zx(in_str: str) -> str:
     return s
 
 
+def remove_zx(s: str) -> str:
+    return s[2:] if s.startswith("0x") else s
+
+
+def int_to_padded_hex(value: int) -> str:
+    return format(value, "x").zfill(64)
+
+
 @lru_cache(maxsize=16)
 def parse_private_key(
     key: PrivateKeyType | str | PrivateKey,
@@ -64,8 +72,10 @@ def parse_private_key(
         ) from original_exception
 
 
-@lru_cache(maxsize=4)
-def private_key_checksum_address(private_key: str | PrivateKey | PrivateKeyType) -> str:
+@lru_cache(maxsize=16)  # todo up cache size?
+def private_key_checksum_address(
+    private_key: str | PrivateKey | PrivateKeyType,
+) -> str | ChecksumAddress:
     private_key = parse_private_key(private_key)
     return private_key.public_key.to_checksum_address()
 
@@ -87,7 +97,7 @@ def _eth_sign_hash(
     )
 
 
-def get_domain(chain_id: CHAIN_ID, exchange_address: EXCHANGE_ADDRESS) -> EIP712Struct:
+def get_domain(chain_id: CHAIN_ID, exchange_address: EXCHANGE) -> EIP712Struct:
     return make_domain(
         name="Polymarket CTF Exchange",
         version="1",
@@ -102,10 +112,10 @@ def polymarket_domain(chain_id: CHAIN_ID, neg_risk: bool) -> EIP712Struct:
 
     if neg_risk is True:
         # noinspection PyTypeChecker
-        exchange_addr: EXCHANGE_ADDRESS = EXCHANGE_ADDRESS[f"{chain_id.name}_NEG_RISK"]
+        exchange_addr: EXCHANGE = EXCHANGE[f"{chain_id.name}_NEG_RISK"]
     elif neg_risk is False:
         # noinspection PyTypeChecker
-        exchange_addr: EXCHANGE_ADDRESS = EXCHANGE_ADDRESS[chain_id.name]
+        exchange_addr: EXCHANGE = EXCHANGE[chain_id.name]
     else:
         raise PolyPyException(f"neg_risk must be bool. Got: {neg_risk}.")
 
