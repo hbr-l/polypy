@@ -8,3 +8,4 @@ eth-typing>=5.0.1
 eth-utils>=5.1.0
 hexbytes>=1.2.1
 requests>=2.32.3
+web3>=7.7.0
