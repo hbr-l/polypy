@@ -100,7 +100,7 @@ class MarketInfo(msgspec.Struct, forbid_unknown_fields=True):
     tags: list[str] | None
 
 
-class MarketsResponse(msgspec.Struct):
+class MarketsResponse(msgspec.Struct, forbid_unknown_fields=True):
     limit: int
     count: int
     next_cursor: str
@@ -185,3 +185,16 @@ class OrderWSInfo(
     @property
     def event_type(self) -> str:
         return "order"
+
+
+class RelayerResponse(msgspec.Struct, forbid_unknown_fields=True):
+    transactionID: str
+    transactionHash: str
+    state: Literal[
+        "STATE_NEW",
+        "STATE_EXECUTED",
+        "STATE_MINED",
+        "STATE_INVALID",
+        "STATE_CONFIRMED",
+        "STATE_FAILED",
+    ]
