@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Optional, Protocol, TypeAlias
+from typing import Any, Optional, Protocol, TypeAlias
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -13,6 +14,14 @@ def dec(x: NumericAlias | str) -> Decimal:
 
 def zeros_dec(x: int, *_) -> np.ndarray:
     return np.array([Decimal(0)] * x, dtype=object)
+
+
+def is_iter(x: Any) -> bool:
+    return isinstance(x, Iterable) and not isinstance(x, (str, bytes))
+
+
+def is_all_none(*args) -> bool:
+    return all(x is None for x in args)
 
 
 class ArrayInterface(Protocol):

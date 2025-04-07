@@ -2,8 +2,9 @@ import datetime
 import math
 import time
 import warnings
+from collections.abc import Iterable
 from functools import lru_cache
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, TypeVar
 
 import msgspec
 import requests
@@ -39,9 +40,12 @@ from polypy.structs import (
     OpenOrderResponse,
     PostOrderResponse,
 )
-from polypy.typing import NumericAlias
+from polypy.typing import NumericAlias, is_all_none, is_iter
 
 # todo msgspec create specialized Decoders
+
+
+T = TypeVar("T")
 
 
 END_CURSOR = "LTE="
@@ -97,9 +101,10 @@ def _request(
     method: Literal["GET", "POST", "DELETE"],
     headers: dict | None,
     data: Any | None,
+    **kwargs,
 ) -> requests.Response:
     headers = _overload_headers(headers, method)
-    resp = requests.request(method, url, json=data, headers=headers)
+    resp = requests.request(method, url, json=data, headers=headers, **kwargs)
 
     try:
         resp.raise_for_status()
@@ -175,6 +180,259 @@ def get_markets(
     return ret, next_cursor
 
 
+def _parse_gamma_datetime(dt: datetime.datetime | str | None) -> str | None:
+    if dt is None:
+        return None
+
+    if isinstance(dt, str):
+        return dt if dt[-1] == "Z" else f"{dt}Z"
+
+    if dt.tzinfo != datetime.timezone.utc:
+        raise PolyPyException("datetime.datetime object dt.tzinfo is not UTC.")
+
+    return f"{dt.isoformat(timespec='seconds')}Z"
+
+
+def _parse_bool_str(x: bool | None) -> str | None:
+    return "true" if x is True else ("false" if x is False else None)
+
+
+def _parse_gamma_multi_query_params(
+    param_name: str, x: Iterable[Any] | Any
+) -> list[tuple[str, Any]]:
+    return [(param_name, x_i) for x_i in x] if is_iter(x) else [(param_name, x)]
+
+
+def _build_gamma_url_query(url: str, param_tuples: list[tuple[str, Any]]) -> str:
+    if param_tuples := [k for k in param_tuples if k[1] is not None]:
+        query_str = "&".join([f"{k[0]}={k[1]}" for k in param_tuples])
+        url = f"{url}?{query_str}"
+
+    return url
+
+
+def _request_gamma(url: str, _single: bool) -> dict[str, Any] | list[dict[str, Any]]:
+    resp = _request(url, "GET", None, None)
+    resp = msgspec.json.decode(resp.text)
+
+    if _single:
+        if len(resp) == 1:
+            return resp[0]
+        elif len(resp) == 0:
+            return {}
+        else:
+            raise PolyPyException(
+                "Retrieved multiple data dicts, though only a single data dict "
+                "was expected for singular query arguments."
+            )
+
+    return resp
+
+
+# todo define separate msgspec.Struct
+def get_markets_gamma_model(
+    endpoint_gamma: str | ENDPOINT,
+    ids: int | Iterable[int] | None = None,
+    condition_ids: str | Iterable[str] | None = None,
+    token_ids: str | Iterable[str] | None = None,
+    slugs: str | Iterable[str] | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+    order: str | None = None,
+    ascending: bool | None = None,
+    archived: bool | None = None,
+    active: bool | None = None,
+    closed: bool | None = None,
+    liquidity_num_min: NumericAlias | None = None,
+    liquidity_num_max: NumericAlias | None = None,
+    volume_num_min: NumericAlias | None = None,
+    volume_num_max: NumericAlias | None = None,
+    start_date_min: datetime.datetime | str | None = None,
+    start_date_max: datetime.datetime | str | None = None,
+    end_date_min: datetime.datetime | str | None = None,
+    end_date_max: datetime.datetime | str | None = None,
+    tag_id: int | None = None,
+    related_tags: bool | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Query Gamma API for market/s.
+
+    Due to missing Polymarket documentation and high variability in the REST results,
+    we do not decode into a specific Struct, but just return a dict.
+    """
+    url = f"{endpoint_gamma}/markets"
+
+    _single = all(not is_iter(k) for k in [ids, condition_ids, token_ids, slugs])
+
+    params = [
+        *_parse_gamma_multi_query_params("id", ids),
+        *_parse_gamma_multi_query_params("condition_ids", condition_ids),
+        *_parse_gamma_multi_query_params("clob_token_ids", token_ids),
+        *_parse_gamma_multi_query_params("slug", slugs),
+        ("limit", limit),
+        ("offset", offset),
+        ("order", order),
+        ("ascending", _parse_bool_str(ascending)),
+        ("archived", _parse_bool_str(archived)),
+        ("active", _parse_bool_str(active)),
+        ("closed", _parse_bool_str(closed)),
+        ("liquidity_num_min", liquidity_num_min),
+        ("liquidity_num_max", liquidity_num_max),
+        ("volume_num_min", volume_num_min),
+        ("volume_num_max", volume_num_max),
+        ("start_date_min", _parse_gamma_datetime(start_date_min)),
+        ("start_date_max", _parse_gamma_datetime(start_date_max)),
+        ("end_date_min", _parse_gamma_datetime(end_date_min)),
+        ("end_date_max", _parse_gamma_datetime(end_date_max)),
+        ("tag_id", tag_id),
+        ("related_tags", _parse_bool_str(related_tags)),
+    ]
+
+    url = _build_gamma_url_query(url, params)
+
+    return _request_gamma(url, _single)
+
+
+# todo define separate msgspec.Struct
+def get_events_gamma_model(
+    endpoint_gamma: str | ENDPOINT,
+    ids: int | str | Iterable[int | str] | None = None,
+    slugs: int | str | Iterable[int | str] | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+    order: str | None = None,
+    ascending: bool | None = None,
+    archived: bool | None = None,
+    active: bool | None = None,
+    closed: bool | None = None,
+    liquidity_num_min: NumericAlias | None = None,
+    liquidity_num_max: NumericAlias | None = None,
+    volume_num_min: NumericAlias | None = None,
+    volume_num_max: NumericAlias | None = None,
+    start_date_min: datetime.datetime | str | None = None,
+    start_date_max: datetime.datetime | str | None = None,
+    end_date_min: datetime.datetime | str | None = None,
+    end_date_max: datetime.datetime | str | None = None,
+    tag: str | None = None,
+    tag_id: int | None = None,
+    related_tags: bool | None = None,
+    tag_slug: str | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Query Gamma API for event/s.
+
+    Due to missing Polymarket documentation and high variability in the REST results,
+    we do not decode into a specific Struct, but just return a dict.
+    """
+    url = f"{endpoint_gamma}/events"
+
+    _single = all(not is_iter(k) for k in [ids, slugs])
+
+    params = [
+        *_parse_gamma_multi_query_params("id", ids),
+        *_parse_gamma_multi_query_params("slug", slugs),
+        ("limit", limit),
+        ("offset", offset),
+        ("order", order),
+        ("ascending", _parse_bool_str(ascending)),
+        ("archived", _parse_bool_str(archived)),
+        ("active", _parse_bool_str(active)),
+        ("closed", _parse_bool_str(closed)),
+        ("liquidity_num_min", liquidity_num_min),
+        ("liquidity_num_max", liquidity_num_max),
+        ("volume_num_min", volume_num_min),
+        ("volume_num_max", volume_num_max),
+        ("start_date_min", _parse_gamma_datetime(start_date_min)),
+        ("start_date_max", _parse_gamma_datetime(start_date_max)),
+        ("end_date_min", _parse_gamma_datetime(end_date_min)),
+        ("end_date_max", _parse_gamma_datetime(end_date_max)),
+        ("tag", tag),
+        ("tag_id", tag_id),
+        ("related_tags", _parse_bool_str(related_tags)),
+        ("tag_slug", tag_slug),
+    ]
+
+    url = _build_gamma_url_query(url, params)
+
+    return _request_gamma(url, _single)
+
+
+def gamma_event_to_neg_risk_market(
+    event: dict,
+    include_closed: bool,
+    factory: type[T] | None,
+) -> list[T | tuple[str, str, str, str, str]]:
+    if isinstance(event, list):
+        raise PolyPyException("Can only parse single event, but not list of events.")
+
+    markets: list[dict] = event["markets"]
+    ret = []
+
+    for m in markets:
+        if (
+            (m["active"] is False)
+            or ("negRiskMarketID" not in m)
+            or (m["enableOrderBook"] is False)
+        ):
+            continue
+
+        if not include_closed and m["closed"]:
+            # exclude closed markets if necessary
+            continue
+
+        token_id_1, token_id_2 = msgspec.json.decode(m["clobTokenIds"])
+
+        if factory is None:
+            ret.append(
+                (
+                    m["conditionId"],
+                    m["negRiskMarketID"],
+                    m["questionID"],
+                    token_id_1,
+                    token_id_2,
+                )
+            )
+        else:
+            ret.append(
+                factory.from_tuple(
+                    m["conditionId"],
+                    m["negRiskMarketID"],
+                    m["questionID"],
+                    token_id_1,
+                    token_id_2,
+                )
+            )
+    return ret
+
+
+def get_neg_risk_market(
+    endpoint_gama: str | ENDPOINT,
+    include_closed: bool,
+    condition_id: str | None = None,
+    token_id: str | None = None,
+    market_slug: str | None = None,
+    tuple_factory: type[T] | None = None,
+) -> list[T | tuple[str, str, str, str, str]]:
+    if is_all_none(condition_id, token_id, market_slug):
+        raise PolyPyException(
+            "At least one of `condition_id`, `token_id` or `market_slug` must be specified."
+        )
+
+    if any(is_iter(x) for x in [condition_id, token_id, market_slug]):
+        raise PolyPyException(
+            "Only str argument allowed for `condition_id`, `token_id` or `market_slug`."
+        )
+
+    event_id = get_markets_gamma_model(
+        endpoint_gamma=endpoint_gama,
+        condition_ids=condition_id,
+        token_ids=token_id,
+        slugs=market_slug,
+    )["events"][0]["id"]
+
+    event: dict = get_events_gamma_model(endpoint_gamma=endpoint_gama, ids=event_id)
+
+    return gamma_event_to_neg_risk_market(event, include_closed, tuple_factory)
+
+
 def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> dict[str, Any]:
     resp = _request(f"{endpoint}/book?token_id={asset_id}", "GET", None, None)
     return msgspec.json.decode(resp.text)
@@ -228,7 +486,7 @@ def get_tick_size(endpoint: str | ENDPOINT, asset_id: str) -> float:
     return msgspec.json.decode(resp.text)["minimum_tick_size"]
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=128)
 def get_neg_risk(endpoint: str | ENDPOINT, asset_id: str) -> bool:
     resp = _request(f"{endpoint}/neg-risk?token_id={asset_id}", "GET", None, None)
     return msgspec.json.decode(resp.text)["neg_risk"]
