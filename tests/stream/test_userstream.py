@@ -77,7 +77,7 @@ def order_manager(local_host_addr, private_key, api_key, secret, passphrase):
 
 @pytest.fixture
 def position_manager(local_host_addr):
-    return PositionManager(local_host_addr, 100)
+    return PositionManager(local_host_addr, None, 100)
 
 
 @pytest.fixture
@@ -913,7 +913,7 @@ def test_raise_multiple_updates_order_info(
         SIGNATURE_TYPE.EOA,
         CHAIN_ID.POLYGON,
     )
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
 
     stream = UserStream(
         "ws://localhost:8002/",
@@ -1032,7 +1032,7 @@ def test_raise_multiple_updates_trade_info(
         SIGNATURE_TYPE.EOA,
         CHAIN_ID.POLYGON,
     )
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
 
     stream = UserStream(
         "ws://localhost:8002/",
@@ -1138,7 +1138,7 @@ def test_order_manager_none(
     order_info_maker_buy_placement_update,
     trade_info_maker_buy_matched,
 ):
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
 
     stream = UserStream(
         "ws://localhost:8002/",
@@ -1283,7 +1283,7 @@ def test_multi_order_manager(
         SIGNATURE_TYPE.EOA,
         CHAIN_ID.POLYGON,
     )
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
 
     order_placement, order_update = order_info_maker_buy_placement_update
 
@@ -1516,6 +1516,7 @@ def test_raise_no_market_id(
     no_asset_id,
 ):
     with pytest.raises(StreamException):
+        # noinspection PyTypeChecker
         UserStream(
             "ws://localhost:8002/",
             (order_manager, position_manager),
@@ -1676,7 +1677,7 @@ def test_raises_max_subscriptions(
         SIGNATURE_TYPE.EOA,
         CHAIN_ID.POLYGON,
     )
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
 
     with pytest.raises(SubscriptionException) as record:
         UserStream(

@@ -16,7 +16,7 @@ from polypy.trade import TRADE_STATUS
 
 
 def test_create_get_position(local_host_addr):
-    pm = PositionManager(local_host_addr, 10)
+    pm = PositionManager(local_host_addr, None, 10)
 
     pm.create_position("test", 10, size_sig_digits=3, allow_neg=True)
 
@@ -33,7 +33,7 @@ def test_create_get_position(local_host_addr):
 
 
 def test_track():
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
     pos = Position.create("test", 12)
 
     pm.track(pos)
@@ -43,7 +43,7 @@ def test_track():
 
 
 def test_raise_track():  # sourcery skip: extract-duplicate-method
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
 
     pos = Position.create("", 12)
     with pytest.raises(PositionTrackingException) as record:
@@ -60,7 +60,7 @@ def test_raise_track():  # sourcery skip: extract-duplicate-method
 
 
 def test_raise_max_size():
-    pm = PositionManager(None, 10, max_size=1)
+    pm = PositionManager(None, None, 10, max_size=1)
     pos = Position.create("test", 12)
 
     with pytest.raises(PositionTrackingException) as record:
@@ -70,7 +70,7 @@ def test_raise_max_size():
 
 
 def test_untrack():  # sourcery skip: extract-duplicate-method
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
     pos = Position.create("test", 12)
 
     pm.track(pos)
@@ -85,7 +85,7 @@ def test_untrack():  # sourcery skip: extract-duplicate-method
 
 
 def test_total_nums():
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
     pm.track(Position.create("test", 12))
 
     total = pm.total({USDC: 1, "test": 0.5}, None)
@@ -96,7 +96,7 @@ def test_total_nums():
 
 
 def test_total_books():  # sourcery skip: extract-duplicate-method
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
     pm.track(Position.create("test", 12))
     pm.track(Position.create("test_2", 6))
 
@@ -113,7 +113,7 @@ def test_total_books():  # sourcery skip: extract-duplicate-method
 
 
 def test_total_rest(local_host_addr):
-    pm = PositionManager(local_host_addr, 10)
+    pm = PositionManager(local_host_addr, None, 10)
     pm.track(Position.create("test", 12))
     pm.track(Position.create("test_2", 6))
 
@@ -132,7 +132,7 @@ def test_total_rest(local_host_addr):
 
 
 def test_total_mixed(local_host_addr):
-    pm = PositionManager(local_host_addr, 10)
+    pm = PositionManager(local_host_addr, None, 10)
     pm.track(Position.create("test", 12))
     pm.track(Position.create("test_2", 6))
     pm.track(Position.create("test_3", 4))
@@ -158,7 +158,7 @@ def test_clean():
     pos_1 = CSMPosition.create("test_1", 12)
     pos_2 = CSMPosition.create("test_2", 6)
     pos_3 = CSMPosition.create("test_3", 4)
-    pm = PositionManager(None, pos_usdc, position_factory=CSMPosition)
+    pm = PositionManager(None, None, pos_usdc, position_factory=CSMPosition)
     pm.track(pos_1)
     pm.track(pos_2)
     pm.track(pos_3)
@@ -185,7 +185,7 @@ def test_clean():
 
 
 def test_deposit_withdraw():
-    pm = PositionManager(None, 123.45)
+    pm = PositionManager(None, None, 123.45)
 
     # prone to floating point error
     pm.deposit(0.01)
@@ -196,7 +196,7 @@ def test_deposit_withdraw():
 
 
 def test_raise_untrack_usdc():
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
 
     with pytest.raises(PositionTrackingException) as record:
         pm.untrack(USDC)
@@ -212,7 +212,7 @@ def test_balances():
 
 # noinspection DuplicatedCode
 def test_transact():  # sourcery skip: extract-duplicate-method
-    pm = PositionManager(None, 10, position_factory=CSMPosition)
+    pm = PositionManager(None, None, 10, position_factory=CSMPosition)
     pm.track(CSMPosition.create("test_2", 5))
 
     pm.transact("test", 1, 0.3, "trade_id", SIDE.BUY, TRADE_STATUS.MATCHED, True)
@@ -278,7 +278,7 @@ def test_transact():  # sourcery skip: extract-duplicate-method
 
 
 def test_raise_transact():
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
 
     with pytest.raises(PositionTrackingException) as record:
         pm.transact("test", 1, 0.3, "trade_id", SIDE.BUY, TRADE_STATUS.CONFIRMED, False)
@@ -294,7 +294,7 @@ def test_raise_transact():
 
 def test_decimal():
     # total, transact, balances, deposit, withdraw
-    pm = PositionManager(None, Decimal("10"), position_factory=CSMPosition)
+    pm = PositionManager(None, None, Decimal("10"), position_factory=CSMPosition)
     pm.deposit(Decimal("5"))
     assert pm.balance == Decimal("15")
 
@@ -334,7 +334,7 @@ def test_decimal():
 
 
 def test_invalidate():
-    pm = PositionManager(None, 10)
+    pm = PositionManager(None, None, 10)
 
     pm.invalidate()
 

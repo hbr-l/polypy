@@ -31,10 +31,11 @@ def sample_order(private_key):
     return _closure
 
 
+# noinspection DuplicatedCode
 def test_buying_power(
     local_host_addr, private_key, secret, api_key, passphrase, sample_order
 ):
-    pm = PositionManager(local_host_addr, 100)
+    pm = PositionManager(local_host_addr, None, 100)
     om = OrderManager(
         local_host_addr,
         private_key,
@@ -87,10 +88,11 @@ def test_buying_power(
     assert pm.buying_power(om) == 89
 
 
+# noinspection DuplicatedCode
 def test_buying_power_csm_position(
     local_host_addr, private_key, secret, api_key, passphrase, sample_order
 ):
-    pm = PositionManager(local_host_addr, 100, position_factory=CSMPosition)
+    pm = PositionManager(local_host_addr, None, 100, position_factory=CSMPosition)
     om = OrderManager(
         local_host_addr,
         private_key,
@@ -144,10 +146,11 @@ def test_buying_power_csm_position(
     assert pm.buying_power(om) == 89
 
 
+# noinspection DuplicatedCode
 def test_buying_power_decimal(
     local_host_addr, private_key, secret, api_key, passphrase, sample_order
 ):
-    pm = PositionManager(local_host_addr, Decimal("100"))
+    pm = PositionManager(local_host_addr, None, Decimal("100"))
     om = OrderManager(
         local_host_addr,
         private_key,
@@ -232,10 +235,13 @@ def test_buying_power_decimal(
     assert pm.buying_power(om) == Decimal("89")
 
 
+# noinspection DuplicatedCode
 def test_buying_power_decimal_csm_position(
     local_host_addr, private_key, secret, api_key, passphrase, sample_order
 ):
-    pm = PositionManager(local_host_addr, Decimal("100"), position_factory=CSMPosition)
+    pm = PositionManager(
+        local_host_addr, None, Decimal("100"), position_factory=CSMPosition
+    )
     om = OrderManager(
         local_host_addr,
         private_key,
