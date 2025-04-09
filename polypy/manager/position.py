@@ -1,15 +1,33 @@
 import datetime
+import logging
 import math
 import threading
-from typing import TYPE_CHECKING, Any, KeysView, Literal, Protocol, Union
+from functools import partial
+from typing import TYPE_CHECKING, Any, Callable, KeysView, Literal, Protocol, Union
+
+import msgspec.json
+from hexbytes import HexBytes
+from web3.types import TxReceipt
 
 from polypy.book import OrderBook
 from polypy.constants import ENDPOINT, SIG_DIGITS_SIZE
+from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     ManagerInvalidException,
+    PolyPyException,
     PositionTrackingException,
     PositionTransactionException,
 )
+from polypy.manager.cache import ConversionCacheProtocol
+from polypy.manager.rpc_ops import (
+    MTX,
+    tx_batch_operate_positions,
+    tx_convert_positions,
+    tx_merge_positions,
+    tx_redeem_positions,
+    tx_split_position,
+)
+from polypy.manager.rpc_proc import RPCSettings, _act_conversion_cache_diff
 from polypy.order.common import INSERT_STATUS, SIDE
 from polypy.position import (
     ACT_SIDE,
@@ -20,10 +38,11 @@ from polypy.position import (
     PositionProtocol,
     frozen_position,
 )
-from polypy.rest.api import get_midpoints
+from polypy.rest.api import get_markets_gamma_model, get_midpoints
 from polypy.rounding import round_down, round_down_tenuis_up
+from polypy.structs import RelayerResponse
 from polypy.trade import TRADE_STATUS
-from polypy.typing import NumericAlias
+from polypy.typing import NumericAlias, infer_numeric_type
 
 if TYPE_CHECKING:
     from polypy.manager.order import OrderManagerProtocol
@@ -68,6 +87,22 @@ class PositionManagerProtocol(Protocol):
     def valid(self) -> bool:
         """True, if .invalidate() has not been called. False, if Position Manager has been invalidated."""
         ...
+
+    def _get_or_create_position(
+        self, asset_id: str, allow_create: bool
+    ) -> PositionProtocol:
+        """Get position or create a new one if `allow_create=True`, else raise PositionTrackingException.
+        For compatibility with other modules only - should not be used by user!
+
+        Notes
+        -----
+        Use __contains__ to check if positions exists (less overhead then get_by_id(...)).
+        """
+
+    def _locked_call(self, fn: Callable, *args, **kwargs) -> Any:
+        """Call fn with lock acquired and release afterward.
+        For compatibility with other modules only - should not be used by user!
+        """
 
     def invalidate(self, reason: str | None = None) -> None:
         """Invalidate Position Manager s.t. any successive call will raise an exception.
@@ -148,6 +183,113 @@ class PositionManagerProtocol(Protocol):
         """Create and track new position"""
         ...
 
+    def split_positions(
+        self,
+        market_triplet: MarketIdTriplet,
+        amount: NumericAlias,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        """Split USDC into YES and NO positions (assets/tokens) within a market.
+
+        Notes
+        -----
+        If fallback to RPC: does not check whether POL balance is sufficient for covering gas!
+        Use `get_balance_POL(...)` and check manually if necessary.
+        """
+        ...
+
+    def merge_positions(
+        self,
+        market_triplet: MarketIdTriplet,
+        size: NumericAlias | None,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        """Merge YES and NO positions (assets/tokens) of a market into USDC.
+
+        Notes
+        -----
+        If fallback to RPC: does not check whether POL balance is sufficient for covering gas!
+        Use `get_balance_POL(...)` and check manually if necessary."""
+        ...
+
+    def redeem_positions(
+        self,
+        position_managers: list["PositionManagerProtocol"],
+        market_triplet: MarketIdTriplet,
+        outcome: Literal["YES", "NO"] | None = None,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        """Redeem resolved positions (assets/tokens) of a market.
+
+        1) Because redeem does not specify a size but redeems the entire position all at once
+        (at least for non-negative markets) per wallet, we have to perform redeem on all Position Managers
+        that might have a position of the corresponding market_triplet - else sizes and balances will be erroneous!
+
+        2) Because we have to lock every Position Manager, be aware that this has the potential for deadlocking!
+
+        3) Redeems for YES and NO simultaneously (though one of them will be 0 USDC).
+
+        4) If outcome is None, outcome will be queried via REST call. If outcome provided, be sure that token
+        is actually redeemable, else position calculation will be off since this is not checked in this case.
+
+        Notes
+        -----
+        If fallback to RPC: does not check whether POL balance is sufficient for covering gas!
+        Use `get_balance_POL(...)` and check manually if necessary."""
+        ...
+
+    def convert_positions(
+        self,
+        cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
+        all_market_quintets: list[MarketIdQuintet] | None,
+        size: NumericAlias | None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        """Convert NO position/s to complementary YES positions and potentially USDC.
+
+        Notes
+        -----
+        If fallback to RPC: does not check whether POL balance is sufficient for covering gas!
+        Use `get_balance_POL(...)` and check manually if necessary."""
+        ...
+
+    def batch_operate_positions(
+        self,
+        batch_mtx: list[MTX],
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        """Perform multiple transactions (split, merge, redeem, convert) as one batch.
+
+        Redeeming is not batchable.
+
+        Notes
+        -----
+        If fallback to RPC: does not check whether POL balance is sufficient for covering gas!
+        Use `get_balance_POL(...)` and check manually if necessary."""
+        ...
+
+    def update_augmented_conversions(self) -> bool:
+        """If a negative risk market adds a new outcome, in which we previously performed a NO-conversion before,
+        then we have to update new complementary YES positions accordingly (increase).
+
+        If conversion has been performed, then this function has to be called periodically
+        and manually to ensure correct positions - no auto-calling.
+        """
+        ...
+
     def buying_power(
         self,
         order_managers: Union["OrderManagerProtocol", list["OrderManagerProtocol"]],
@@ -206,18 +348,23 @@ _ERR_MSG_INVALID = "self.invalidate() was called. Position Manager is invalidate
 
 # todo move lock to custom dict factory, make all operations atomic
 class PositionManager(PositionManagerProtocol):
+    # noinspection PyTypeHints
     def __init__(
         self,
         rest_endpoint: ENDPOINT | str | None,
+        gamma_endpoint: str | ENDPOINT | None,
         usdc_position: PositionProtocol | NumericAlias,
         max_size: int | None = None,
         position_factory: type[PositionProtocol] | PositionFactory = Position,
-    ):
+        rpc_settings: RPCSettings | None = None,
+        conversion_cache: ConversionCacheProtocol | None = None,
+    ) -> None:
         """
 
         Parameters
         ----------
         rest_endpoint
+        gamma_endpoint
         usdc_position
         max_size
         position_factory
@@ -229,6 +376,7 @@ class PositionManager(PositionManagerProtocol):
         )
 
         self.rest_endpoint = rest_endpoint
+        self.gamma_endpoint = gamma_endpoint
 
         self.max_size = math.inf if max_size is None else max_size
         self.position_dict: dict[str, PositionProtocol] = {
@@ -244,22 +392,28 @@ class PositionManager(PositionManagerProtocol):
         self._invalid_token: bool = False
         self._invalid_reason: str = _ERR_MSG_INVALID
 
+        self.rpc_settings = rpc_settings
+        self.conversion_cache = conversion_cache
+
     def __contains__(self, asset_id: str) -> bool:
         return asset_id in self.position_dict
+
+    def __str__(self):
+        positions = {
+            p.asset_id: (p.size, p.size_available, p.size_total)
+            for p in self.position_dict.values()
+        }
+        return (
+            f"Positions: {positions} "
+            f"\nREST: {self.rest_endpoint} "
+            f"\nRPC settings: {self.rpc_settings}"
+            f"\nInvalidation state: {(self._invalid_token, self._invalid_reason if self._invalid_token else None)}"
+        )
 
     # noinspection PyTypeHints
     @property
     def asset_ids(self) -> KeysView[str | Literal[USDC]]:
         return self.position_dict.keys()
-
-    def _get_position(self, asset_id: str) -> PositionProtocol | None:
-        try:
-            return self.position_dict[asset_id]
-
-        except KeyError as e:
-            raise PositionTrackingException(
-                f"{datetime.datetime.now()} | Position not found for id: {asset_id}."
-            ) from e
 
     @property
     def valid(self) -> bool:
@@ -281,7 +435,7 @@ class PositionManager(PositionManagerProtocol):
 
     def _get_or_create_position(
         self, asset_id: str, allow_create: bool
-    ) -> PositionProtocol | None:
+    ) -> PositionProtocol:
         try:
             return self.position_dict[asset_id]
         except KeyError as e:
@@ -290,10 +444,19 @@ class PositionManager(PositionManagerProtocol):
                     f"{datetime.datetime.now()} | Position not found for id: {asset_id}."
                 ) from e
 
-            numeric_type = type(self.position_dict[USDC].size)
-            numeric_type = numeric_type if numeric_type is not int else float
+            numeric_type = infer_numeric_type(self.position_dict[USDC].size)
             self.create_position(asset_id, numeric_type(0))
             return self.position_dict[asset_id]
+
+    def _locked_call(self, fn: Callable, *args, **kwargs) -> Any:
+        with self.lock:
+            return fn(*args, **kwargs)
+
+    def _act_position(
+        self, asset_id: str, size: NumericAlias, allow_create: bool
+    ) -> None:
+        position = self._get_or_create_position(asset_id, allow_create)
+        position.size = round_down(position.size + size, position.size_sig_digits)
 
     def transact(
         self,
@@ -315,7 +478,7 @@ class PositionManager(PositionManagerProtocol):
             self._validate()
             position = self._get_or_create_position(asset_id, allow_create)
 
-            usdc = self._get_position(USDC)
+            usdc = self._get_or_create_position(USDC, False)
 
             if side is SIDE.BUY:
                 position_side = ACT_SIDE.TAKER
@@ -364,18 +527,12 @@ class PositionManager(PositionManagerProtocol):
     def withdraw(self, amount: NumericAlias) -> None:
         with self.lock:
             self._validate()
-            self.position_dict[USDC].size = round_down(
-                self.position_dict[USDC].size - amount,
-                self.position_dict[USDC].size_sig_digits,
-            )
+            self._act_position(USDC, -amount, False)
 
     def deposit(self, amount: NumericAlias) -> None:
         with self.lock:
             self._validate()
-            self.position_dict[USDC].size = round_down(
-                self.position_dict[USDC].size + amount,
-                self.position_dict[USDC].size_sig_digits,
-            )
+            self._act_position(USDC, amount, False)
 
     def clean(self) -> list[PositionProtocol]:
         with self.lock:
@@ -420,8 +577,7 @@ class PositionManager(PositionManagerProtocol):
         self, missed: set[str], midpoints: dict[str, NumericAlias | None]
     ) -> dict[str, NumericAlias]:
         if missed:
-            numeric_type = type(self.position_dict[USDC].size)
-            numeric_type = numeric_type if numeric_type is not int else float
+            numeric_type = infer_numeric_type(self.position_dict[USDC].size)
 
             rest_midpoints = get_midpoints(self.rest_endpoint, missed, numeric_type)
 
@@ -429,12 +585,38 @@ class PositionManager(PositionManagerProtocol):
 
         return midpoints
 
+    def _fill_no_orderbook_midpoints(
+        self, missed: set[str], midpoints: dict[str, NumericAlias | None]
+    ) -> dict[str, NumericAlias]:
+        if missed:
+            numeric_type = infer_numeric_type(self.position_dict[USDC].size)
+
+            markets: list[dict] = get_markets_gamma_model(
+                self.gamma_endpoint, token_ids=missed
+            )
+
+            for market in markets:
+                # todo tight coupling: refactor to Struct instead of dict
+                tokens = msgspec.json.decode(
+                    market["clobTokenIds"], type=tuple[str, str]
+                )
+                prices = msgspec.json.decode(
+                    market["outcomePrices"], type=tuple[str, str]
+                )
+                if tokens[0] in missed:
+                    midpoints[tokens[0]] = numeric_type(prices[0])
+                elif tokens[1] in missed:
+                    midpoints[tokens[1]] = numeric_type(prices[1])
+                else:
+                    raise PolyPyException(f"{tokens} not in missed midpoints.")
+
+        return midpoints
+
     def _fill_usdc_midpoint(
         self,
         midpoints: dict[str, NumericAlias | None],
     ) -> dict[str, NumericAlias | None]:
-        numeric_type = type(self.position_dict[USDC].size)
-        numeric_type = numeric_type if numeric_type is not int else float
+        numeric_type = infer_numeric_type(self.position_dict[USDC].size)
 
         midpoints[USDC] = numeric_type(1)
 
@@ -459,8 +641,13 @@ class PositionManager(PositionManagerProtocol):
         missed = (self.position_dict.keys() - midpoints.keys()) | {
             key for key, val in midpoints.items() if val is None
         }
+        midpoints = self._fill_midpoints(missed, midpoints)
 
-        return self._fill_midpoints(missed, midpoints)
+        # get asset ids of resolved markets/ no order book
+        missed = (self.position_dict.keys() - midpoints.keys()) | {
+            key for key, val in midpoints.items() if val is None
+        }
+        return self._fill_no_orderbook_midpoints(missed, midpoints)
 
     def total(
         self,
@@ -523,6 +710,177 @@ class PositionManager(PositionManagerProtocol):
         )
         self.track(position)
         return frozen_position(position)
+
+    def _txn_enabled(self) -> None:
+        if self.rpc_settings is None:
+            raise PositionTransactionException(
+                "PositionManager was not set up to handle on-chain actions such as "
+                "split, merge, redeem and convert. "
+                "Please specify arguments at __init__."
+            )
+
+    def split_positions(
+        self,
+        market_triplet: MarketIdTriplet,
+        amount: NumericAlias,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        self._txn_enabled()
+
+        with self.lock:
+            self._validate()
+
+            return tx_split_position(
+                rpc_settings=self.rpc_settings,
+                position_manager=self,
+                market_triplet=market_triplet,
+                amount=amount,
+                neg_risk=neg_risk,
+                polymarketnonce=polymarketnonce,
+                polymarketsession=polymarketsession,
+                polymarketauthtype=polymarketauthtype,
+            )
+
+    def merge_positions(
+        self,
+        market_triplet: MarketIdTriplet,
+        size: NumericAlias | None,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        self._txn_enabled()
+
+        with self.lock:
+            self._validate()
+
+            return tx_merge_positions(
+                rpc_settings=self.rpc_settings,
+                position_manager=self,
+                market_triplet=market_triplet,
+                size=size,
+                neg_risk=neg_risk,
+                polymarketnonce=polymarketnonce,
+                polymarketsession=polymarketsession,
+                polymarketauthtype=polymarketauthtype,
+            )
+
+    def redeem_positions(
+        self,
+        position_managers: list[PositionManagerProtocol],
+        market_triplet: MarketIdTriplet,
+        outcome: Literal["YES", "NO"] | None = None,
+        neg_risk: bool | None = None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        self._txn_enabled()
+
+        logging.info(
+            "Please note the following points:\n "
+            "1) `position_manager`: specify all (!) Position Managers of same wallet address (!) which "
+            "hold positions in `market_triplet`, else a PositionTransactionException will be raised "
+            "since positions will be miscalculated else-wise (Position Managers must not be of same type "
+            "but must follow PositionManagerProtocol)\n "
+            "2) During redeeming, all Position Manager will be locked, which has potential for deadlocking."
+        )
+
+        if outcome is not None:
+            logging.info(
+                "If outcome is not None, be sure that token is actually redeemable "
+                "since in this case there are no further checks."
+            )
+
+        def _closure():
+            with self.lock:
+                self._validate()
+
+                return tx_redeem_positions(
+                    rpc_settings=self.rpc_settings,
+                    position_managers=[self] + position_managers,
+                    market_triplet=market_triplet,
+                    outcome=outcome,
+                    neg_risk=neg_risk,
+                    polymarketnonce=polymarketnonce,
+                    polymarketsession=polymarketsession,
+                    polymarketauthtype=polymarketauthtype,
+                )
+
+        # todo does this work? NEXT
+        fn = _closure
+
+        for pm in position_managers:
+            fn = partial(pm._locked_call, fn)
+
+        return fn()
+
+    def convert_positions(
+        self,
+        cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
+        all_market_quintets: list[MarketIdQuintet] | None,
+        size: NumericAlias | None,
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        self._txn_enabled()
+
+        with self.lock:
+            self._validate()
+
+            return tx_convert_positions(
+                rpc_settings=self.rpc_settings,
+                position_manager=self,
+                conversion_cache=self.conversion_cache,
+                cvt_market_quintets=cvt_market_quintets,
+                all_market_quintets=all_market_quintets,
+                size=size,
+                polymarketnonce=polymarketnonce,
+                polymarketsession=polymarketsession,
+                polymarketauthtype=polymarketauthtype,
+            )
+
+    def batch_operate_positions(
+        self,
+        batch_mtx: list[MTX],
+        polymarketnonce: str | None = None,
+        polymarketsession: str | None = None,
+        polymarketauthtype: str | None = None,
+    ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+        self._txn_enabled()
+
+        with self.lock:
+            self._validate()
+
+            return tx_batch_operate_positions(
+                rpc_settings=self.rpc_settings,
+                position_manager=self,
+                conversion_cache=self.conversion_cache,
+                batch_mtx=batch_mtx,
+                polymarketnonce=polymarketnonce,
+                polymarketsession=polymarketsession,
+                polymarketauthtype=polymarketauthtype,
+            )
+
+    def update_augmented_conversions(self) -> bool:
+        self._txn_enabled()
+        ret = False
+
+        with self.lock:
+            _, diffs = self.conversion_cache.pull(self.gamma_endpoint)
+
+            for re_size, yes_token_ids in diffs:
+                has_acted = _act_conversion_cache_diff(
+                    position_manager=self, re_size=re_size, token_1_ids=yes_token_ids
+                )
+                ret = ret or has_acted
+
+        return ret
 
     def buying_power(
         self,

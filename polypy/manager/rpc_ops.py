@@ -11,7 +11,7 @@ from polypy.exceptions import (
     RelayerException,
 )
 from polypy.manager.cache import ConversionCacheProtocol
-from polypy.manager.rpc_position_processing import (
+from polypy.manager.rpc_proc import (
     RPCSettings,
     _assert_redeem_sizes_onchain,
     _parse_outcome,
@@ -183,7 +183,7 @@ def _parse_convert_mtx(
         size=mtx.size,
     )
 
-    # update mtx    todo test NEXT
+    # update mtx    todo test
     mtx.all_market_quintets = all_markets_quintets
 
     return ConvertTransaction(
@@ -193,8 +193,6 @@ def _parse_convert_mtx(
     )
 
 
-# todo better coupling design between MTX and SplitTransaction, MergeTransaction, etc.
-#  in i.e., tx_pre_batch_operate_positions
 def _tx_pre_batch_operate_positions(
     rpc_settings: RPCSettings,
     position_manager: "PositionManagerProtocol",
