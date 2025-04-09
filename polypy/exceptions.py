@@ -90,3 +90,11 @@ class PositionTransactionException(ManagerException):
 
 class PositionTrackingException(ManagerException):
     """Exception related to tracking the position by, e.g. a Position Manager."""
+
+
+class RPCException(PolyPyException):
+    """Base exception for anything related to remote procedure calls"""
+
+
+class RelayerException(RPCException):
+    """Exception when calling relayer (gas fees)"""
