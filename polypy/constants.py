@@ -6,6 +6,7 @@ ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000"
 SIG_DIGITS_SIZE = 2
 
 ERC20_WEI_UNIT = "mwei"
+POL_WEI_UNIT = "ether"
 APPROVAL_MARGIN_WEI = 1
 # if you absolutely have to modify APPROVAL_MARGIN_WEI dynamically:
 #   from polypy.rpc import encode
