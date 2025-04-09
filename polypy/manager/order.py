@@ -438,7 +438,7 @@ class OrderManager(OrderManagerProtocol):
         passphrase: str,
         maker_funder: str | None,
         signature_type: SIGNATURE_TYPE | None,
-        chain_id: CHAIN_ID | None,
+        chain_id: CHAIN_ID,
         max_size: int | None = None,
         market_order_factory: MarketOrderFactory = create_market_order,
         limit_order_factory: LimitOrderFactory = create_limit_order,
