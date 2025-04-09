@@ -12,7 +12,7 @@ from polypy.exceptions import (
 )
 from polypy.rounding import round_down
 from polypy.trade import TRADE_STATUS
-from polypy.typing import NumericAlias
+from polypy.typing import NumericAlias, infer_numeric_type
 
 USDC = "usdc"
 
@@ -140,7 +140,7 @@ class Position:
         allow_neg: bool = False,
         **_,
     ) -> Self:
-        numeric_type = type(size) if type(size) is not int else float
+        numeric_type = infer_numeric_type(size)
         return cls(
             asset_id=asset_id,
             size=numeric_type(size),
@@ -311,7 +311,7 @@ class CSMPosition(Position):
         max_size_trade_ids: int = 1_000_000,
         **_,
     ) -> Self:
-        numeric_type = type(size) if type(size) is not int else float
+        numeric_type = infer_numeric_type(size)
         pending_trade_ids = {} if pending_trade_ids is None else pending_trade_ids
         return cls(
             asset_id=asset_id,

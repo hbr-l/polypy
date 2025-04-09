@@ -3,6 +3,7 @@ import math
 import warnings
 from decimal import Decimal
 from enum import Enum, auto
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -82,17 +83,15 @@ def _linspace_array(
     return arr
 
 
-def _infer_dtype(x: ArrayCoercible) -> type:
-    dtype = type(x[0])
+def _union_type(dtype_arr: type, dtype_item: type) -> UnionType:
+    dtype_q = dtype_arr | dtype_item
 
-    if issubclass(dtype, np.generic):
-        dtype |= type(x.item(0))
-    if float in get_args(dtype | None):
+    if float in get_args(dtype_q | None):
         # '(...| None)': ensures get_args always returns type of dtype
         # (if not Union yet (i.e. if not numpy dtype) get_args would return emtpy tuple)
-        dtype |= int  # allow int upcast to float
+        dtype_q |= int  # allow int upcast to float
 
-    return dtype
+    return dtype_q
 
 
 def dict_to_sha1(x: dict) -> str:
@@ -140,7 +139,7 @@ class OrderBook:
         on_setattr=[attrs.setters.validate, _on_setattr_tick_size],
     )
 
-    zeros_factory: ZerosProtocol | ZerosFactoryFunc = attrs.field(
+    zeros_factory: type[ZerosProtocol] | ZerosFactoryFunc = attrs.field(
         default=np.zeros, on_setattr=attrs.setters.frozen
     )  # dtype only affects size arrays, but not price arrays
     """For decimal type use `polypy.typing.zeros_dec` as factory."""
@@ -153,12 +152,11 @@ class OrderBook:
 
     # todo implement storing sizes as integers instead of floats or Decimals
     #   -> nope, rather implement ScaleInt as custom type class and use this in 'zeros_factory'
-    _bid_quantities: np.ndarray = attrs.field(init=False)
-    _ask_quantities: np.ndarray = attrs.field(init=False)
+    _bid_quantities: ZerosProtocol = attrs.field(init=False)
+    _ask_quantities: ZerosProtocol = attrs.field(init=False)
     _inv_min_tick_size: int = attrs.field(init=False)
     _min_tick_digits: int = attrs.field(init=False)
-    _dtype_quantities: type = attrs.field(init=False)
-    _dtype_arr: type = attrs.field(init=False)
+    _dtype_quantities: UnionType = attrs.field(init=False)
     _dtype_item: type = attrs.field(init=False)
 
     _bid_quote_levels: np.ndarray = attrs.field(init=False)
@@ -166,15 +164,18 @@ class OrderBook:
 
     def __attrs_post_init__(self):
         self._inv_min_tick_size = int(1 / min(self.allowed_tick_sizes))
+        self._min_tick_digits = int(math.log10(self._inv_min_tick_size))
 
         len_quantities = self._inv_min_tick_size + 1
         self._bid_quantities = _zeroing_array(self.zeros_factory(len_quantities))
         self._ask_quantities = _zeroing_array(self.zeros_factory(len_quantities))
-        self._dtype_quantities = _infer_dtype(self._bid_quantities)
-        self._dtype_arr = type(self._bid_quantities[0])
 
-        self._min_tick_digits = int(math.log10(self._inv_min_tick_size))
-        self._dtype_item = type(self._bid_quantities.item(0))
+        self._dtype_item = type(np.array([self._bid_quantities[0]]).item(0))
+        # delegate heavy lifting of type inference to numpy
+        self._dtype_quantities = _union_type(
+            type(self._bid_quantities[0]), self._dtype_item
+        )
+
         self._bid_quote_levels = _linspace_array(
             1, 0, len_quantities, self._min_tick_digits, self._dtype_item
         )
@@ -216,8 +217,14 @@ class OrderBook:
 
     @property
     def dtype(self) -> type:
+        """Native Python type of quantities."""
         # only dtype of quantities are relevant
-        return self._dtype_arr
+        return self._dtype_item
+
+    @property
+    def dtype_quantities(self) -> type:
+        """Dtype of elements in the quantities container (e.g., float vs np.float63)."""
+        return type(self._bid_quantities[0])
 
     @property
     def bids(self) -> tuple[np.ndarray, ArrayCoercible]:
@@ -349,11 +356,11 @@ class OrderBook:
 
     def null_bids(self) -> None:
         # noinspection PyTypeChecker
-        self._bid_quantities[:] = self._dtype_arr("0")
+        self._bid_quantities[:] = self._dtype_item("0")
 
     def null_asks(self) -> None:
         # noinspection PyTypeChecker
-        self._ask_quantities[:] = self._dtype_arr("0")
+        self._ask_quantities[:] = self._dtype_item("0")
 
     def reset_bids(
         self,

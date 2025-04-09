@@ -97,7 +97,7 @@ def test_orderbook_set():
     assert orderbook.best_ask_price == 0.12
     assert orderbook.best_ask_size == 1000
 
-    assert type(orderbook.bids[1][0]) is orderbook.dtype
+    assert type(orderbook.bids[1][0].item()) is orderbook.dtype
 
 
 def test_orderbook_set_unordered():
@@ -366,7 +366,7 @@ def test_orderbook_reset(unified_book_yes):
     assert np.sum(orderbook.bids[1]) == 0
     assert np.sum(orderbook.asks[1]) == 0
 
-    assert type(orderbook.bids[1][0]) is orderbook.dtype
+    assert type(orderbook.bids[1][0].item()) is orderbook.dtype
 
 
 def test_orderbook_set_raise_type(unified_book_yes):

@@ -192,8 +192,3 @@ def update_order(
     # else: created_at = None -> ignore
 
     return order
-
-
-def infer_numeric_type(x: Any) -> type:
-    t = type(x)
-    return float if t is int else t

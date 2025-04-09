@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from decimal import Decimal
-from typing import Any, Optional, Protocol, TypeAlias
+from typing import Any, Optional, Protocol, Sequence, TypeAlias
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -24,24 +24,38 @@ def is_all_none(*args) -> bool:
     return all(x is None for x in args)
 
 
+def infer_numeric_type(x: Any) -> type:
+    t = type(x)
+    return float if t is int else t
+
+
 class ArrayInterface(Protocol):
     @property
     def __array_interface__(self) -> dict:
         return ...
 
+    def __array__(self, dtype: Optional[np.dtype] = None) -> np.ndarray:
+        ...
+
 
 ArrayCoercible: TypeAlias = ArrayInterface | ArrayLike | np.ndarray
 
+AdvancedIndex: TypeAlias = int | slice | Sequence[int] | Sequence[bool]
+
 
 class ZerosProtocol(ArrayInterface):
+    @property
+    def dtype(self) -> Any:
+        return ...
+
     # noinspection PyUnusedLocal
     def __init__(self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype]):
         ...
 
-    def __getitem__(self, item):
+    def __getitem__(self, key: AdvancedIndex):
         ...
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: AdvancedIndex, value):
         ...
 
     def __len__(self):
@@ -54,5 +68,5 @@ class ZerosProtocol(ArrayInterface):
 class ZerosFactoryFunc(Protocol):
     def __call__(
         self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype]
-    ) -> ArrayCoercible:
+    ) -> ZerosProtocol | np.ndarray:
         ...

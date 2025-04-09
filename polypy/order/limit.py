@@ -4,7 +4,7 @@ from eth_keys.datatypes import PrivateKey
 from polypy.constants import CHAIN_ID, SIG_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
-from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE, infer_numeric_type
+from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
 from polypy.rounding import (
     round_floor,
     round_floor_tenuis_ceil,
@@ -12,7 +12,7 @@ from polypy.rounding import (
     scale_1e06,
 )
 from polypy.signing import SIGNATURE_TYPE, polymarket_domain
-from polypy.typing import NumericAlias
+from polypy.typing import NumericAlias, infer_numeric_type
 
 
 def limit_order_taker_maker_amount(

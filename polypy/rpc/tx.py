@@ -20,18 +20,24 @@ from polypy.constants import (
     PROXY_WALLET_FACTORY,
 )
 from polypy.rounding import round_down
-from polypy.rpc.abi import ERC20_ABI, PROXY_FACTORY_ABI
+from polypy.rpc.abi import ERC20_ABI, ERC1155_ABI, PROXY_FACTORY_ABI
 from polypy.signing import private_key_checksum_address
 from polypy.typing import NumericAlias
 
 
 class W3POA(web3.Web3):
     def __init__(
-        self, rpc_url: str | ENDPOINT, private_key: str | PrivateKeyType | PrivateKey
+        self,
+        rpc_url: str | ENDPOINT,
+        private_key: str | PrivateKeyType | PrivateKey,
+        maker_funder: str | None,
     ) -> None:
         super().__init__(HTTPProvider(rpc_url))
 
         self.wallet_addr = private_key_checksum_address(private_key)
+        self.maker_funder = (
+            maker_funder if maker_funder is not None else self.wallet_addr
+        )
 
         self.eth.default_account = self.wallet_addr
         self.middleware_onion.inject(
@@ -39,8 +45,15 @@ class W3POA(web3.Web3):
         )
 
 
+@lru_cache(maxsize=2)
+def _erc1155_contract(w3: W3POA, collateral: str | COLLATERAL) -> Contract:
+    # we cannot define a global ERC20_CONTRACT because we need the rpc endpoint for calling
+    #   'balanceOf' and since rpc endpoint is defined at PositionManager, we use the w3 instance
+    return w3.eth.contract(address=collateral, abi=ERC1155_ABI)
+
+
 @lru_cache(maxsize=8)  # todo up cache size?
-def _erc20_contract(w3: Web3, collateral: str | COLLATERAL) -> Contract:
+def _erc20_contract(w3: W3POA, collateral: str | COLLATERAL) -> Contract:
     # we cannot define a global ERC20_CONTRACT because we need the rpc endpoint for calling
     #   'approve' and 'allowance' and since rpc endpoint is defined at PositionManager, we use
     #   the w3 instance
@@ -48,7 +61,7 @@ def _erc20_contract(w3: Web3, collateral: str | COLLATERAL) -> Contract:
 
 
 @lru_cache(maxsize=4)  # todo up cache size?
-def _proxy_contract(w3: Web3, proxy_wallet_factory_address: str) -> Contract:
+def _proxy_contract(w3: W3POA, proxy_wallet_factory_address: str) -> Contract:
     # we cannot define global PROXY_CONTRACT because we need the rpc endpoint for calling 'buildTransaction'
     #   and since rpc endpoint is defined at PositionManager, we use the w3 instance
 
@@ -57,7 +70,7 @@ def _proxy_contract(w3: Web3, proxy_wallet_factory_address: str) -> Contract:
 
 
 def _get_gas_price_wei(
-    w3: Web3,
+    w3: W3POA,
     gas_factor: NumericAlias,
     max_gas_price: int | None,
 ) -> NumericAlias:
@@ -127,7 +140,7 @@ def generate_txn_params(
 
 
 def transact_txn(
-    w3: Web3,
+    w3: W3POA,
     txn: TxParams,
     private_key: str | PrivateKeyType | PrivateKey,
     receipt_timeout: float | None,
