@@ -8,6 +8,7 @@ from collections import OrderedDict, deque, namedtuple
 from typing import Any, Callable, Literal, NoReturn, Self, TypeAlias, Union
 
 from polypy.constants import ENDPOINT
+from polypy.ctf import MarketIdTriplet
 from polypy.exceptions import (
     EventTypeException,
     OrderGetException,
@@ -26,6 +27,7 @@ from polypy.position import PositionProtocol
 from polypy.stream.common import CHANNEL, AbstractStreamer
 from polypy.structs import MakerOrder, OrderWSInfo, TradeWSInfo
 from polypy.trade import TERMINAL_TRADE_STATI, TRADE_STATUS, TRADER_SIDE
+from polypy.typing import infer_numeric_type
 
 
 def lru_cache_non_empty(max_size: int, copy_mode: Literal["deep", "copy"] | None):
@@ -61,26 +63,24 @@ def lru_cache_non_empty(max_size: int, copy_mode: Literal["deep", "copy"] | None
     return decorator
 
 
-MarketAssetsInfo = namedtuple(
-    "MarketAssetsInfo", ["condition_id", "token_id_yes", "token_id_no"]
-)
-
 BufferThreadSettings = namedtuple("BufferSettings", ["keep_s", "max_len"])
 
 TupleManager: TypeAlias = tuple[
     OrderManagerProtocol | None, PositionManagerProtocol | None
 ]
 
+MarketTriplet: TypeAlias = MarketIdTriplet | tuple[str, str, str]
+
 
 def _split_market_assets(
-    market_assets: MarketAssetsInfo | list[MarketAssetsInfo],
+    market_triplets: MarketIdTriplet | list[MarketIdTriplet],
 ) -> tuple[set[str], set[str]]:
-    if isinstance(market_assets, list):
-        market_ids = {mas[0] for mas in market_assets}
-        asset_ids = {asset_id for mas in market_assets for asset_id in mas[1:]}
+    if isinstance(market_triplets, list):
+        market_ids = {mas[0] for mas in market_triplets}
+        asset_ids = {asset_id for mas in market_triplets for asset_id in mas[1:]}
     else:
-        market_ids = {market_assets[0]}
-        asset_ids = {market_assets[1], market_assets[2]}
+        market_ids = {market_triplets[0]}
+        asset_ids = {market_triplets[1], market_triplets[2]}
 
     if not market_ids:
         raise SubscriptionException("No markets (condition_id) to subscribe to.")
@@ -184,11 +184,7 @@ def _maker_order_side(maker_order: MakerOrder, msg: TradeWSInfo) -> SIDE:
 
 
 def _numeric_type_balance_total(x: PositionManagerProtocol) -> type | None:
-    if x is None:
-        return None
-
-    numeric_type = type(x.balance_total)
-    return numeric_type if numeric_type is not int else float
+    return None if x is None else infer_numeric_type(x.balance_total)
 
 
 def _parse_buffer_settings(
@@ -272,7 +268,7 @@ class UserStream(AbstractStreamer):
         self,
         ws_endpoint: ENDPOINT | str,
         tuple_manager: TupleManager | list[TupleManager] | None,
-        market_assets: MarketAssetsInfo | list[MarketAssetsInfo],
+        market_triplets: MarketTriplet | list[MarketTriplet],
         api_key: str,
         secret: str,
         passphrase: str,
@@ -280,6 +276,7 @@ class UserStream(AbstractStreamer):
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
+        update_aug_conversion_s: float | None = None,
         ping_time: float | None = 5,
         update_mode: Literal["explicit", "implicit"] = "explicit",
         invalidate_on_exc: bool = True,
@@ -290,7 +287,7 @@ class UserStream(AbstractStreamer):
         ws_channel: CHANNEL | str = CHANNEL.USER,
         max_subscriptions: int = 500,
     ) -> None:
-        market_ids, asset_ids = _split_market_assets(market_assets)
+        market_ids, asset_ids = _split_market_assets(market_triplets)
 
         tuple_manager = _parse_tuple_manager_list(tuple_manager)
         _check_max_subscriptions(market_ids, max_subscriptions)
@@ -330,6 +327,9 @@ class UserStream(AbstractStreamer):
 
         self.monitor_thread: threading.Thread | None = None
         self.monitor_assets_thread_s = monitor_assets_thread_s
+
+        self.aug_conv_thread: threading.Thread | None = None
+        self.update_aug_conversion_s = update_aug_conversion_s
 
         self.api_key = api_key
         self.secret = secret
@@ -394,6 +394,11 @@ class UserStream(AbstractStreamer):
                 StreamException("Internal exception: self.buffer_thread is not None.")
             )
 
+        if self.aug_conv_thread is not None:
+            self.register_exception(
+                StreamException("Internal exception: self.aug_conv_thread is not None.")
+            )
+
         self.monitor_thread = threading.Thread(target=self._monitor_thread, daemon=True)
         self.monitor_thread.start()
 
@@ -401,6 +406,11 @@ class UserStream(AbstractStreamer):
 
         self.buffer_thread = threading.Thread(target=self._buffer_thread, daemon=True)
         self.buffer_thread.start()
+
+        self.aug_conv_thread = threading.Thread(
+            target=self._aug_conv_thread, daemon=True
+        )
+        self.aug_conv_thread.start()
 
     def pre_start(self) -> None:
         self.buffer = deque(maxlen=self.buffer_thread_settings[1])
@@ -410,6 +420,7 @@ class UserStream(AbstractStreamer):
         self.buffer_event.set()
 
         self.monitor_thread.join(self.ping_time + 0.01)
+        self.aug_conv_thread.join(self.ping_time + 0.01)
         self.buffer_thread.join(self.ping_time + 0.01)
 
         if self.monitor_thread.is_alive():
@@ -418,7 +429,13 @@ class UserStream(AbstractStreamer):
         if self.buffer_thread.is_alive():
             self.register_exception(StreamException("Cannot join() buffer thread."))
 
+        if self.aug_conv_thread.is_alive():
+            self.register_exception(
+                StreamException("Cannot join() augmented conversions thread.")
+            )
+
         self.monitor_thread = None
+        self.aug_conv_thread = None
         self.buffer_thread = None
         self.buffer_event.clear()
 
@@ -428,7 +445,7 @@ class UserStream(AbstractStreamer):
 
     def _monitor_thread(self) -> None:
         if not self.tuple_mngs:
-            # if no order managers assigned, we exit immediately
+            # if no managers assigned, we exit immediately
             return
 
         if self.monitor_assets_thread_s is None or self.monitor_assets_thread_s <= 0:
@@ -444,6 +461,32 @@ class UserStream(AbstractStreamer):
                             f"Asset_ids of stream: {self._asset_ids}."
                         )
                     )
+
+    def _aug_conv_thread(self) -> None:
+        if not self.tuple_mngs:
+            # if no managers assigned, we exit immediately:
+            return
+
+        if self.update_aug_conversion_s is None or self.update_aug_conversion_s <= 0:
+            warnings.warn(
+                "PositionManagerProtocol.update_augmented_conversions(...) is "
+                "not updated automatically (update_aug_conversion_s=None). "
+                "Make sure to manually call it periodically."
+            )
+            return
+
+        warnings.warn(
+            "PositionManagerProtocol.update_augmented_conversions(...) will be called automatically. "
+            "Underlying Gamma API REST calls might impede performance if update time is set too short."
+        )
+
+        while not self._stop_token.wait(self.update_aug_conversion_s):
+            try:
+                for tm in self.tuple_mngs:
+                    if tm[1] is not None:
+                        tm[1].update_augmented_conversions()
+            except Exception as e:
+                self.register_exception(e)
 
     def _buffer_thread(self) -> None:
         if self.buffer.maxlen <= 0:
