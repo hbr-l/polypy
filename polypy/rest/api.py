@@ -410,7 +410,9 @@ def get_neg_risk_market(
     token_id: str | None = None,
     market_slug: str | None = None,
     tuple_factory: type[T] | None = None,
-) -> list[T | tuple[str, str, str, str, str]]:
+) -> tuple[bool, list[T | tuple[str, str, str, str, str]]]:
+    """Retrieves closed status and list of MarketIdTriplets (or str tuple)
+    of negative risk market via Gamma API."""
     if is_all_none(condition_id, token_id, market_slug):
         raise PolyPyException(
             "At least one of `condition_id`, `token_id` or `market_slug` must be specified."
@@ -430,7 +432,9 @@ def get_neg_risk_market(
 
     event: dict = get_events_gamma_model(endpoint_gamma=endpoint_gama, ids=event_id)
 
-    return gamma_event_to_neg_risk_market(event, include_closed, tuple_factory)
+    return event["closed"], gamma_event_to_neg_risk_market(
+        event, include_closed, tuple_factory
+    )
 
 
 def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> dict[str, Any]:
