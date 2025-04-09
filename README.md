@@ -20,6 +20,7 @@ it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of muc
 
 Quickstart
 ----------
+
 ````python
 import time
 import polypy as plp
@@ -49,7 +50,7 @@ order_manager = plp.OrderManager(
 )
 
 # create a position_manager with an initial bankroll (100 USDC), which stores and manages current positions (holdings)
-position_manager = plp.PositionManager(rest_endpoint=plp.ENDPOINT.REST, usdc_position=100)
+position_manager = plp.PositionManager(rest_endpoint=plp.ENDPOINT.REST, gamma_endpoint=plp.ENDPOINT.GAMMA, usdc_position=100)
 
 # assign order_manager and position_manager to a user stream
 # this way, orders in order_manager and positions in position_manager will be updated automatically (e.g. if an 
@@ -58,7 +59,7 @@ position_manager = plp.PositionManager(rest_endpoint=plp.ENDPOINT.REST, usdc_pos
 user_stream = plp.UserStream(
     ws_endpoint=plp.ENDPOINT.WS,
     tuple_manager=(order_manager, position_manager),
-    market_assets=("market_id", "yes_token_id", "no_token_id"),
+    market_triplets=("market_id", "yes_token_id", "no_token_id"),
     api_key="...",
     secret="...",
     passphrase="..."
@@ -154,3 +155,12 @@ Development
 ### Requirements
 - __python >= 3.11__ 
 - see [requirements.txt](requirements.txt).
+
+### Change Log
+#### 2025/03/31
+- Implement monitoring ex-post added outcomes/conditions in augmented negative risk markets in UserStream
+- Implement Gamma API (`get_markets_gamma_model`, `get_events_gamma_model`, `get_neg_risk_market`)
+- Implement fetching "midpoints" for resolved markets in PositionManager (via Gamma API)
+- Add `gamma_endpoint` as argument for PositionManager
+- Implement on-chain actions: split, merge, redeem, convert
+- Implement namedtuple 'MarketIdTriple' (e.g., used in UserStream) and 'MarketIdQuintet' (used in PositionManager)
