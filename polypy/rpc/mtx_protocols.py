@@ -1,11 +1,8 @@
 from enum import StrEnum
-from typing import Iterable
 
 import attrs
 
 from polypy.constants import CHAIN_ID, COLLATERAL
-from polypy.ctf import MarketIdQuintet
-from polypy.exceptions import PolyPyException
 from polypy.rpc.encode import (
     encode_convert,
     encode_merge,
@@ -14,20 +11,6 @@ from polypy.rpc.encode import (
     encode_split,
 )
 from polypy.typing import NumericAlias
-
-
-def _check_conversion_all_quintets(all_quintets: Iterable[MarketIdQuintet]) -> None:
-    all_qids = [int(m[2][-2:], 16) for m in all_quintets]
-
-    if not all_qids:
-        raise PolyPyException("`all_market_quintets` is empty.")
-
-    # check if all_qids consists of only consecutive numbers
-    if not max(all_qids) - min(all_qids) + 1 == len(all_qids) == len(set(all_qids)):
-        # todo this check might be too restrictive
-        raise PolyPyException(
-            f"`all_market_quintets` question_ids are not consecutive: {all_quintets}"
-        )
 
 
 # noinspection PyPep8Naming

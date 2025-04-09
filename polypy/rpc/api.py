@@ -1,7 +1,6 @@
 import logging
 import warnings
 from decimal import Decimal
-from typing import Literal
 
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
@@ -17,6 +16,7 @@ from polypy.constants import (
     CONDITIONAL,
     ENDPOINT,
     ERC20_WEI_UNIT,
+    POL_WEI_UNIT,
     PROXY_WALLET_FACTORY,
     RELAY_HUB,
 )
@@ -41,6 +41,7 @@ from polypy.rpc.tx import (
     W3POA,
     ProxyDataFrame,
     _erc20_contract,
+    _erc1155_contract,
     _get_gas_price_wei,
     generate_txn_params,
     transact_txn,
@@ -485,7 +486,7 @@ def estimate_gas_price_wei(w3: Web3) -> Wei:
 
 
 # noinspection PyPep8Naming
-def allowance_USDC(
+def get_allowance_USDC(
     w3: W3POA,
     chain_id: CHAIN_ID,
     contract: Contract | None = None,
@@ -512,7 +513,7 @@ def is_sufficient_approval_erc20(
 
     # raw_amount = int(amount * (10**decimals_)) + 1    # decimals_ == 6, so just use "mwei"
     requested_amount: Decimal = _usdc_to_dec_plus_marginWei(amount)
-    approved_amount: Decimal = allowance_USDC(
+    approved_amount: Decimal = get_allowance_USDC(
         w3=w3,
         chain_id=chain_id,
         contract=contract,
@@ -525,9 +526,35 @@ def get_nonce(w3: W3POA) -> int:
     return w3.eth.get_transaction_count(w3.wallet_addr)
 
 
-# noinspection PyPep8Naming,PyTypeHints
-def get_POL_balance(
+# noinspection PyPep8Naming
+def get_balance_POL(
     w3: W3POA,
-    unit: str | Literal[ERC20_WEI_UNIT] = "ether",
+    unit: str = POL_WEI_UNIT,
 ) -> Decimal:
-    return w3.from_wei(w3.eth.get_balance(w3.wallet_addr), unit)
+    return from_wei(w3.eth.get_balance(w3.wallet_addr), unit)
+
+
+def get_balance_token(
+    w3: W3POA,
+    token_id: str | int,
+    chain_id: CHAIN_ID,
+    unit: str = ERC20_WEI_UNIT,
+) -> Decimal:
+    # noinspection PyTypeChecker
+    contract = _erc1155_contract(w3, CONDITIONAL[chain_id.name])
+    balance = contract.functions.balanceOf(w3.maker_funder, int(token_id)).call()
+
+    return from_wei(balance, unit)
+
+
+# noinspection PyPep8Naming
+def get_balance_USDC(
+    w3: W3POA,
+    chain_id: CHAIN_ID,
+    unit: str = ERC20_WEI_UNIT,
+) -> Decimal:
+    # noinspection PyTypeChecker
+    contract = _erc20_contract(w3, COLLATERAL[chain_id.name])
+    balance = contract.functions.balanceOf(w3.maker_funder).call()
+
+    return from_wei(balance, unit)

@@ -2,9 +2,11 @@ from polypy.book import OrderBook, calculate_marketable_price
 from polypy.constants import CHAIN_ID, ENDPOINT, SIG_DIGITS_SIZE
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.manager import (
+    MTX,
     AugmentedConversionCache,
     OrderManager,
     PositionManager,
+    RPCSettings,
     buying_power,
 )
 from polypy.order import (
@@ -22,11 +24,14 @@ from polypy.rest.api import *
 from polypy.rpc import (
     W3POA,
     ProxyDataFrame,
-    allowance_USDC,
     approve_USDC,
     convert_positions,
     estimate_gas_price_wei,
     generate_txn_params,
+    get_allowance_USDC,
+    get_balance_POL,
+    get_balance_token,
+    get_balance_USDC,
     merge_positions,
     redeem_positions,
     split_positions,
