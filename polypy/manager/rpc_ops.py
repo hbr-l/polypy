@@ -382,6 +382,7 @@ def tx_convert_positions(
     polymarketsession: str | None = None,
     polymarketauthtype: str | None = None,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
+    # all_market_quintets not needed for rpc but for proper bookkeeping in position manager
     check_relay_modus(
         rpc_settings=rpc_settings,
         polymarketnonce=polymarketnonce,
