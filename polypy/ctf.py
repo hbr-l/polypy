@@ -61,15 +61,15 @@ class MarketIdQuintet(
             question_id = _optional_equiv(question_id, q_id)
             neg_risk_market_id = _optional_equiv(neg_risk_market_id, nrm_id)
 
-            # noinspection PyArgumentList
-            return super().__new__(
-                cls,
-                condition_id,
-                neg_risk_market_id,
-                question_id,
-                token_id_1,
-                token_id_2,
-            )
+        # noinspection PyArgumentList
+        return super().__new__(
+            cls,
+            condition_id,
+            neg_risk_market_id,
+            question_id,
+            token_id_1,
+            token_id_2,
+        )
 
     @classmethod
     def from_market_info(cls, market_info: MarketInfo) -> Self:
