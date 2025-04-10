@@ -4,7 +4,7 @@ import time
 import warnings
 from collections.abc import Iterable
 from functools import lru_cache
-from typing import Any, Callable, Literal, TypeVar
+from typing import Any, Callable, Literal, TypeAlias, TypeVar
 
 import msgspec
 import requests
@@ -46,6 +46,7 @@ from polypy.typing import NumericAlias, is_all_none, is_iter
 
 
 T = TypeVar("T")
+Quintet: TypeAlias = tuple[str, str, str, str, str]
 
 
 END_CURSOR = "LTE="
@@ -92,8 +93,8 @@ def _overload_headers(headers: dict | None, method: str) -> dict | None:
     return headers
 
 
-def _parse_to_list(x: Any | list[Any]) -> tuple[bool, list[Any]]:
-    return (False, x) if isinstance(x, list) else (True, [x])
+def _parse_single_to_list(x: Any | Iterable[Any]) -> tuple[bool, list[Any]]:
+    return (False, x) if is_iter(x) else (True, [x])
 
 
 def _request(
@@ -403,38 +404,89 @@ def gamma_event_to_neg_risk_market(
     return ret
 
 
-def get_neg_risk_market(
+def _get_neg_risk_markets(
     endpoint_gama: str | ENDPOINT,
     include_closed: bool,
-    condition_id: str | None = None,
-    token_id: str | None = None,
-    market_slug: str | None = None,
+    condition_ids: Iterable[str] | None,
+    token_ids: Iterable[str] | None,
+    market_slugs: Iterable[str] | None,
+    tuple_factory: type[T] | None,
+) -> tuple[list[bool], list[list[Quintet]]]:
+    markets: list[dict] = get_markets_gamma_model(
+        endpoint_gamma=endpoint_gama,
+        condition_ids=condition_ids,
+        token_ids=token_ids,
+        slugs=market_slugs,
+    )
+
+    event_ids = {m["events"][0]["id"] for m in markets}
+    if not event_ids:
+        raise PolyPyException(
+            f"Empty set of event_ids for condition_ids={condition_ids}, "
+            f"token_ids={token_ids}, slugs={market_slugs}."
+        )
+
+    events: list[dict] = get_events_gamma_model(
+        endpoint_gamma=endpoint_gama, ids=event_ids
+    )
+
+    events_closed = [event["closed"] for event in events]
+    quintet_groups = [
+        gamma_event_to_neg_risk_market(event, include_closed, tuple_factory)
+        for event in events
+    ]
+
+    return events_closed, quintet_groups
+
+
+def get_neg_risk_markets(
+    endpoint_gama: str | ENDPOINT,
+    include_closed: bool,
+    condition_ids: str | Iterable[str] | None = None,
+    token_ids: str | Iterable[str] | None = None,
+    market_slugs: str | Iterable[str] | None = None,
     tuple_factory: type[T] | None = None,
-) -> tuple[bool, list[T | tuple[str, str, str, str, str]]]:
-    """Retrieves closed status and list of MarketIdTriplets (or str tuple)
-    of negative risk market via Gamma API."""
-    if is_all_none(condition_id, token_id, market_slug):
+) -> tuple[bool | list[bool], list[T | Quintet] | list[list[T | Quintet]]]:
+    """Retrieves event closed status and list of MarketIdTriplets (or str tuples)
+    of negative risk market via Gamma API.
+
+    Returns
+    -------
+    event_closed: bool | list[bool,
+        True if event is closed
+    market_quintets: list[Quintet] | list[list[Quintet]],
+        list of market_quintets per condition_id/token_id/market_slug
+    """
+    if is_all_none(condition_ids, token_ids, market_slugs):
         raise PolyPyException(
             "At least one of `condition_id`, `token_id` or `market_slug` must be specified."
         )
 
-    if any(is_iter(x) for x in [condition_id, token_id, market_slug]):
-        raise PolyPyException(
-            "Only str argument allowed for `condition_id`, `token_id` or `market_slug`."
-        )
+    _single = all(not is_iter(x) for x in [condition_ids, token_ids, market_slugs])
 
-    event_id = get_markets_gamma_model(
-        endpoint_gamma=endpoint_gama,
-        condition_ids=condition_id,
-        token_ids=token_id,
-        slugs=market_slug,
-    )["events"][0]["id"]
+    _, condition_ids = _parse_single_to_list(condition_ids)
+    _, token_ids = _parse_single_to_list(token_ids)
+    _, market_slugs = _parse_single_to_list(market_slugs)
 
-    event: dict = get_events_gamma_model(endpoint_gamma=endpoint_gama, ids=event_id)
-
-    return event["closed"], gamma_event_to_neg_risk_market(
-        event, include_closed, tuple_factory
+    events_closed, quintet_groups = _get_neg_risk_markets(
+        endpoint_gama=endpoint_gama,
+        include_closed=include_closed,
+        condition_ids=condition_ids,
+        token_ids=token_ids,
+        market_slugs=market_slugs,
+        tuple_factory=tuple_factory,
     )
+
+    if _single:
+        if len(events_closed) > 1:
+            raise PolyPyException(
+                f"Retrieved {len(events_closed)} events, though only a single was expected."
+            )
+
+        events_closed = events_closed[0]
+        quintet_groups = quintet_groups[0]
+
+    return events_closed, quintet_groups
 
 
 def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> dict[str, Any]:
@@ -713,7 +765,7 @@ def cancel_orders(
     -----
     User has to take responsibility to check, if order is a cancelable state. This is not checked separately.
     """
-    _single, orders = _parse_to_list(orders)
+    _single, orders = _parse_single_to_list(orders)
     _not_frozen(orders)
 
     body = [order.id for order in orders]
@@ -750,7 +802,7 @@ def cancel_orders_by_ids_(
         "Use of this function is discouraged. Use `cancel_orders` instead."
     )
 
-    _, body = _parse_to_list(order_ids)
+    _, body = _parse_single_to_list(order_ids)
 
     resp = _request(
         url=f"{endpoint}/orders",
@@ -873,7 +925,7 @@ def get_orders(
     -------
 
     """
-    _single, orders = _parse_to_list(orders)
+    _single, orders = _parse_single_to_list(orders)
     _not_frozen(orders)
 
     ret_responses = []
@@ -935,7 +987,7 @@ def get_orders_by_ids_(
         "Use of this function is discouraged. Use `get_orders` instead."
     )
 
-    _single, order_ids = _parse_to_list(order_ids)
+    _single, order_ids = _parse_single_to_list(order_ids)
 
     ret_responses = []
     _missed = []
@@ -1035,7 +1087,7 @@ def _are_orders_scoring_by_ids_(
     secret: str,
     passphrase: str,
 ) -> dict[str, bool]:
-    _, order_ids = _parse_to_list(order_ids)
+    _, order_ids = _parse_single_to_list(order_ids)
 
     resp = _request(
         url=f"{endpoint}/orders-scoring",
@@ -1080,7 +1132,7 @@ def are_orders_scoring(
     secret: str,
     passphrase: str,
 ) -> bool | list[bool]:
-    _single, orders = _parse_to_list(orders)
+    _single, orders = _parse_single_to_list(orders)
     order_ids = [order.id for order in orders]
 
     ret_dict = _are_orders_scoring_by_ids_(
@@ -1112,7 +1164,7 @@ def _parse_positions_url(
     url = f"{endpoint}/positions?=user={user}&sizeThreshold={size_threshold}&limit={limit}&offset={offset}"
 
     if market:
-        _, market = _parse_to_list(market)
+        _, market = _parse_single_to_list(market)
         url = f"{url}&market={','.join(market)}"
     if isinstance(redeemable, bool):
         url = f"{url}&redeemable={redeemable}"
