@@ -118,6 +118,7 @@ def streamer(
             untrack_trade_status,
             monitor_assets_thread_s,
             buffer_settings,
+            None,
             5,
             update_mode,
             invalidate_on_exc,
