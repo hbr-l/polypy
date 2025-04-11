@@ -34,7 +34,7 @@ from polypy.order.market import create_market_order
 from polypy.rest.api import (
     cancel_orders,
     get_neg_risk,
-    get_orders,
+    get_order_updates,
     get_tick_size,
     post_order,
 )
@@ -948,7 +948,7 @@ class OrderManager(OrderManagerProtocol):
             self._validate()
             _single, orders = self._parse_syncable_orders(order)
 
-            orders, responses = get_orders(
+            orders, responses = get_order_updates(
                 endpoint=self.rest_endpoint,
                 orders=orders,
                 private_key=self.private_key,
