@@ -76,7 +76,7 @@ class MarketStream:
             zeros-array factory (either constructor or factory function)
             with kwargs dtype=np.dtype("U128") and dtype=int
         callback_msg: Callable[[str | bytes, Self], None] | None
-            callback, takes message (JSON parse dict) and self as input and has no output.
+            callback, takes message (JSON parsed dict) and self as input and has no output.
             This callback is only invoked on messages that are processed to change the order book
             or last traded price, and which are not filtered out (i.e., duplicate incoming messages
             from 'nb_redundant_skt' buffering, duplicate sent message from server, unknown event_type, etc.)-
@@ -86,7 +86,7 @@ class MarketStream:
             callback, takes exception and self as input and has no output. Only invoked if any exception happens.
             Can be used for, e.g. observer pattern.
             During callback, :py:args:'Self' lock is not acquired - if necessary to manipulate attributes
-            of Self directly, acquire self.lock_dict manually.
+            of Self directly, acquire `self.lock_dict[token_id]: threading.Lock` manually.
 
         Notes
         -----
