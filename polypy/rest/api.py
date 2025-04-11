@@ -892,7 +892,7 @@ def cancel_asset(
 
 
 # todo overload
-def get_orders(
+def get_order_updates(
     endpoint: str | ENDPOINT,
     orders: OrderProtocol | list[OrderProtocol],
     private_key: str | PrivateKey | PrivateKeyType,
@@ -984,7 +984,7 @@ def get_orders_by_ids_(
 ) -> OpenOrderInfo | None | list[OpenOrderInfo | None]:
     warnings.warn(
         "Status of order objects corresponding to `order_ids` will not be updated automatically. "
-        "Use of this function is discouraged. Use `get_orders` instead."
+        "Use of this function is discouraged. Use `get_order_updates` instead."
     )
 
     _single, order_ids = _parse_single_to_list(order_ids)
