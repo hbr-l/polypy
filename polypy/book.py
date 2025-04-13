@@ -138,6 +138,7 @@ class OrderBook:
         validator=_validate_tick_size,
         on_setattr=[attrs.setters.validate, _on_setattr_tick_size],
     )
+    """Use get_tick_size(...) (REST) or MarketInfo.minimum_tick_size."""
 
     zeros_factory: type[ZerosProtocol] | ZerosFactoryFunc = attrs.field(
         default=np.zeros, on_setattr=attrs.setters.frozen
