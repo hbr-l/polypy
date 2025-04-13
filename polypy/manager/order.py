@@ -3,7 +3,7 @@ import datetime
 import math
 import threading
 import warnings
-from typing import Any, KeysView, Literal, Protocol, TypeAlias
+from typing import Any, KeysView, Literal, Protocol, Self, TypeAlias
 
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
@@ -362,6 +362,7 @@ class MarketOrderFactory(Protocol):
         signature_type: SIGNATURE_TYPE,
         book: OrderBook,
         max_size: NumericAlias | None,
+        *args,
         **kwargs,
     ) -> OrderProtocol:
         ...
@@ -382,6 +383,7 @@ class LimitOrderFactory(Protocol):
         signature_type: SIGNATURE_TYPE,
         tif: TIME_IN_FORCE,
         expiration: int,
+        *args,
         **kwargs,
     ) -> OrderProtocol:
         ...
@@ -490,6 +492,31 @@ class OrderManager(OrderManagerProtocol):
 
     def __contains__(self, order_id: str) -> bool:
         return order_id in self.order_dict
+
+    @classmethod
+    def create(
+        cls,
+        private_key: PrivateKey | str | PrivateKeyType,
+        api_key: str,
+        secret: str,
+        passphrase: str,
+        maker_funder: str | None,
+        signature_type: SIGNATURE_TYPE | None,
+    ) -> Self:
+        # noinspection PyTypeChecker
+        return cls(
+            rest_endpoint=ENDPOINT.REST,
+            private_key=private_key,
+            api_key=api_key,
+            secret=secret,
+            passphrase=passphrase,
+            maker_funder=maker_funder,
+            signature_type=signature_type,
+            chain_id=CHAIN_ID.POLYGON,
+            max_size=None,
+            market_order_factory=create_market_order,
+            limit_order_factory=create_limit_order,
+        )
 
     @property
     def order_ids(self) -> KeysView[str]:
