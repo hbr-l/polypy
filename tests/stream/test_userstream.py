@@ -7,8 +7,8 @@ from typing import Callable, Literal
 import msgspec
 import pytest
 
-from polypy import TRADE_STATUS
-from polypy.constants import CHAIN_ID
+from polypy.constants import CHAIN_ID, USDC
+from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     ManagerInvalidException,
     PositionNegativeException,
@@ -16,6 +16,10 @@ from polypy.exceptions import (
     SubscriptionException,
 )
 from polypy.manager import OrderManager, PositionManager
+from polypy.manager.cache import AugmentedConversionCache
+
+# noinspection PyProtectedMember
+from polypy.manager.rpc_proc import _tx_post_convert_positions
 from polypy.order import (
     INSERT_STATUS,
     SIDE,
@@ -23,10 +27,11 @@ from polypy.order import (
     OrderProtocol,
     create_limit_order,
 )
-from polypy.position import USDC, Position, PositionProtocol
+from polypy.position import Position, PositionProtocol
 from polypy.signing import SIGNATURE_TYPE
 from polypy.stream.user import CHANNEL, BufferThreadSettings, UserStream
 from polypy.structs import OrderWSInfo, TradeWSInfo
+from polypy.trade import TRADE_STATUS
 from polypy.typing import dec
 
 test_pth = pathlib.Path(__file__).parent
@@ -1693,3 +1698,73 @@ def test_raises_max_subscriptions(
             max_subscriptions=1,
         )
     assert "Exceeding" in str(record)
+
+
+# noinspection DuplicatedCode
+def test_update_augmented_conversions(mocker, api_key, passphrase, secret):
+    # sourcery skip: extract-duplicate-method
+    cache = AugmentedConversionCache("")
+    pm = PositionManager("", "", dec(100), conversion_cache=cache)
+
+    all_market_quintets = [
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+    ]
+
+    # simulate conversion
+    pm.transact("N1", dec(5), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True)
+    _tx_post_convert_positions(
+        pm, cache, [all_market_quintets[0]], all_market_quintets, dec(5), True
+    )
+    assert pm.get_by_id("Y2").size == dec(5)
+    assert pm.get_by_id("Y3").size == dec(5)
+    assert pm.get_by_id("N1").size == dec(0)
+    assert pm.get_by_id("Y1") is None
+    assert "Y4" not in pm
+    assert pm.balance == dec(100)
+    assert set(pm.asset_ids) == {"usdc", "N1", "Y2", "Y3"}
+    assert "0x9" in cache.caches
+    assert cache.caches["0x9"].cumulative_size == dec(5)
+    assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3"}
+
+    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
+    mocker.patch(
+        "polypy.manager.cache.get_neg_risk_markets",
+        return_value=(
+            [False],
+            [all_market_quintets],
+        ),
+    )
+
+    stream = UserStream(
+        "ws://localhost:8002/",
+        (None, pm),
+        MarketIdTriplet.from_market_quintet(all_market_quintets[0]),
+        api_key,
+        secret,
+        passphrase,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
+        None,
+        buffer_thread_settings=(0.01, 10),
+        update_mode="implicit",
+        update_aug_conversion_s=0.1,
+    )
+    stream._stop_token.clear()
+    stream.pre_start()
+
+    time.sleep(0.5)
+
+    stream._stop_token.set()
+    stream.post_stop()
+
+    assert pm.get_by_id("Y2").size == dec(5)
+    assert pm.get_by_id("Y3").size == dec(5)
+    assert pm.get_by_id("Y4").size == dec(5)
+    assert pm.get_by_id("N1").size == dec(0)
+    assert pm.get_by_id("Y1") is None
+    assert pm.balance == dec(100)
+    assert set(pm.asset_ids) == {"usdc", "N1", "Y2", "Y3", "Y4"}
+    assert "0x9" in cache.caches
+    assert cache.caches["0x9"].cumulative_size == dec(5)
+    assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3", "0x4"}
