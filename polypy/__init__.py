@@ -1,5 +1,5 @@
 from polypy.book import OrderBook, calculate_marketable_price
-from polypy.constants import CHAIN_ID, ENDPOINT, SIG_DIGITS_SIZE
+from polypy.constants import CHAIN_ID, ENDPOINT, SIG_DIGITS_SIZE, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.manager import (
     MTX,
@@ -19,7 +19,7 @@ from polypy.order import (
     frozen_order,
     is_marketable_amount,
 )
-from polypy.position import ACT_SIDE, USDC, CSMPosition, Position
+from polypy.position import ACT_SIDE, CSMPosition, Position
 from polypy.rest.api import *
 from polypy.rpc import (
     W3POA,

@@ -4,7 +4,7 @@ from typing import Any, Literal, NoReturn, Protocol, Self
 
 import attrs
 
-from polypy.constants import SIG_DIGITS_SIZE
+from polypy.constants import SIG_DIGITS_SIZE, USDC
 from polypy.exceptions import (
     PositionException,
     PositionNegativeException,
@@ -13,8 +13,6 @@ from polypy.exceptions import (
 from polypy.rounding import round_down
 from polypy.trade import TRADE_STATUS
 from polypy.typing import NumericAlias, infer_numeric_type
-
-USDC = "usdc"
 
 
 # noinspection PyPep8Naming
@@ -100,7 +98,7 @@ def _frozen(_, attr, ___) -> NoReturn:
 
 # todo sharedMem version
 @attrs.define
-class Position:
+class Position(PositionProtocol):
     """Simple Position implementation.
 
     Transactions (settlement) will be immediately performed on TRADE_STATUS.MATCHED.
