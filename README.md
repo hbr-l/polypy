@@ -126,7 +126,9 @@ Project Status
 This project is under active development and its function and class signatures, as well as the repository structure 
 will be subject to future changes.  
 Quite a few of the REST calls are not yet implemented (e.g., _get_spread()_), as development currently focuses on features 
-needed for personal projects/trading bots - though implementing REST calls by oneself should be relatively easy.
+needed for personal projects/trading bots - though implementing REST calls by oneself should be relatively easy.  
+Large parts of the code base are not yet fully tested, though most common classes and functions are covered 
+fairly thoroughly.
 
 Known Issues
 ------------

@@ -63,7 +63,7 @@ _(backward-compatible changes, no changes in signatures)_
 - [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
 - [ ] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation
-- [ ] Additional checks for `all_market_quintets` in `_parse_all_market_quintets(...)` (PositionManager.convert_positions) (necessary?, probably not and current implementation is sufficient)
+- [ ] Additional checks for `all_market_quintets` in `_check_conversion_all_quintets(...)` (used in PositionManager.convert_positions and its conversion cache) (necessary?, probably not and current implementation is sufficient)
 - [ ] Better cache size handling instead of hard coding
 - [ ] Fix typing of `FrozenOrder` and `FrozenPosition` (currently, autocomplete does not work for class attributes and methods)
 - [ ] Rounding routines cost a lot of compute time
