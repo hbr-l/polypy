@@ -1,18 +1,28 @@
+import threading
+import time
 from decimal import Decimal
+from typing import Callable
 
 import pytest
 import responses
 
 from polypy.book import OrderBook
+from polypy.constants import CHAIN_ID, USDC
+from polypy.ctf import MarketIdQuintet
 from polypy.exceptions import (
     ManagerInvalidException,
     PositionTrackingException,
     PositionTransactionException,
 )
+from polypy.manager.cache import AugmentedConversionCache
 from polypy.manager.position import PositionManager
+
+# noinspection PyProtectedMember
+from polypy.manager.rpc_proc import RPCSettings, _tx_post_convert_positions
 from polypy.order.common import SIDE
-from polypy.position import ACT_SIDE, USDC, CSMPosition, Position, frozen_position
+from polypy.position import ACT_SIDE, CSMPosition, Position, frozen_position
 from polypy.trade import TRADE_STATUS
+from polypy.typing import dec
 
 
 def test_create_get_position(local_host_addr):
@@ -373,3 +383,128 @@ def test_invalidate():
     pm._invalid_token = False
     assert pm.balance_total == 10
     assert pm.get_by_id("1234").size == 10
+
+
+# noinspection DuplicatedCode
+def test_update_augmented_conversions(mocker):
+    # sourcery skip: extract-duplicate-method
+    cache = AugmentedConversionCache("")
+    pm = PositionManager("", "", dec(100), conversion_cache=cache)
+
+    all_market_quintets = [
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+    ]
+
+    # simulate conversion
+    pm.transact("N1", dec(5), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True)
+    _tx_post_convert_positions(
+        pm, cache, [all_market_quintets[0]], all_market_quintets, dec(5), True
+    )
+    assert pm.get_by_id("Y2").size == dec(5)
+    assert pm.get_by_id("Y3").size == dec(5)
+    assert pm.get_by_id("N1").size == dec(0)
+    assert pm.get_by_id("Y1") is None
+    assert pm.balance == dec(100)
+    assert set(pm.asset_ids) == {"usdc", "N1", "Y2", "Y3"}
+    assert "0x9" in cache.caches
+    assert cache.caches["0x9"].cumulative_size == dec(5)
+    assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3"}
+
+    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
+    mocker.patch(
+        "polypy.manager.cache.get_neg_risk_markets",
+        return_value=(
+            [False],
+            [all_market_quintets],
+        ),
+    )
+
+    pm.update_augmented_conversions()
+    assert pm.get_by_id("Y2").size == dec(5)
+    assert pm.get_by_id("Y3").size == dec(5)
+    assert pm.get_by_id("Y4").size == dec(5)
+    assert pm.get_by_id("N1").size == dec(0)
+    assert pm.get_by_id("Y1") is None
+    assert pm.balance == dec(100)
+    assert set(pm.asset_ids) == {"usdc", "N1", "Y2", "Y3", "Y4"}
+    assert "0x9" in cache.caches
+    assert cache.caches["0x9"].cumulative_size == dec(5)
+    assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3", "0x4"}
+
+    pm.update_augmented_conversions()
+    assert pm.get_by_id("Y2").size == dec(5)
+    assert pm.get_by_id("Y3").size == dec(5)
+    assert pm.get_by_id("Y4").size == dec(5)
+    assert pm.get_by_id("N1").size == dec(0)
+    assert pm.get_by_id("Y1") is None
+    assert pm.balance == dec(100)
+    assert set(pm.asset_ids) == {"usdc", "N1", "Y2", "Y3", "Y4"}
+    assert "0x9" in cache.caches
+    assert cache.caches["0x9"].cumulative_size == dec(5)
+    assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3", "0x4"}
+
+
+def test_redeem_lock_stack(mocker, private_key):
+    rpc = RPCSettings(
+        "",
+        None,
+        CHAIN_ID.AMOY,
+        private_key,
+        None,
+        1,
+        None,
+        False,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    pm1 = PositionManager("", "", dec(100))
+    pm2 = PositionManager("", "", dec(90))
+    pm3 = PositionManager("", "", dec(80))
+
+    assert pm1.gid != pm2.gid != pm3.gid
+
+    cache = []
+
+    def f(*_, **__):
+        cache.append("redeem")
+
+    def g(self, fn: Callable, *args, **kwargs):
+        cache.append(self.gid)
+        return fn(*args, **kwargs)
+
+    mocker.patch("polypy.manager.position.tx_redeem_positions", new=f)
+    pm1._locked_call = g.__get__(pm1)
+    pm2._locked_call = g.__get__(pm2)
+    pm3._locked_call = g.__get__(pm3)
+
+    pm1.redeem_positions([pm2, pm3], ("0x0", "Y1", "N1"), rpc, "YES", False)
+
+    gids = sorted([pm1.gid, pm2.gid, pm3.gid])
+    assert cache == gids + ["redeem"]
+
+
+def test_locking():
+    pm = PositionManager("", "", dec(10000))
+
+    def f(pm_: PositionManager):
+        for _ in range(100):
+            pm_.transact(
+                "Y", dec(1), dec(0.5), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True
+            )
+
+    threads = [threading.Thread(target=f, args=(pm,)) for _ in range(100)]
+    for thread in threads:
+        thread.start()
+
+    time.sleep(4)
+
+    for thread in threads:
+        thread.join()
+
+    assert pm.get_by_id("Y").size == 10_000
+    assert pm.balance == 5_000
