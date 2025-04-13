@@ -99,7 +99,7 @@ def _check_neg_risk_coherent_question_ids(
     if not max(all_qids) - min(all_qids) + 1 == len(all_qids) == len(set(all_qids)):
         # todo this check might be too restrictive
         raise PolyPyException(
-            f"`all_market_quintets` question_ids are not consecutive: {all_quintets}"
+            f"`all_market_quintets` question_ids are not consecutive: {all_qids} for {all_quintets}."
         )
 
     # todo additional checks (e.g., all closed markets included)? (constraint: without REST calls)
@@ -125,6 +125,13 @@ def _check_complete_subset_condition_ids(
 
 
 class AugmentedConversionCache(ConversionCacheProtocol):
+    """This implementation can be used in multithreading but not in multiprocessing contexts.
+
+    Each Cache should only be bound to one and exactly one PositionManager.
+    Exception to this: maintain one separate PositionManager which collects all in retrospect
+    additionally added outcomes/conditions because, e.g., the concrete strategy does not care about those.
+    """
+
     def __init__(self, endpoint_gamma: str | ENDPOINT, max_size: int | None = None):
         self.endpoint_gamma = endpoint_gamma
         self.max_size = math.inf if max_size is None else max_size
@@ -259,7 +266,7 @@ class AugmentedConversionCache(ConversionCacheProtocol):
 
             return closed_neg_market_ids, ret
 
-    def _check_dual_id(
+    def _check_condition_neg_risk_id(
         self, condition_id: str | None, neg_risk_market_id: str | None
     ) -> str:
         if is_all_none(condition_id, neg_risk_market_id):
@@ -295,5 +302,7 @@ class AugmentedConversionCache(ConversionCacheProtocol):
     def pull_by_id(
         self, condition_id: str | None, neg_risk_market_id: str | None
     ) -> tuple[tuple[str, bool], tuple[Decimal, list[str]]]:
-        condition_id = self._check_dual_id(condition_id, neg_risk_market_id)
+        condition_id = self._check_condition_neg_risk_id(
+            condition_id, neg_risk_market_id
+        )
         return self._update_by_condition_id(None, condition_id)
