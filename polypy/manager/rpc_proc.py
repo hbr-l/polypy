@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import attrs
 from _decimal import Decimal
@@ -7,21 +7,25 @@ from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 from eth_utils import keccak
 
-from polypy.constants import CHAIN_ID, ENDPOINT, ERC20_WEI_UNIT
+from polypy.constants import CHAIN_ID, ENDPOINT, ERC20_WEI_UNIT, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     PolyPyException,
     PositionTrackingException,
     PositionTransactionException,
 )
-from polypy.manager.cache import ConversionCacheProtocol, _check_conversion_all_quintets
+from polypy.manager.cache import (
+    ConversionCacheProtocol,
+    _check_neg_risk_coherent_question_ids,
+)
 from polypy.order.common import SIDE
-from polypy.rest.api import get_market, get_neg_risk, get_neg_risk_market
+from polypy.rest.api import get_market, get_neg_risk, get_neg_risk_markets
+from polypy.rounding import round_down_tenuis_up
 from polypy.rpc.api import get_balance_token
 from polypy.rpc.tx import W3POA
 from polypy.signing import generate_seed
 from polypy.trade import IDEAL_TRADE_LIFECYCLE
-from polypy.typing import NumericAlias, dec, infer_numeric_type
+from polypy.typing import NumericAlias, dec, infer_numeric_type, is_iter
 
 if TYPE_CHECKING:
     from polypy.manager.position import PositionManagerProtocol
@@ -29,8 +33,6 @@ if TYPE_CHECKING:
 
 @attrs.define
 class RPCSettings:
-    endpoint_rest: str | ENDPOINT
-    endpoint_gamma: str | ENDPOINT
     endpoint_rpc: str | ENDPOINT
     endpoint_relayer: str | ENDPOINT | None
     chain_id: CHAIN_ID
@@ -41,6 +43,9 @@ class RPCSettings:
     allow_fallback_unrelayed: bool
     max_gas_limit_relayer: int | None
     receipt_timeout: float | None
+    polymarketnonce: str | None
+    polymarketsession: str | None
+    polymarketauthtype: str | None
 
     w3: W3POA = attrs.field(default=None, init=False)
 
@@ -51,6 +56,16 @@ class RPCSettings:
 def _rand_trade_id(x: str | int, addendum: str) -> str:
     _hash = keccak(f"{x}_{generate_seed()}".encode()).hex()
     return f"{_hash}_{addendum}"
+
+
+def _check_triplet(x: Any) -> None:
+    if not (len(x) == 3 and is_iter(x)):
+        raise PolyPyException(f"Expected triplet. Got: {x}.")
+
+
+def _check_quintet(x: Any) -> None:
+    if not (len(x) == 5 and is_iter(x)):
+        raise PolyPyException(f"Expected quintet. Got: {x}.")
 
 
 def _transact_position(
@@ -87,19 +102,21 @@ def _transact_position(
 
 
 def _tx_pre_split_position(
-    rpc_settings: RPCSettings,
     position_manager: "PositionManagerProtocol",
     market_triplet: MarketIdTriplet,
     amount: NumericAlias,
     neg_risk: bool | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> tuple[str, NumericAlias, bool]:
+    _check_triplet(market_triplet)
+
     if amount > position_manager.balance_available:
         raise PositionTransactionException(
             f"{amount} exceeds available balance {position_manager.balance_available}."
         )
 
     if neg_risk is None:
-        neg_risk = get_neg_risk(rpc_settings.endpoint_rest, market_triplet[1])
+        neg_risk = get_neg_risk(endpoint_rest, market_triplet[1])
 
     return market_triplet[0], amount, neg_risk
 
@@ -133,12 +150,14 @@ def _tx_post_split_positions(
 
 
 def _tx_pre_merge_positions(
-    rpc_settings: RPCSettings,
     position_manager: "PositionManagerProtocol",
     market_triplet: MarketIdTriplet,
     size: NumericAlias | None,
     neg_risk: bool | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> tuple[str, NumericAlias, bool]:
+    _check_triplet(market_triplet)
+
     # noinspection PyProtectedMember
     pos_1 = position_manager._get_or_create_position(market_triplet[1], False)
     # noinspection PyProtectedMember
@@ -161,7 +180,7 @@ def _tx_pre_merge_positions(
         raise PositionTransactionException(f"Got size={size} =< 0.")
 
     if neg_risk is None:
-        neg_risk = get_neg_risk(rpc_settings.endpoint_rest, market_triplet[1])
+        neg_risk = get_neg_risk(endpoint_rest, market_triplet[1])
 
     return market_triplet[0], size, neg_risk
 
@@ -195,31 +214,55 @@ def _tx_post_merge_positions(
 
 
 def _parse_all_market_quintets(
-    rpc_settings: RPCSettings,
     cvt_market_quintets: list[MarketIdQuintet],
     all_market_quintets: list[MarketIdQuintet] | None,
+    endpoint_gamma: str | ENDPOINT,
 ) -> list[MarketIdQuintet]:
     if all_market_quintets is None:
-        _, all_market_quintets = get_neg_risk_market(
-            endpoint_gama=rpc_settings.endpoint_gamma,
+        # fetch markets
+        _, all_market_quintets = get_neg_risk_markets(
+            endpoint_gama=endpoint_gamma,
             include_closed=True,
-            condition_id=cvt_market_quintets[0][0],
-            token_id=None,
-            market_slug=None,
+            condition_ids=cvt_market_quintets[0][0],
+            token_ids=None,
+            market_slugs=None,
+        )
+    else:
+        # if we didn't fetch markets: check for gaps in question ids (loose check though...)
+        _check_neg_risk_coherent_question_ids(all_market_quintets)
+
+    # check all cvt_market_quintets in all_market_quintets
+    all_markets_cond_ids = {market[0] for market in all_market_quintets}
+    cvt_markets_cond_ids = {market[0] for market in cvt_market_quintets}
+    if missed_cond_ids := cvt_markets_cond_ids - all_markets_cond_ids:
+        raise PositionTransactionException(
+            f"Not all `cvt_market_quintets` in `all_market_quintets`."
+            f" Missed: {missed_cond_ids}"
         )
 
-    _check_conversion_all_quintets(all_market_quintets)
-    # todo additional checks?
+    # check negative risk market ids
+    neg_risk_market_ids = {m[1] for m in all_market_quintets} | {
+        m[1] for m in cvt_market_quintets
+    }
+    if "" in neg_risk_market_ids or None in neg_risk_market_ids:
+        raise PositionTransactionException(
+            "Not all 'market_quintets' are NegRiskMarket!"
+        )
+    if len(neg_risk_market_ids) > 1:
+        raise PositionTransactionException(
+            f"Not all 'market_quintets' have the same neg_risk_market_id. "
+            f"'neg_risk_market_ids'={neg_risk_market_ids}."
+        )
 
     return all_market_quintets
 
 
 def _tx_pre_convert_position(
-    rpc_settings: RPCSettings,
     position_manager: "PositionManagerProtocol",
     cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
     all_market_quintets: list[MarketIdQuintet] | None,
     size: NumericAlias | None,
+    endpoint_gamma: str | ENDPOINT,
 ) -> tuple[str, NumericAlias, list[str], list[MarketIdQuintet]]:
     if all_market_quintets is not None:
         logging.info(
@@ -238,23 +281,20 @@ def _tx_pre_convert_position(
     if not isinstance(cvt_market_quintets, list):
         cvt_market_quintets = [cvt_market_quintets]
 
+    # fast check only first element, todo: check all?
+    _check_quintet(cvt_market_quintets[0])
+    if all_market_quintets is not None:
+        _check_quintet(all_market_quintets[0])
+
     all_market_quintets = _parse_all_market_quintets(
-        rpc_settings=rpc_settings,
         cvt_market_quintets=cvt_market_quintets,
         all_market_quintets=all_market_quintets,
+        endpoint_gamma=endpoint_gamma,
     )
 
-    neg_risk_market_ids = {m[1] for m in all_market_quintets} | {
-        m[1] for m in cvt_market_quintets
-    }
-    if "" in neg_risk_market_ids or None in neg_risk_market_ids:
+    if any(m[4] not in position_manager for m in cvt_market_quintets):
         raise PositionTransactionException(
-            "Not all 'market_quintets' are NegRiskMarket!"
-        )
-    if len(neg_risk_market_ids) > 1:
-        raise PositionTransactionException(
-            f"Not all 'market_quintets' have the same neg_risk_market_id. "
-            f"'neg_risk_market_ids'={neg_risk_market_ids}."
+            f"Not all `cvt_market_quintets` in {position_manager.__class__.__name__}."
         )
 
     # noinspection PyProtectedMember
@@ -313,38 +353,16 @@ def _act_conversion_cache_diff(
     return True
 
 
-def _tx_post_convert_positions(
+def _bookkeep_no_deposit_convert_position(
     position_manager: "PositionManagerProtocol",
-    conversion_cache: ConversionCacheProtocol,
-    cvt_market_quintets: list[MarketIdQuintet],
-    all_market_quintets: list[MarketIdQuintet],
     size: NumericAlias,
+    yes_token_ids: set[str],
+    no_token_ids: set[str],
 ) -> None:
-    no_token_ids = {m[4] for m in cvt_market_quintets}
-    yes_token_ids = {m[3] for m in all_market_quintets if m[4] not in no_token_ids}
-
-    # usdc = size * (len(no_token_ids) - 1) # according to neg risk conversion logic
-
-    # decrease all NO positions: this is like selling the positions
-    # if we have N NO positions and Y YES positions,
-    #   we collect size * price_n * N in USDC by selling N positions,
-    #   and we spend size * price_y * Y in USDC by buying Y positions,
-    #   in which the difference/profit has to be equal to size * (N - 1) according
-    #   to negative risk conversion logic
-    # -> size * price_n * N - size * price_y * Y = size * (N - 1)
-    # -> price_n * N - price_y * Y = N - 1          | price_n = 1 - price_y
-    # -> (1 - price_y) * N - price_y * Y = N - 1
-    # -> N - price_y * N - price_y * Y = N - 1      | -N
-    # -> - price_y * N - price_y * Y = -1
-    # -> price_y * N + price_y * Y = 1
-    # -> price_y = 1 / (N + Y) = 1 / C
-    # -> price_n = 1 - price_y = 1 - (1 / C)
-    # todo this might induce numerical instability,
-    #  alternative: set price=0 and use separate position_manager.deposit(size * (N - 1)) transaction,
-    #  but this might mess with specific position implementation
     n, y = len(no_token_ids), len(yes_token_ids)
     price_yes = 1 / Decimal(n + y)
     price_no = 1 - price_yes
+
     for no_token in no_token_ids:
         # NO is assumed to exist, because we can only convert NO positions that we actually own
         _transact_position(
@@ -358,7 +376,6 @@ def _tx_post_convert_positions(
             False,
         )
 
-    # increase complementary YES positions
     for yes_token in yes_token_ids:
         _transact_position(
             position_manager,
@@ -371,14 +388,144 @@ def _tx_post_convert_positions(
             True,
         )
 
-    # if everything went up to here, we can update the conversion cache
-    re_size, token_1_ids = conversion_cache.update(
-        size=size, all_market_quintets=all_market_quintets
-    )  # returns diff and updates cache all at once
-    # increment YES positions that have been added after previous conversion (not current conversion!)
-    _act_conversion_cache_diff(
-        position_manager=position_manager, re_size=re_size, token_1_ids=token_1_ids
+    # compensate for numerical instability due to rounding
+    usdc_sig = position_manager.get_by_id(USDC).size_sig_digits
+    c_amount = (
+        dec(size) * (n - 1)
+        - round_down_tenuis_up(price_no * dec(size), usdc_sig, 4) * n
+        + round_down_tenuis_up(price_yes * dec(size), usdc_sig, 4) * y
     )
+    # an easier method to determine compensation amount: `size * (n-1) + pre_balance - post_balance`
+    # but this would strongly assume, that all positions were locked and will not be altered inbetween from outside,
+    # which might not be guaranteed for all implementations (even the standard polypy implementation only locks
+    # the position manager but not the positions itself).
+    # Additionally, this might easily be messed up by the Position class's clearing-and-settlement mechanism i.e.,
+    # .balance vs .balance_available vs .balance_total.
+    # Even though, the above points are very unlikely, we avoid potential debug-hell at the cost of more
+    # compute intense rounding operations
+
+    if c_amount < 0:
+        position_manager.withdraw(abs(c_amount))
+    elif c_amount > 0:
+        position_manager.deposit(c_amount)
+
+
+def _bookkeep_with_deposit_convert_position(
+    position_manager: "PositionManagerProtocol",
+    size: NumericAlias,
+    yes_token_ids: set[str],
+    no_token_ids: set[str],
+) -> None:
+    usdc = size * (len(no_token_ids) - 1)  # according to neg risk conversion logic
+    if usdc != 0:
+        position_manager.deposit(usdc)
+
+    for no_token in no_token_ids:
+        # NO is assumed to exist, because we can only convert NO positions that we actually own
+        _transact_position(
+            position_manager,
+            False,
+            no_token,
+            size,
+            0,
+            _rand_trade_id(no_token, "CONVERT"),
+            SIDE.SELL,
+            False,
+        )
+
+    for yes_token in yes_token_ids:
+        _transact_position(
+            position_manager,
+            False,
+            yes_token,
+            size,
+            0,
+            _rand_trade_id(yes_token, "CONVERT"),
+            SIDE.BUY,
+            True,
+        )
+
+
+def _tx_post_convert_positions(
+    position_manager: "PositionManagerProtocol",
+    conversion_cache: ConversionCacheProtocol,
+    cvt_market_quintets: list[MarketIdQuintet],
+    all_market_quintets: list[MarketIdQuintet],
+    size: NumericAlias,
+    bookkeep_deposit: bool,
+) -> None:
+    no_token_ids = {m[4] for m in cvt_market_quintets}
+    yes_token_ids = {m[3] for m in all_market_quintets if m[4] not in no_token_ids}
+
+    try:
+        # update any recently published additional outcomes/conditions in this negative risk market
+        re_size, token_1_ids = conversion_cache.update(
+            size=size, all_market_quintets=all_market_quintets
+        )  # returns diff and updates cache all at once
+        # increment YES positions that have been added after previous conversion (not current conversion!)
+        _act_conversion_cache_diff(
+            position_manager=position_manager, re_size=re_size, token_1_ids=token_1_ids
+        )
+
+        # decrease all NO positions: this is like selling the positions
+        # increase complementary YES positions: this is like buying the positions
+        # amount USDC: N - 1, with N being the number of NO positions
+
+        # generally speaking, we have three approaches w.r.t. bookkeeping:
+        #   1) deposit(usdc) separately, set all prices to 0
+        #   2) deposit(usdc) separately, set prices according to price_y * Y = price_n * N
+        #       and use either current or entry price for price_n
+        #       this leads to: price_y = (N / Y) * price_n
+        #       due to intermediate rounding during buy/sell transactions, this is numerical unstable!
+        #   3) no separate deposit, in which case:
+        #       if we have N NO positions and Y YES positions,
+        #       we collect size * price_n * N in USDC by selling N positions,
+        #       and we spend size * price_y * Y in USDC by buying Y positions,
+        #       in which the difference/profit has to be equal to size * (N - 1) according
+        #       to negative risk conversion logic
+        #       -> size * price_n * N - size * price_y * Y = size * (N - 1)
+        #       -> price_n * N - price_y * Y = N - 1          | price_n = 1 - price_y
+        #       -> (1 - price_y) * N - price_y * Y = N - 1
+        #       -> N - price_y * N - price_y * Y = N - 1      | -N
+        #       -> - price_y * N - price_y * Y = -1
+        #       -> price_y * N + price_y * Y = 1
+        #       -> price_y = 1 / (N + Y)
+        #       -> price_n = 1 - price_y
+        #       due to intermediate rounding during buy/sell transactions, this is numerical unstable!
+        # conclusion:
+        #   1) numerical stable
+        #   2) only stable if number of decimal places of 1/Y is <= 6 (USDC precision), which mostly will
+        #       not be the case. Additionally, we need to determine price_n either as current market price or
+        #       position entry price (which would requires FIFO bookkeeping). Current market price would require
+        #       REST request (which we want to avoid) or complex FIFO implementation on the position manager...
+        #   3) is the least numerical stable
+        # we still could use 2) or 3) if we would compute a compensation USDC amount
+        #   (for 3): 'round(price_y * size, 6) * Y - round(price_no * size, 6) * N') to deposit separately
+        # therefore, we let the user decide if 1) or 3)
+
+        if bookkeep_deposit:
+            _bookkeep_with_deposit_convert_position(
+                position_manager=position_manager,
+                size=size,
+                yes_token_ids=yes_token_ids,
+                no_token_ids=no_token_ids,
+            )
+        else:
+            _bookkeep_no_deposit_convert_position(
+                position_manager=position_manager,
+                size=size,
+                yes_token_ids=yes_token_ids,
+                no_token_ids=no_token_ids,
+            )
+    except Exception as e:
+        reason = (
+            f"Exception during converting positions."
+            f"Cache and PositionManager were not updated correctly with RPC on-chain action."
+            f"Cache and/or PositionManager in corrupted state."
+            f"Original traceback: {str(e)}"
+        )
+        position_manager.invalidate(reason)
+        raise e
 
 
 def _assert_redeem_sizes_onchain(
@@ -402,16 +549,16 @@ def _assert_redeem_sizes_onchain(
     #   incorrect position sizes, which is incorrect as well
     # size == token_size: constraint to check for
 
-    if abs(dec(token_size_1) - size_1) > 0.05:
-        # give some leeway, as token_size_1 might be converted from float and might incur float imprecision
-        raise PositionTransactionException(
+    if abs(token_size_1 - dec(size_1)) > 0.0001:
+        # give some leeway, as size_1 might be converted from float and might incur float imprecision
+        raise PositionTrackingException(
             f"Redeem size={size_1} != on-chain token size={token_size_1} for {market_triplet[1]}. "
             f"Make sure to provide all Position Managers holding redeemable tokens of the market_triplet, "
             f"else position sizes cannot be computed correctly for uncovered Position Managers. "
             f"No transactions have been executed."
         )
-    if abs(dec(token_size_2) - size_2) > 0.05:
-        raise PositionTransactionException(
+    if abs(token_size_2 - dec(size_2)) > 0.0001:
+        raise PositionTrackingException(
             f"Redeem size={size_2} != on-chain token size={token_size_2} for {market_triplet[2]}. "
             f"Make sure to provide all Position Managers holding redeemable tokens of the market_triplet, "
             f"else position sizes cannot be computed correctly for uncovered Position Managers. "
@@ -441,19 +588,19 @@ def _tx_pre_redeem_positions(
         raise PositionTransactionException(
             f"Got negative size. "
             f"Cannot redeem {market_triplet[1]} (size={size_1}) "
-            f"and/or {market_triplet[2]} (size={size_2})."
+            f"and {market_triplet[2]} (size={size_2})."
         )
 
     return size_1, size_2
 
 
 def _parse_outcome(
-    rpc_settings: RPCSettings,
     market_triplet: MarketIdTriplet,
     outcome: Literal["YES", "NO"] | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> Literal["YES", "NO"]:
     if outcome is None:
-        market = get_market(rpc_settings.endpoint_rest, market_triplet[0])
+        market = get_market(endpoint_rest, market_triplet[0])
         if market.tokens[0].winner is True:
             outcome = "YES"
         elif market.tokens[1].winner is True:
@@ -462,7 +609,7 @@ def _parse_outcome(
             raise PolyPyException(f"Undefined outcome for: {market_triplet[0]}")
 
     if outcome not in ["YES", "NO"]:
-        raise PositionTransactionException(f"Unknown argument 'outcome'={outcome}.")
+        raise PolyPyException(f"Unknown argument 'outcome'={outcome}.")
 
     # noinspection PyTypeChecker
     return outcome
@@ -479,31 +626,32 @@ def _tx_post_redeem_positions(
     # this is equivalent so selling, since we receive USDC and spend shares
     # price is either 1 or 0 depending on outcome
 
-    if market_triplet[1] in position_manager:
-        # we don't use size_yes > 0 as if-condition, because floating point comparison can be imprecise
-        _transact_position(
-            position_manager,
-            False,
-            market_triplet[1],
-            size_yes,
-            1 if outcome == "YES" else 0,
-            _rand_trade_id(market_triplet[1], "REDEEM"),
-            SIDE.SELL,
-            False,
-        )
+    # we don't check this anymore because sizes are supposed to be correctly determined by _tx_pre_redeem_positions
+    #   additionally, this would hide unnoticed bugs
+    # if market_triplet[1] in position_manager:
 
-    if market_triplet[2] in position_manager:
-        # we don't use size_no > 0 as if-condition, because floating point comparison can be imprecise
-        _transact_position(
-            position_manager,
-            False,
-            market_triplet[2],
-            size_no,
-            1 if outcome == "NO" else 0,
-            _rand_trade_id(market_triplet[2], "REDEEM"),
-            SIDE.SELL,
-            False,
-        )
+    _transact_position(
+        position_manager,
+        False,
+        market_triplet[1],
+        size_yes,
+        1 if outcome == "YES" else 0,
+        _rand_trade_id(market_triplet[1], "REDEEM"),
+        SIDE.SELL,
+        False,
+    )
+
+    # if market_triplet[2] in position_manager:
+    _transact_position(
+        position_manager,
+        False,
+        market_triplet[2],
+        size_no,
+        1 if outcome == "NO" else 0,
+        _rand_trade_id(market_triplet[2], "REDEEM"),
+        SIDE.SELL,
+        False,
+    )
 
     # not every position manager will have each market_triplet, so we don't check if
     #   even at least one transaction has been executed (there's a possibility, that the position manager

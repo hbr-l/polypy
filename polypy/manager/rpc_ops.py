@@ -1,9 +1,11 @@
+import warnings
 from typing import TYPE_CHECKING, Literal, Self
 
 import attrs
 from hexbytes import HexBytes
 from web3.types import TxReceipt
 
+from polypy.constants import ENDPOINT
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     PolyPyException,
@@ -14,6 +16,7 @@ from polypy.manager.cache import ConversionCacheProtocol
 from polypy.manager.rpc_proc import (
     RPCSettings,
     _assert_redeem_sizes_onchain,
+    _check_triplet,
     _parse_outcome,
     _tx_post_convert_positions,
     _tx_post_merge_positions,
@@ -55,6 +58,7 @@ class MTX:
     cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet] | None = None
     all_market_quintets: list[MarketIdQuintet] | None = None
     neg_risk: bool | None = None
+    bookkeep_deposit: bool | None = None
 
     @classmethod
     def split(
@@ -90,26 +94,25 @@ class MTX:
         cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
         all_market_quintets: list[MarketIdQuintet] | None,
         size: NumericAlias | None,
+        bookkeep_deposit: bool,
     ) -> Self:
         return cls(
             type=MTX_TYPE.CONVERT,
             cvt_market_quintets=cvt_market_quintets,
             all_market_quintets=all_market_quintets,
             size=size,
+            bookkeep_deposit=bookkeep_deposit,
         )
 
 
 def check_relay_modus(
     rpc_settings: RPCSettings,
-    polymarketnonce: str | None,
-    polymarketsession: str | None,
-    polymarketauthtype: str | None,
 ) -> None:
     if (
         rpc_settings.endpoint_relayer is None
-        and polymarketnonce is not None
-        and polymarketsession is not None
-        and polymarketauthtype is not None
+        and rpc_settings.polymarketnonce is not None
+        and rpc_settings.polymarketsession is not None
+        and rpc_settings.polymarketauthtype is not None
     ):
         raise RelayerException(
             "'polymarketnonce', 'polymarketsession' and 'polymarketauthtype' defined "
@@ -138,14 +141,14 @@ def _check_onchain_response(
 
 
 def _parse_split_mtx(
-    mtx: MTX, rpc_settings: RPCSettings, position_manager: "PositionManagerProtocol"
+    mtx: MTX, position_manager: "PositionManagerProtocol", endpoint_rest: str | ENDPOINT
 ) -> SplitTransaction:
     condition_id, amount_usdc, neg_risk = _tx_pre_split_position(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         market_triplet=mtx.market_triplet,
         amount=mtx.amount,
         neg_risk=mtx.neg_risk,
+        endpoint_rest=endpoint_rest,
     )
     return SplitTransaction(
         condition_id=condition_id,
@@ -155,20 +158,22 @@ def _parse_split_mtx(
 
 
 def _parse_merge_mtx(
-    mtx: MTX, rpc_settings: RPCSettings, position_manager: "PositionManagerProtocol"
+    mtx: MTX, position_manager: "PositionManagerProtocol", endpoint_rest: str | ENDPOINT
 ) -> MergeTransaction:
     condition_id, size, neg_risk = _tx_pre_merge_positions(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         market_triplet=mtx.market_triplet,
         size=mtx.size,
         neg_risk=mtx.neg_risk,
+        endpoint_rest=endpoint_rest,
     )
     return MergeTransaction(condition_id=condition_id, size=size, neg_risk=neg_risk)
 
 
 def _parse_convert_mtx(
-    mtx: MTX, rpc_settings: RPCSettings, position_manager: "PositionManagerProtocol"
+    mtx: MTX,
+    position_manager: "PositionManagerProtocol",
+    endpoint_gamma: str | ENDPOINT,
 ) -> ConvertTransaction:
     (
         neg_risk_market_id,
@@ -176,11 +181,11 @@ def _parse_convert_mtx(
         question_ids,
         all_markets_quintets,
     ) = _tx_pre_convert_position(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         cvt_market_quintets=mtx.cvt_market_quintets,
         all_market_quintets=mtx.all_market_quintets,
         size=mtx.size,
+        endpoint_gamma=endpoint_gamma,
     )
 
     # update mtx    todo test
@@ -194,9 +199,10 @@ def _parse_convert_mtx(
 
 
 def _tx_pre_batch_operate_positions(
-    rpc_settings: RPCSettings,
     position_manager: "PositionManagerProtocol",
     batch_mtx: list[MTX],
+    endpoint_rest: str | ENDPOINT,
+    endpoint_gamma: str | ENDPOINT,
 ) -> list[SplitTransaction | MergeTransaction | ConvertTransaction]:
     transactions = []
 
@@ -205,16 +211,16 @@ def _tx_pre_batch_operate_positions(
             transactions.append(
                 _parse_split_mtx(
                     mtx=mtx,
-                    rpc_settings=rpc_settings,
                     position_manager=position_manager,
+                    endpoint_rest=endpoint_rest,
                 )
             )
         elif mtx.type is MTX_TYPE.MERGE:
             transactions.append(
                 _parse_merge_mtx(
                     mtx=mtx,
-                    rpc_settings=rpc_settings,
                     position_manager=position_manager,
+                    endpoint_rest=endpoint_rest,
                 )
             )
         elif mtx.type is MTX_TYPE.REDEEM:
@@ -223,8 +229,8 @@ def _tx_pre_batch_operate_positions(
             transactions.append(
                 _parse_convert_mtx(
                     mtx=mtx,
-                    rpc_settings=rpc_settings,
                     position_manager=position_manager,
+                    endpoint_gamma=endpoint_gamma,
                 )
             )
         else:
@@ -261,6 +267,7 @@ def _tx_post_batch_operate_positions(
                 cvt_market_quintets=mtx.cvt_market_quintets,
                 all_market_quintets=mtx.all_market_quintets,
                 size=ta.size,
+                bookkeep_deposit=mtx.bookkeep_deposit,
             )
         else:
             raise PolyPyException(f"Unknown mtx type. Got: {mtx.type}")
@@ -271,24 +278,17 @@ def tx_split_position(
     position_manager: "PositionManagerProtocol",
     market_triplet: MarketIdTriplet,
     amount: NumericAlias,
-    neg_risk: bool | None = None,
-    polymarketnonce: str | None = None,
-    polymarketsession: str | None = None,
-    polymarketauthtype: str | None = None,
+    neg_risk: bool | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
-    check_relay_modus(
-        rpc_settings=rpc_settings,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
-    )
+    check_relay_modus(rpc_settings=rpc_settings)
 
     condition_id, amount, neg_risk = _tx_pre_split_position(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         market_triplet=market_triplet,
         amount=amount,
         neg_risk=neg_risk,
+        endpoint_rest=endpoint_rest,
     )
 
     resp, txn_hash, txn_receipt = split_positions(
@@ -304,9 +304,9 @@ def tx_split_position(
         allow_fallback_unrelayed=rpc_settings.allow_fallback_unrelayed,
         endpoint_relayer=rpc_settings.endpoint_relayer,
         max_gas_limit_relayer=rpc_settings.max_gas_limit_relayer,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
+        polymarketnonce=rpc_settings.polymarketnonce,
+        polymarketsession=rpc_settings.polymarketsession,
+        polymarketauthtype=rpc_settings.polymarketauthtype,
         receipt_timeout=rpc_settings.receipt_timeout,
     )
 
@@ -325,24 +325,17 @@ def tx_merge_positions(
     position_manager: "PositionManagerProtocol",
     market_triplet: MarketIdTriplet,
     size: NumericAlias | None,
-    neg_risk: bool | None = None,
-    polymarketnonce: str | None = None,
-    polymarketsession: str | None = None,
-    polymarketauthtype: str | None = None,
+    neg_risk: bool | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
-    check_relay_modus(
-        rpc_settings=rpc_settings,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
-    )
+    check_relay_modus(rpc_settings=rpc_settings)
 
     condition_id, size, neg_risk = _tx_pre_merge_positions(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         market_triplet=market_triplet,
         size=size,
         neg_risk=neg_risk,
+        endpoint_rest=endpoint_rest,
     )
 
     resp, txn_hash, txn_receipt = merge_positions(
@@ -358,9 +351,9 @@ def tx_merge_positions(
         allow_fallback_unrelayed=rpc_settings.allow_fallback_unrelayed,
         endpoint_relayer=rpc_settings.endpoint_relayer,
         max_gas_limit_relayer=rpc_settings.max_gas_limit_relayer,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
+        polymarketnonce=rpc_settings.polymarketnonce,
+        polymarketsession=rpc_settings.polymarketsession,
+        polymarketauthtype=rpc_settings.polymarketauthtype,
         receipt_timeout=rpc_settings.receipt_timeout,
     )
 
@@ -378,17 +371,11 @@ def tx_convert_positions(
     cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
     all_market_quintets: list[MarketIdQuintet] | None,
     size: NumericAlias | None,
-    polymarketnonce: str | None = None,
-    polymarketsession: str | None = None,
-    polymarketauthtype: str | None = None,
+    bookkeep_deposit: bool,
+    endpoint_gamma: str | ENDPOINT,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
     # all_market_quintets not needed for rpc but for proper bookkeeping in position manager
-    check_relay_modus(
-        rpc_settings=rpc_settings,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
-    )
+    check_relay_modus(rpc_settings=rpc_settings)
 
     (
         neg_risk_market_id,
@@ -396,11 +383,11 @@ def tx_convert_positions(
         question_ids,
         all_market_quintets,
     ) = _tx_pre_convert_position(
-        rpc_settings=rpc_settings,
         position_manager=position_manager,
         cvt_market_quintets=cvt_market_quintets,
         all_market_quintets=all_market_quintets,
         size=size,
+        endpoint_gamma=endpoint_gamma,
     )
 
     resp, txn_hash, txn_receipt = convert_positions(
@@ -416,9 +403,9 @@ def tx_convert_positions(
         allow_fallback_unrelayed=rpc_settings.allow_fallback_unrelayed,
         endpoint_relayer=rpc_settings.endpoint_relayer,
         max_gas_limit_relayer=rpc_settings.max_gas_limit_relayer,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
+        polymarketnonce=rpc_settings.polymarketnonce,
+        polymarketsession=rpc_settings.polymarketsession,
+        polymarketauthtype=rpc_settings.polymarketauthtype,
         receipt_timeout=rpc_settings.receipt_timeout,
     )
 
@@ -429,6 +416,7 @@ def tx_convert_positions(
         cvt_market_quintets=cvt_market_quintets,
         all_market_quintets=all_market_quintets,
         size=size,
+        bookkeep_deposit=bookkeep_deposit,
     )
 
     return resp, txn_hash, txn_receipt
@@ -439,19 +427,16 @@ def tx_batch_operate_positions(
     position_manager: "PositionManagerProtocol",
     conversion_cache: ConversionCacheProtocol,
     batch_mtx: list[MTX],
-    polymarketnonce: str | None = None,
-    polymarketsession: str | None = None,
-    polymarketauthtype: str | None = None,
+    endpoint_rest: str | ENDPOINT,
+    endpoint_gamma: str | ENDPOINT,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
-    check_relay_modus(
-        rpc_settings=rpc_settings,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
-    )
+    check_relay_modus(rpc_settings=rpc_settings)
 
     batch_txn = _tx_pre_batch_operate_positions(
-        rpc_settings, position_manager, batch_mtx
+        position_manager=position_manager,
+        batch_mtx=batch_mtx,
+        endpoint_rest=endpoint_rest,
+        endpoint_gamma=endpoint_gamma,
     )
 
     resp, txn_hash, txn_receipt = batch_operate_positions(
@@ -465,9 +450,9 @@ def tx_batch_operate_positions(
         allow_fallback_unrelayed=rpc_settings.allow_fallback_unrelayed,
         endpoint_relayer=rpc_settings.endpoint_relayer,
         max_gas_limit_relayer=rpc_settings.max_gas_limit_relayer,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
+        polymarketnonce=rpc_settings.polymarketnonce,
+        polymarketsession=rpc_settings.polymarketsession,
+        polymarketauthtype=rpc_settings.polymarketauthtype,
         receipt_timeout=rpc_settings.receipt_timeout,
     )
 
@@ -486,21 +471,15 @@ def tx_redeem_positions(
     rpc_settings: RPCSettings,
     position_managers: list["PositionManagerProtocol"],
     market_triplet: MarketIdTriplet,
-    outcome: Literal["YES", "NO"] | None = None,
-    neg_risk: bool | None = None,
-    polymarketnonce: str | None = None,
-    polymarketsession: str | None = None,
-    polymarketauthtype: str | None = None,
+    outcome: Literal["YES", "NO"] | None,
+    neg_risk: bool | None,
+    endpoint_rest: str | ENDPOINT,
 ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
-    check_relay_modus(
-        rpc_settings=rpc_settings,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
-    )
+    check_relay_modus(rpc_settings=rpc_settings)
+    _check_triplet(market_triplet)
 
     if neg_risk is None:
-        neg_risk = get_neg_risk(rpc_settings.endpoint_rest, market_triplet[1])
+        neg_risk = get_neg_risk(endpoint_rest, market_triplet[1])
 
     condition_id = market_triplet[0]
     size_tuples = [
@@ -517,6 +496,14 @@ def tx_redeem_positions(
         market_triplet=market_triplet,
     )
 
+    if size_1 + size_2 == 0:
+        # if we are here, we know that sizes are equal to on-chain sizes
+        # if both sizes are 0, then there is nothing to redeem
+        warnings.warn(
+            f"Nothing to redeem for {market_triplet[1]} and {market_triplet[2]}."
+        )
+        return None, None, None
+
     resp, txn_hash, txn_receipt = redeem_positions(
         w3=rpc_settings.w3,
         condition_id=condition_id,
@@ -531,15 +518,15 @@ def tx_redeem_positions(
         allow_fallback_unrelayed=rpc_settings.allow_fallback_unrelayed,
         endpoint_relayer=rpc_settings.endpoint_relayer,
         max_gas_limit_relayer=rpc_settings.max_gas_limit_relayer,
-        polymarketnonce=polymarketnonce,
-        polymarketsession=polymarketsession,
-        polymarketauthtype=polymarketauthtype,
+        polymarketnonce=rpc_settings.polymarketnonce,
+        polymarketsession=rpc_settings.polymarketsession,
+        polymarketauthtype=rpc_settings.polymarketauthtype,
         receipt_timeout=rpc_settings.receipt_timeout,
     )
     _check_onchain_response(resp, txn_hash, txn_receipt)
 
     outcome = _parse_outcome(
-        rpc_settings=rpc_settings, market_triplet=market_triplet, outcome=outcome
+        market_triplet=market_triplet, outcome=outcome, endpoint_rest=endpoint_rest
     )
 
     for (size_y, size_n), pm in zip(size_tuples, position_managers):
