@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from polypy import AugmentedConversionCache, MarketIdQuintet, PolyPyException, dec
@@ -44,9 +47,15 @@ def test_update_existing(conversion_cache):
         1,
         all_market_quintets + [add_quintet],
     )
-    resize4, new_quintets4 = conversion_cache.update(1, all_market_quintets)
-    resize5, new_quintets5 = conversion_cache.update(None, all_market_quintets)
-    resize6, new_quintets6 = conversion_cache.update(None, [add_quintet2])
+    resize4, new_quintets4 = conversion_cache.update(
+        1, all_market_quintets + [add_quintet]
+    )
+    resize5, new_quintets5 = conversion_cache.update(
+        None, all_market_quintets + [add_quintet]
+    )
+    resize6, new_quintets6 = conversion_cache.update(
+        None, all_market_quintets + [add_quintet, add_quintet2]
+    )
 
     assert resize == dec(0)
     assert resize2 == dec(10)
@@ -315,7 +324,6 @@ def test_pull_by_id(conversion_cache, mocker):
     }
 
     # delete
-    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
     mocker.patch(
         "polypy.manager.cache.get_neg_risk_markets",
         return_value=(True, all_market_quintets),
@@ -355,3 +363,28 @@ def test_pull_by_id_raises(conversion_cache):
     assert len(conversion_cache.caches) == 2
     assert "0x9" in conversion_cache
     assert "0x19" in conversion_cache
+
+
+def test_locking(conversion_cache):
+    all_market_quintets = [
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+    ]
+
+    def f(cache: AugmentedConversionCache):
+        for _ in range(100):
+            cache.update(dec(1), all_market_quintets)
+
+    threads = [threading.Thread(target=f, args=(conversion_cache,)) for _ in range(100)]
+    for thread in threads:
+        thread.start()
+
+    time.sleep(4)
+
+    for thread in threads:
+        thread.join()
+
+    assert len(conversion_cache.caches) == 1
+    assert conversion_cache.caches["0x9"].cumulative_size == 10_000
+    assert conversion_cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3"}
