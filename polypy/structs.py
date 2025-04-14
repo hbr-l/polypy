@@ -134,7 +134,7 @@ class TradeWSInfo(
     id: str
     last_update: int
     maker_address: str
-    maker_orders: tuple[MakerOrder] | None
+    maker_orders: list[MakerOrder] | None
     market: str
     match_time: int
     outcome: Literal["Yes", "No"]
