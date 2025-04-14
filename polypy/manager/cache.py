@@ -9,7 +9,7 @@ from polypy.constants import ENDPOINT
 from polypy.ctf import MarketIdQuintet
 from polypy.exceptions import PolyPyException
 from polypy.rest.api import get_neg_risk_markets
-from polypy.typing import NumericAlias, dec, is_all_none
+from polypy.typing import NumericAlias, dec, first_iterable_element, is_all_none
 
 
 class ConversionCacheProtocol(Protocol):
@@ -82,11 +82,6 @@ class _NegRiskConversionCache:
 T = TypeVar("T")
 
 
-def _first_iterable_element(s: set[T] | Iterable[T]) -> T:
-    for e in s:
-        return e
-
-
 def _check_neg_risk_coherent_question_ids(
     all_quintets: Iterable[MarketIdQuintet],
 ) -> None:
@@ -114,7 +109,7 @@ def _check_equal_neg_risk_market_id(
     if "" in nrm_id_set or None in nrm_id_set:
         raise PolyPyException(f"Non-negative risk market in quintets={quintets}")
 
-    return _first_iterable_element(quintets)[1]
+    return first_iterable_element(quintets)[1]
 
 
 def _check_complete_subset_condition_ids(
@@ -236,7 +231,7 @@ class AugmentedConversionCache(ConversionCacheProtocol):
 
         with self.lock:
             condition_ids = {
-                _first_iterable_element(cache.seen_condition_ids)
+                first_iterable_element(cache.seen_condition_ids)
                 for cache in self.caches.values()
             }
 
@@ -295,7 +290,7 @@ class AugmentedConversionCache(ConversionCacheProtocol):
 
         if condition_id is None:
             # noinspection PyTypeChecker
-            condition_id = _first_iterable_element(self.caches[neg_risk_market_id])
+            condition_id = first_iterable_element(self.caches[neg_risk_market_id])
 
         return condition_id
 

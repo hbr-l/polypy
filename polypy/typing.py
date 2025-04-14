@@ -1,11 +1,12 @@
-from collections.abc import Iterable
 from decimal import Decimal
-from typing import Any, Optional, Protocol, Sequence, TypeAlias
+from typing import Any, Iterable, Optional, Protocol, Sequence, TypeAlias, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike
 
 NumericAlias = int | float | Decimal
+
+T = TypeVar("T")
 
 
 def dec(x: NumericAlias | str) -> Decimal:
@@ -70,3 +71,8 @@ class ZerosFactoryFunc(Protocol):
         self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype]
     ) -> ZerosProtocol | np.ndarray:
         ...
+
+
+def first_iterable_element(s: set[T] | Iterable[T]) -> T:
+    for e in s:
+        return e
