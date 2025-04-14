@@ -1768,3 +1768,44 @@ def test_update_augmented_conversions(mocker, api_key, passphrase, secret):
     assert "0x9" in cache.caches
     assert cache.caches["0x9"].cumulative_size == dec(5)
     assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3", "0x4"}
+
+
+def test_partitioned_maker_fill(api_key, secret, passphrase):
+    with open(test_pth / "data/test_trade_info_partitioned_maker_fill.json", "r") as f:
+        data = msgspec.json.decode(
+            json.dumps(json.load(f)), type=TradeWSInfo, strict=False
+        )
+
+    pm = PositionManager("", "", dec(100))
+
+    stream = UserStream(
+        "ws://localhost:8002/",
+        (None, pm),
+        (
+            "0x56bb4c803238d214b2c0bb45a5a30fa67bba154a434d5795c95ff327d33d7d10",
+            "15715879994802895225825270962037350783543933558412545749246445137328530904297",
+            "54436649045736537520784937406487677458300980780015319855760663277546366756679",
+        ),
+        api_key,
+        secret,
+        passphrase,
+        [INSERT_STATUS.CANCELED, INSERT_STATUS.UNMATCHED],
+        None,
+        buffer_thread_settings=(0.01, 10),
+        update_mode="implicit",
+    )
+    stream._stop_token.clear()
+    stream.pre_start()
+    time.sleep(0.5)
+
+    stream.on_msg(data)
+    time.sleep(1)
+
+    stream._stop_token.set()
+    stream.post_stop()
+
+    assert pm.balance == dec(100) - dec("0.09")
+    assert pm.get_by_id(
+        "15715879994802895225825270962037350783543933558412545749246445137328530904297"
+    ).size == dec(7)
+    assert len(pm.asset_ids) == 2

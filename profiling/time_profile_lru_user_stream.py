@@ -16,6 +16,7 @@ from polypy.stream.user import (
     TRADER_SIDE,
     TradeWSInfo,
     _maker_order_side,
+    _taker_price,
     _TradeOrderInfo,
     lru_cache_non_empty,
 )
@@ -28,11 +29,12 @@ def _filter_orders_trade_info_no_cache(
         return [
             _TradeOrderInfo(
                 msg.taker_order_id,
-                msg.size,
-                msg.price,
+                maker_order.matched_amount,
+                _taker_price(maker_order, msg.asset_id),
                 msg.asset_id,
                 msg.side,
             )
+            for maker_order in msg.maker_orders
         ]
     elif msg.trader_side is TRADER_SIDE.MAKER:
         return [

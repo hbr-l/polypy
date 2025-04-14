@@ -183,6 +183,17 @@ def _maker_order_side(maker_order: MakerOrder, msg: TradeWSInfo) -> SIDE:
         return msg.side
 
 
+def _taker_price(maker_order: MakerOrder, asset_id: str) -> str:
+    if maker_order.asset_id == asset_id:
+        # same asset, so we return price as is: p* = p
+        return maker_order.price
+    else:
+        # complimentary asset -> p* = 1 - p
+        # since we do not know the numeric type yet, we return: -p
+        return f"-{maker_order.price}"
+    # we then can reconstruct via p_ret + (p_ret < 0)
+
+
 def _numeric_type_balance_total(x: PositionManagerProtocol) -> type | None:
     return None if x is None else infer_numeric_type(x.balance_total)
 
@@ -263,6 +274,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: to above points -> regular manually cleaning can make sense, because untracking is not the most sound approach especially for positions
 # todo doc: use TERMINAL_X_STATI for untrack_x_status
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
+# todo doc: multiple default position manager use case: pm A only tracks one wallet (this user stream) whilst second pm tracks this wallet and an other wallet (other user stream) at once
 class UserStream(AbstractStreamer):
     def __init__(
         self,
@@ -471,7 +483,8 @@ class UserStream(AbstractStreamer):
             warnings.warn(
                 "PositionManagerProtocol.update_augmented_conversions(...) is "
                 "not updated automatically (update_aug_conversion_s=None). "
-                "Make sure to manually call it periodically."
+                "Make sure to manually call it periodically after converting positions in "
+                "negative risk markets, else ignore this message."
             )
             return
 
@@ -530,11 +543,12 @@ class UserStream(AbstractStreamer):
             return [
                 _TradeOrderInfo(
                     msg.taker_order_id,
-                    msg.size,
-                    msg.price,
+                    maker_order.matched_amount,
+                    _taker_price(maker_order, msg.asset_id),
                     msg.asset_id,
                     msg.side,
                 )
+                for maker_order in msg.maker_orders
             ]
         elif msg.trader_side is TRADER_SIDE.MAKER:
             return [
@@ -611,11 +625,15 @@ class UserStream(AbstractStreamer):
                 if self.tuple_mngs[tm_idx][1] is None:
                     continue
 
+                # noinspection DuplicatedCode
                 numeric_type = self._numeric_type_pos_mng[tm_idx]
+                price = numeric_type(trade_order.price)
+                # if price is negative, we have to properly invert the price: 1 + p
+                # if price is positive, we take it as is: p + 0
                 self.tuple_mngs[tm_idx][1].transact(
                     asset_id=trade_order.asset_id,
                     delta_size=numeric_type(trade_order.size),
-                    price=numeric_type(trade_order.price),
+                    price=price + (price < 0),
                     trade_id=msg.id,
                     side=trade_order.side,
                     trade_status=msg.status,
@@ -641,14 +659,16 @@ class UserStream(AbstractStreamer):
         trade_order_info = self._filter_orders_trade_info(msg)
 
         for trade_order in trade_order_info:
+            # noinspection DuplicatedCode
             for tm_idx in self._default_pos_mngs_idx:
                 # we know, that none of the position managers in _default_pos_mngs_idx is None,
                 #   so we do not need to check again
                 numeric_type = self._numeric_type_pos_mng[tm_idx]
+                price = numeric_type(trade_order.price)
                 self.tuple_mngs[tm_idx][1].transact(
                     asset_id=trade_order.asset_id,
                     delta_size=numeric_type(trade_order.size),
-                    price=numeric_type(trade_order.price),
+                    price=price + (price < 0),
                     trade_id=msg.id,
                     side=trade_order.side,
                     trade_status=msg.status,
