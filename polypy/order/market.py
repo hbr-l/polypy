@@ -1,9 +1,17 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
+from polypy import (
+    CHAIN_ID,
+    SIDE,
+    SIGNATURE_TYPE,
+    NumericAlias,
+    OrderBook,
+    OrderProtocol,
+)
 from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, PolyPyException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
@@ -234,3 +242,23 @@ def create_market_order(
         signature_type=signature_type,
         numeric_type=numeric_type,
     )
+
+
+class MarketOrderFactory(Protocol):
+    def __call__(
+        self,
+        amount: NumericAlias,
+        token_id: str,
+        side: SIDE,
+        tick_size: float | NumericAlias,
+        neg_risk: bool,
+        chain_id: CHAIN_ID,
+        private_key: PrivateKey | str | PrivateKeyType,
+        maker: str | None,
+        signature_type: SIGNATURE_TYPE,
+        book: OrderBook,
+        max_size: NumericAlias | None,
+        *args,
+        **kwargs,
+    ) -> OrderProtocol:
+        ...

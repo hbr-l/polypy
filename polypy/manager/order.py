@@ -29,8 +29,8 @@ from polypy.order.common import (
     frozen_order,
     update_order,
 )
-from polypy.order.limit import create_limit_order
-from polypy.order.market import create_market_order
+from polypy.order.limit import LimitOrderFactory, create_limit_order
+from polypy.order.market import MarketOrderFactory, create_market_order
 from polypy.rest.api import (
     cancel_orders,
     get_neg_risk,
@@ -357,47 +357,6 @@ class OrderManagerProtocol(Protocol):
         Users are advised, to regularly also clean DEFINED (but only if no stream updates are expected) to clear
         out any orders that failed to post.
         """
-        ...
-
-
-class MarketOrderFactory(Protocol):
-    def __call__(
-        self,
-        amount: NumericAlias,
-        token_id: str,
-        side: SIDE,
-        tick_size: float | NumericAlias,
-        neg_risk: bool,
-        chain_id: CHAIN_ID,
-        private_key: PrivateKey | str | PrivateKeyType,
-        maker: str | None,
-        signature_type: SIGNATURE_TYPE,
-        book: OrderBook,
-        max_size: NumericAlias | None,
-        *args,
-        **kwargs,
-    ) -> OrderProtocol:
-        ...
-
-
-class LimitOrderFactory(Protocol):
-    def __call__(
-        self,
-        price: NumericAlias,
-        size: NumericAlias,
-        token_id: str,
-        side: SIDE,
-        tick_size: float | NumericAlias,
-        neg_risk: bool,
-        chain_id: CHAIN_ID,
-        private_key: PrivateKey | str | PrivateKeyType,
-        maker: str | None,
-        signature_type: SIGNATURE_TYPE,
-        tif: TIME_IN_FORCE,
-        expiration: int,
-        *args,
-        **kwargs,
-    ) -> OrderProtocol:
         ...
 
 

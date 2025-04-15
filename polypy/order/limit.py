@@ -1,6 +1,16 @@
+from typing import Protocol
+
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
+from polypy import (
+    CHAIN_ID,
+    SIDE,
+    SIGNATURE_TYPE,
+    TIME_IN_FORCE,
+    NumericAlias,
+    OrderProtocol,
+)
 from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
@@ -141,3 +151,24 @@ def create_limit_order(
         signature_type=signature_type,
         numeric_type=numeric_type,
     )
+
+
+class LimitOrderFactory(Protocol):
+    def __call__(
+        self,
+        price: NumericAlias,
+        size: NumericAlias,
+        token_id: str,
+        side: SIDE,
+        tick_size: float | NumericAlias,
+        neg_risk: bool,
+        chain_id: CHAIN_ID,
+        private_key: PrivateKey | str | PrivateKeyType,
+        maker: str | None,
+        signature_type: SIGNATURE_TYPE,
+        tif: TIME_IN_FORCE,
+        expiration: int,
+        *args,
+        **kwargs,
+    ) -> OrderProtocol:
+        ...
