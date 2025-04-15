@@ -136,14 +136,12 @@ class OrderManagerProtocol(Protocol):
         self,
         order_id: str,
         status: INSERT_STATUS | None = None,
-        size_matched: NumericAlias | None = None,
-        price_matched: NumericAlias | None = None,
+        size_matched: NumericAlias | str | None = None,
         strategy_id: str | None = None,
         created_at: int | None = None,
         **kwargs,
     ) -> None:
-        """Update an order within the Order Manager regarding status, size_matched, price_matched,
-        strategy_id and signature.
+        """Update an order within the Order Manager regarding status, size_matched, strategy_id and signature.
         `order_id` is necessary to identify the order within the Order Manager.
         Any additional kwargs (key-value mapping) will be modified if possible (e.g. aux_id).
         Regressive updates (see Notes) will be ignored.
@@ -153,10 +151,8 @@ class OrderManagerProtocol(Protocol):
         order_id: str
         status: INSERT_STATUS |None,
             ignored if None.
-        size_matched: NumericAlias | None,
-            ignored if None.
-        price_matched: NumericAlias | None,
-            ignored if None.
+        size_matched: NumericAlias | str | None,
+            ignored if None. If str, cast to numeric type of order corresponding to `order_id`.
         strategy_id: str | None,
             ignored if None.
         created_at: int | None,
@@ -170,10 +166,9 @@ class OrderManagerProtocol(Protocol):
         Notes
         -----
         `created_at` and `signature` can only be modified if not already set, else an OrderUpdateException is raised.
-        `status`, `price_matched` and `size_matched` can only be updated if they do not regress (e.g., cannot update
+        `status` and `size_matched` can only be updated if they do not regress (e.g., cannot update
         from INSERT_STATUS.MATCHED to INSERT_STATUS.LIVE, cannot update size_matched smaller than
-        current size_matched, can only update `price_matched` if previously None),
-        else they will be ignored.
+        current size_matched), else they will be ignored.
         """
         ...
 
@@ -697,8 +692,7 @@ class OrderManager(OrderManagerProtocol):
         self,
         order_id: str,
         status: INSERT_STATUS | None = None,
-        size_matched: NumericAlias | None = None,
-        price_matched: NumericAlias | None = None,
+        size_matched: NumericAlias | str | None = None,
         strategy_id: str | None = None,
         created_at: int | None = None,
         **kwargs,
@@ -707,13 +701,11 @@ class OrderManager(OrderManagerProtocol):
             self._validate()
             order = self._get_order(order_id)
             size_matched = _cvt_order_numeric(order, size_matched)
-            price_matched = _cvt_order_numeric(order, price_matched)
 
             order = update_order(
                 order=order,
                 status=status,
                 size_matched=size_matched,
-                price_matched=price_matched,
                 strategy_id=strategy_id,
                 created_at=created_at,
             )

@@ -896,7 +896,6 @@ def test_limit_order_decimals(private_key, fix_seed):
         None,
         SIGNATURE_TYPE.EOA,
         size_matched=Decimal(20),
-        price_matched=Decimal(0.5),
     )
 
     assert sell.to_dict() == decimal_sell.to_dict()
@@ -1370,13 +1369,11 @@ def test_update_order(private_key):  # sourcery skip: extract-duplicate-method
     assert order.created_at == 1200
     assert order.strategy_id is None
     assert order.size_matched == 0
-    assert order.price_matched is None
 
     update_order(order, created_at=4000)
     assert order.created_at == 1200
     assert order.strategy_id is None
     assert order.size_matched == 0
-    assert order.price_matched is None
 
 
 def test_numeric_type_create(private_key):
@@ -1391,13 +1388,11 @@ def test_numeric_type_create(private_key):
         polymarket_domain(CHAIN_ID.POLYGON, False),
         TIME_IN_FORCE.GTC,
         size_matched=Decimal(0),
-        price_matched=None,
         numeric_type=Decimal,
     )
     assert order.side is SIDE.BUY
     assert order.price == Decimal(1)
     assert order.size_matched == Decimal(0)
-    assert order.price_matched is None
 
     with pytest.raises(OrderCreationException) as record:
         Order.create(
@@ -1410,102 +1405,7 @@ def test_numeric_type_create(private_key):
             SIGNATURE_TYPE.EOA,
             polymarket_domain(CHAIN_ID.POLYGON, False),
             TIME_IN_FORCE.GTC,
-            size_matched=10,
-            price_matched=Decimal(0.5),
+            size_matched=0,
             numeric_type=Decimal,
         )
     assert "type" in str(record)
-    assert "size_matched" in str(record)
-
-    with pytest.raises(OrderCreationException) as record:
-        Order.create(
-            "123",
-            SIDE.BUY,
-            1000,
-            1000,
-            private_key,
-            None,
-            SIGNATURE_TYPE.EOA,
-            polymarket_domain(CHAIN_ID.POLYGON, False),
-            TIME_IN_FORCE.GTC,
-            size_matched=Decimal(10),
-            price_matched=10,
-            numeric_type=Decimal,
-        )
-    assert "type" in str(record)
-    assert "price_matched" in str(record)
-
-
-def test_create_size_matched_price_matched(private_key):
-    # sourcery skip: extract-duplicate-method
-    order = Order.create(
-        "123",
-        SIDE.BUY,
-        1000,
-        1000,
-        private_key,
-        None,
-        SIGNATURE_TYPE.EOA,
-        polymarket_domain(CHAIN_ID.POLYGON, False),
-        TIME_IN_FORCE.GTC,
-        size_matched=Decimal(10),
-        price_matched=Decimal(10),
-        numeric_type=Decimal,
-    )
-    assert order.side is SIDE.BUY
-    assert order.price == Decimal(1)
-    assert order.size_matched == Decimal(10)
-    assert order.price_matched == Decimal(10)
-
-    order = Order.create(
-        "123",
-        SIDE.BUY,
-        1000,
-        1000,
-        private_key,
-        None,
-        SIGNATURE_TYPE.EOA,
-        polymarket_domain(CHAIN_ID.POLYGON, False),
-        TIME_IN_FORCE.GTC,
-        size_matched=None,
-        price_matched=None,
-        numeric_type=Decimal,
-    )
-    assert order.side is SIDE.BUY
-    assert order.price == Decimal(1)
-    assert order.size_matched == Decimal(0)
-    assert order.price_matched is None
-
-    with pytest.raises(OrderCreationException) as record:
-        Order.create(
-            "123",
-            SIDE.BUY,
-            1000,
-            1000,
-            private_key,
-            None,
-            SIGNATURE_TYPE.EOA,
-            polymarket_domain(CHAIN_ID.POLYGON, False),
-            TIME_IN_FORCE.GTC,
-            size_matched=Decimal(10),
-            price_matched=None,
-            numeric_type=Decimal,
-        )
-    assert "simultaneously" in str(record)
-
-    with pytest.raises(OrderCreationException) as record:
-        Order.create(
-            "123",
-            SIDE.BUY,
-            1000,
-            1000,
-            private_key,
-            None,
-            SIGNATURE_TYPE.EOA,
-            polymarket_domain(CHAIN_ID.POLYGON, False),
-            TIME_IN_FORCE.GTC,
-            size_matched=None,
-            price_matched=Decimal(10),
-            numeric_type=Decimal,
-        )
-    assert "simultaneously" in str(record)

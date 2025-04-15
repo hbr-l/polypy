@@ -444,7 +444,6 @@ def test_market_order(
     assert order_manager.get_by_id("1234").id == "1234"
     assert order_manager.get(side=SIDE.BUY)[0].status == INSERT_STATUS.MATCHED
     assert order_manager.get_by_id("1234").size_matched == 100
-    assert order_manager.get_by_id("1234").price_matched == 0.5
 
     mock_post_order(
         {
@@ -539,7 +538,6 @@ def test_limit_order(
     assert order_manager.get_by_id("1234").id == "1234"
     assert order_manager.get(side=SIDE.BUY)[0].status == INSERT_STATUS.LIVE
     assert order_manager.get_by_id("1234").size_matched == 1
-    assert order_manager.get_by_id("1234").price_matched == 0.5
 
     mock_post_order(
         {
@@ -950,7 +948,6 @@ def test_sync(
     assert list(order_manager.order_ids) == ["1"]
     assert order_manager.get_by_id("1").status == INSERT_STATUS.LIVE
     assert order_manager.get_by_id("1").size_matched == 0.5
-    assert order_manager.get_by_id("1").price_matched == order.price
 
     # not yet tracked: fail except
     order = frozen_order(sample_order("2", "strat"))
@@ -959,7 +956,6 @@ def test_sync(
     assert "Not all orders trackable" in str(record)
     assert list(order_manager.order_ids) == ["1"]
     assert order_manager.get_by_id("1").size_matched == 0.5
-    assert order_manager.get_by_id("1").price_matched == order.price
 
     # not yet tracked: fail remove
     order = sample_order("2")
@@ -978,9 +974,7 @@ def test_sync(
     mock_get_order("3", INSERT_STATUS.LIVE, order.size, order.price, order.side, 1.5)
     order_manager.sync(order, "remove")
     assert order_manager.get_by_id("1").size_matched == 0.5
-    assert order_manager.get_by_id("1").price_matched == order.price
     assert order_manager.get_by_id("3").size_matched == 1.5
-    assert order_manager.get_by_id("3").price_matched == order.price
     assert len(order_manager.get(status=INSERT_STATUS.LIVE)) == 2
 
     # tracked: fail (server-side)
@@ -992,9 +986,7 @@ def test_sync(
         order_manager.sync(order, "except")
     assert "could not be updated" in str(record)
     assert order_manager.get_by_id("1").size_matched == 0.5
-    assert order_manager.get_by_id("1").price_matched == order.price
     assert order_manager.get_by_id("3").size_matched == 1.5
-    assert order_manager.get_by_id("3").price_matched == order.price
     assert len(order_manager.get(status=INSERT_STATUS.LIVE)) == 2
     assert len(order_manager.get(status=INSERT_STATUS.DEFINED)) == 1
 
@@ -1010,13 +1002,9 @@ def test_sync(
     order_manager.sync(orders, "except")
     assert list(order_manager.order_ids) == ["1", "3", "4", "5", "6"]
     assert order_manager.get_by_id("1").size_matched == 0.5
-    assert order_manager.get_by_id("1").price_matched == order.price
     assert order_manager.get_by_id("3").size_matched == 1.5
-    assert order_manager.get_by_id("3").price_matched == order.price
     assert order_manager.get_by_id("5").size_matched == 1
-    assert order_manager.get_by_id("5").price_matched == orders[0].price
     assert order_manager.get_by_id("6").size_matched == 2
-    assert order_manager.get_by_id("6").price_matched == orders[0].price
 
     # not yet tracked: fail server-side
     orders = [sample_order("7"), sample_order("8")]
@@ -1029,7 +1017,6 @@ def test_sync(
     assert "could not be updated" in str(record)
     assert list(order_manager.order_ids) == ["1", "3", "4", "5", "6", "7", "8"]
     assert order_manager.get_by_id("7").size_matched == 1
-    assert order_manager.get_by_id("7").price_matched == orders[0].price
     assert order_manager.get_by_id("7").status is INSERT_STATUS.LIVE
     assert order_manager.get_by_id("8").status is INSERT_STATUS.DEFINED
 
@@ -1067,9 +1054,7 @@ def test_sync(
     ]
     assert order_manager.get_by_id("8").status is INSERT_STATUS.DEFINED
     assert order_manager.get_by_id("11").size_matched == 11
-    assert order_manager.get_by_id("11").price_matched == orders[0].price
     assert order_manager.get_by_id("12").size_matched == 12
-    assert order_manager.get_by_id("12").price_matched == orders[0].price
 
     # tracked: fail (server-side)
     orders = [sample_order("13"), sample_order("14")]
@@ -1106,7 +1091,6 @@ def test_sync(
         "14",
     ]
     assert order_manager.get_by_id("14").size_matched == 14
-    assert order_manager.get_by_id("14").price_matched == orders[0].price
 
     # --- str ---
     # not yet tracked: fail
@@ -1145,7 +1129,6 @@ def test_sync(
     ]
     assert order_manager.get_by_id("8").status is INSERT_STATUS.LIVE
     assert order_manager.get_by_id("8").size_matched == 12
-    assert order_manager.get_by_id("8").price_matched == orders[0].price
 
     # tracked: fail (server-side)
     mock_get_order_none("8")
@@ -1164,7 +1147,6 @@ def test_sync(
     ]
     assert order_manager.get_by_id("8").status is INSERT_STATUS.LIVE
     assert order_manager.get_by_id("8").size_matched == 12
-    assert order_manager.get_by_id("8").price_matched == orders[0].price
 
     order_manager.sync("8", "remove")
     assert list(order_manager.order_ids) == [
@@ -1217,10 +1199,8 @@ def test_sync(
     ]
     assert order_manager.get_by_id("1").status is INSERT_STATUS.DELAYED
     assert order_manager.get_by_id("1").size_matched == 20
-    assert order_manager.get_by_id("1").price_matched == orders[0].price
     assert order_manager.get_by_id("3").status is INSERT_STATUS.DELAYED
     assert order_manager.get_by_id("3").size_matched == 20
-    assert order_manager.get_by_id("3").price_matched == orders[0].price
 
     # tracked: fail (server-side)
     mock_get_order_none("1")
@@ -1250,7 +1230,6 @@ def test_sync(
     assert list(order_manager.order_ids) == ["4", "5", "6", "7", "11", "12", "14"]
     assert order_manager.get_by_id("4").status is INSERT_STATUS.DELAYED
     assert order_manager.get_by_id("4").size_matched == 20
-    assert order_manager.get_by_id("4").price_matched == orders[0].price
 
     mock_get_order(
         "4", INSERT_STATUS.MATCHED, orders[0].size, orders[0].price, orders[0].side, 21
@@ -1267,9 +1246,7 @@ def test_sync(
     assert order_manager.get_by_id("4").status is INSERT_STATUS.MATCHED
     assert order_manager.get_by_id("5").status is INSERT_STATUS.LIVE
     assert order_manager.get_by_id("4").size_matched == 21
-    assert order_manager.get_by_id("4").price_matched == orders[0].price
     assert order_manager.get_by_id("5").size_matched == 20
-    assert order_manager.get_by_id("5").price_matched == orders[0].price
 
     # --- None (all) ---
     # success
@@ -1282,9 +1259,7 @@ def test_sync(
     for x in ["5", "6", "7", "11", "12", "14"]:
         assert order_manager.get_by_id(x).status is INSERT_STATUS.LIVE
         assert order_manager.get_by_id(x).size_matched == 50
-        assert order_manager.get_by_id(x).price_matched == orders[0].price
     assert order_manager.get_by_id("4").size_matched == 21
-    assert order_manager.get_by_id("4").price_matched == orders[0].price
     assert order_manager.get_by_id("4").status == INSERT_STATUS.MATCHED
 
     # fail (server-side)
@@ -1299,9 +1274,7 @@ def test_sync(
     for x in ["5", "6", "7", "14"]:
         assert order_manager.get_by_id(x).status is INSERT_STATUS.LIVE
         assert order_manager.get_by_id(x).size_matched == 51
-        assert order_manager.get_by_id(x).price_matched == orders[0].price
     assert order_manager.get_by_id("4").size_matched == 21
-    assert order_manager.get_by_id("4").price_matched == orders[0].price
     assert order_manager.get_by_id("4").status == INSERT_STATUS.MATCHED
 
 
@@ -1336,14 +1309,12 @@ def test_sync_decimal(
         neg_risk=None,
     )
     assert order_manager.get_by_id("1234").size_matched == 0.5
-    assert order_manager.get_by_id("1234").price_matched == 0.5
 
-    mock_get_order("1234", INSERT_STATUS.LIVE, 10, "0.5", SIDE.BUY, 1)
+    mock_get_order("1234", INSERT_STATUS.LIVE, 10, "0.3", SIDE.BUY, 1)
     order_manager.sync("1234", "except")
 
     assert order_manager.get_by_id("1234").status is INSERT_STATUS.LIVE
     assert order_manager.get_by_id("1234").size_matched == Decimal(1)
-    assert order_manager.get_by_id("1234").price_matched == Decimal("0.5")
     assert order_manager.get_by_id("1234").size == Decimal(10)
     assert order_manager.get_by_id("1234").price == Decimal("0.3")
     assert order_manager.get_by_id("1234").side is SIDE.BUY
@@ -1391,13 +1362,6 @@ def test_sync_valid_states(order_manager, sample_order, mock_get_order):
     assert order_manager.get_by_id("4").size_matched != 10
     assert order_manager.get_by_id("5").size_matched != 10
     assert order_manager.get_by_id("6").size_matched != 10
-
-    assert order_manager.get_by_id("1").price_matched == orders[0].price
-    assert order_manager.get_by_id("2").price_matched == orders[0].price
-    assert order_manager.get_by_id("3").price_matched == orders[0].price
-    assert order_manager.get_by_id("4").price_matched is None
-    assert order_manager.get_by_id("5").price_matched is None
-    assert order_manager.get_by_id("6").price_matched is None
 
 
 def test_market_sell_max_size(order_manager, mock_tick_size, mock_neg_risk):
@@ -1467,7 +1431,6 @@ def test_clean(
     )
     assert list(order_manager.order_ids) == ["1", "2", "3", "1234"]
     assert order_manager.get_by_id("1234").size_matched == 0
-    assert order_manager.get_by_id("1234").price_matched is None
     order_manager.clean(expiration=1001)
     assert list(order_manager.order_ids) == ["1", "2", "3"]
 

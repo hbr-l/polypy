@@ -682,16 +682,10 @@ class UserStream(AbstractStreamer):
             # in some cases, order_id still might be cached
             #   that's wyh we use a try except
             try:
-                numeric_type = (
-                    self.tuple_mngs[tm_idx][0].get_by_id(order_id=msg.id).numeric_type
-                )
-                size_matched = numeric_type(msg.size_matched or "0")
-                price_matched = numeric_type(msg.price) if size_matched != 0 else None
                 self.tuple_mngs[tm_idx][0].update(
                     order_id=msg.id,
                     status=msg.status,
-                    size_matched=size_matched,
-                    price_matched=price_matched,
+                    size_matched=msg.size_matched or "0",
                     created_at=msg.created_at,
                 )
             except OrderGetException:
