@@ -1345,7 +1345,7 @@ def test_sync_decimal(
     assert order_manager.get_by_id("1234").size_matched == Decimal(1)
     assert order_manager.get_by_id("1234").price_matched == Decimal("0.5")
     assert order_manager.get_by_id("1234").size == Decimal(10)
-    assert order_manager.get_by_id("1234").price == Decimal("0.5")
+    assert order_manager.get_by_id("1234").price == Decimal("0.3")
     assert order_manager.get_by_id("1234").side is SIDE.BUY
 
 
