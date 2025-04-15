@@ -954,10 +954,13 @@ def get_order_updates(
         resp = msgspec.json.decode(resp.text, type=OpenOrderInfo, strict=False)
         ret_responses.append(resp)
 
+        size_matched = order.numeric_type(resp.size_matched)
+        price_matched = order.numeric_type(resp.price) if size_matched != 0 else None
         update_order(
             order,
             status=resp.status,
-            size_matched=order.numeric_type(resp.size_matched),
+            size_matched=size_matched,
+            price_matched=price_matched,
             created_at=order.numeric_type(resp.created_at),
         )
 

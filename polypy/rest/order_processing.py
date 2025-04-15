@@ -203,16 +203,28 @@ def _update_post_order_fill(
 
     if order.side is SIDE.BUY:
         size_matched = resp.takingAmount
+        usdc_amount = resp.makingAmount
     elif order.side is SIDE.SELL:
         size_matched = resp.makingAmount
+        usdc_amount = resp.takingAmount
     else:
         raise PolyPyException(f"Unknown side: {order.side}.")
 
     size_matched = order.numeric_type(size_matched or "0")
+    if size_matched != 0:
+        # amount = price * size -> price = amount / size
+        price_matched = order.numeric_type(usdc_amount) / size_matched
+    else:
+        price_matched = None
 
     # we use update_order instead of directly setting the attributes to assure, that
     #   we don't set outdated data (update_order has some basic checks)
-    order = update_order(order=order, status=status, size_matched=size_matched)
+    order = update_order(
+        order=order,
+        status=status,
+        size_matched=size_matched,
+        price_matched=price_matched,
+    )
     return order
 
 

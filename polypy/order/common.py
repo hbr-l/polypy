@@ -76,19 +76,27 @@ class OrderProtocol(Protocol):
     numeric_type: type[NumericAlias] | Callable[[float | str], NumericAlias]
 
     price: NumericAlias  # property derived from taker/maker amount
-    """NumericAlias: Only meaningful in case of a Limit Order."""
+    """NumericAlias: Only meaningful in case of a Maker Limit Order (non-marketable). 
+    Taker Orders (Limit or Market) might be filled at different price level.
+    Market Order defines price either as +tick_size or 1-tick_size.
+    """
     size: NumericAlias  # property derived from taker/maker amount
-    """NumericAlias: Only meaningful in case of a Limit Order."""
+    """NumericAlias: Only meaningful in case of a Limit Order. 
+    Market Order sets size to amount / price."""
     amount: NumericAlias  # property derived from taker/maker amount
-    """NumericAlias: In case of a Limit order, amount might deviate from amount actually matched/filled. 
-    Only relay on amount in case of a Market Order."""
+    """NumericAlias: Only meaningful in case of a Market Order (price * size)."""
 
     size_matched: NumericAlias
-    """NumericAlias: In case of a Market Order, size_matched will not be consistent with the original size defined.
-    Only rely on size_matched in case of a Limit Order."""
+    """NumericAlias: Actual size matched. 
+    In case of a Market Order, size_matched will not be consistent 
+    with the original size defined, which is price*size."""
     # we do not define amount_matched, because order might be filled by multiple counter-orders
     #   at different (better) prices, which we first would need to retrieve from trades record
     #   (better include this in TradeManager)
+    price_matched: NumericAlias | None
+    """NumericAlias | None: Actual price matched. None if no (partial) match yet.
+    In case of a Market Order or a Taker Limit Order (marketable), price_matched will not be consistent 
+    with original price defined."""
 
     strategy_id: str | None
     created_at: int | None
@@ -155,6 +163,7 @@ def update_order(
     order: OrderProtocol,
     status: INSERT_STATUS | None = None,
     size_matched: NumericAlias | None = None,
+    price_matched: NumericAlias | None = None,
     strategy_id: str | None = None,
     created_at: int | None = None,
 ) -> OrderProtocol:
@@ -180,6 +189,24 @@ def update_order(
             f"Ignoring `size_matched={size_matched}`, current size_matched is greater: {order.size_matched}"
         )
     # else: size_matched = None ignore
+
+    if price_matched is not None:
+        if order.price_matched is None and order.size_matched != 0:
+            order.price_matched = price_matched
+        elif order.price_matched is None:
+            warnings.warn(
+                f"Setting `price_matched={price_matched}`, "
+                f"though no `size_matched={order.size_matched}` yet. "
+                f"Ignore this warning, if setting price_matched without size_matched, "
+                f"else this might be an internal error."
+            )
+        elif order.price_matched != price_matched:
+            raise OrderUpdateException(
+                f"`price_matched={price_matched}` != `order.price_matched={order.price_matched}`. "
+                f"This indicates, resting limit order was filled at different price levels, "
+                f"which should not be the case."
+            )
+        # else: order.price_matched == price_matched
 
     if created_at is not None:
         if order.created_at is None or order.created_at <= 0:

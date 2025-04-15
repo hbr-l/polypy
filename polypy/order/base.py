@@ -156,6 +156,13 @@ class Order:
         validator=_validate_numeric_type,
         converter=attrs.Converter(_cvt_numeric_type, takes_self=True),
     )
+    # noinspection PyTypeChecker
+    price_matched: NumericAlias | None = attrs.field(
+        converter=attrs.converters.optional(
+            attrs.Converter(_cvt_numeric_type, takes_self=True)
+        ),
+        validator=attrs.validators.optional(_validate_numeric_type),
+    )
 
     @classmethod
     def create(
@@ -171,6 +178,7 @@ class Order:
         tif: TIME_IN_FORCE = TIME_IN_FORCE.GTC,
         signature: str | None = None,
         size_matched: NumericAlias | None = None,
+        price_matched: NumericAlias | None = None,
         strategy_id: str | None = None,
         aux_id: str | None = None,
         idx: str | None = None,
@@ -217,6 +225,18 @@ class Order:
                 f"Type of size_matched={type(size_matched)} does not match numeric_type={numeric_type}."
             )
 
+        if (size_matched != 0) != (price_matched is not None):
+            raise OrderCreationException(
+                f"`size_matched` and `price_matched` must be set simultaneously at order creation. "
+                f"Got `size_matched={size_matched}` and `price_matched={price_matched}`."
+            )
+
+        # 0 cannot be used as default since 0 would be a valid price
+        if price_matched is not None and type(price_matched) != numeric_type:
+            raise OrderCreationException(
+                f"Type of price_matched={type(price_matched)} does not match numeric_type={numeric_type}."
+            )
+
         return cls(
             eip712order=eip712order,
             id=idx,
@@ -228,6 +248,7 @@ class Order:
             created_at=created_at,
             defined_at=defined_at,
             size_matched=size_matched,
+            price_matched=price_matched,
             numeric_type=numeric_type,
         )
 

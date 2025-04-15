@@ -369,6 +369,12 @@ def test_buffer_trade_info_taker_order(
         == 5
     )
     assert (
+        om.get_by_id(
+            "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+        ).price_matched
+        == 3 / 5
+    )
+    assert (
         pm.get_by_id(
             "25742247876332768458781360292043764039507900813404980298479194684402595556451"
         ).size
@@ -393,6 +399,12 @@ def test_buffer_trade_info_maker_order(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
         ).size_matched
         == 0
+    )
+    assert (
+        om.get_by_id(
+            "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        ).price_matched
+        is None
     )
     assert (
         om.get_by_id(
@@ -432,6 +444,12 @@ def test_buffer_order_info_maker_order(
     assert (
         om.get_by_id(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        ).price_matched
+        is None
+    )
+    assert (
+        om.get_by_id(
+            "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
         ).status
         is INSERT_STATUS.LIVE
     )
@@ -449,6 +467,12 @@ def test_buffer_order_info_maker_order(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
         ).size_matched
         == 5
+    )
+    assert (
+        om.get_by_id(
+            "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        ).price_matched
+        == 0.56
     )
     assert (
         om.get_by_id(
@@ -500,6 +524,12 @@ def test_no_buffer_trade_info_taker_order(
         == 5
     )
     assert (
+        om.get_by_id(
+            "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+        ).price_matched
+        == 3 / 5
+    )
+    assert (
         pm.get_by_id(
             "25742247876332768458781360292043764039507900813404980298479194684402595556451"
         ).size
@@ -541,6 +571,12 @@ def test_no_buffer_trade_info_maker_order(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
         ).size_matched
         == 0
+    )
+    assert (
+        om.get_by_id(
+            "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        ).price_matched
+        is None
     )
     assert (
         om.get_by_id(
@@ -596,6 +632,12 @@ def test_no_buffer_order_info_maker_order(
             "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
         ).size_matched
         == 5
+    )
+    assert (
+        om.get_by_id(
+            "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        ).price_matched
+        == 0.56
     )
     assert (
         om.get_by_id(
@@ -752,6 +794,7 @@ def test_untrack_insert_status_at_unmatched_order_info(
     assert len(callback_clean.cleaned_orders) == 1
     assert len(callback_clean.cleaned_positions) == 0
     assert callback_clean.cleaned_orders[0].size_matched == 0
+    assert callback_clean.cleaned_orders[0].price_matched is None
     assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.UNMATCHED
     assert pm.balance_total == 100
 
@@ -791,6 +834,7 @@ def test_untrack_insert_status_at_matched_order_info(
     assert len(callback_clean.cleaned_orders) == 1
     assert len(callback_clean.cleaned_positions) == 0
     assert callback_clean.cleaned_orders[0].size_matched == 5
+    assert callback_clean.cleaned_orders[0].price_matched == 0.56
     assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.MATCHED
     assert pm.balance_total == 100  # no trade message, only order infos
 
@@ -854,6 +898,7 @@ def test_untrack_insert_status_unmatched_trade_status_confirmed(
     assert len(callback_clean.cleaned_orders) == 1
     assert len(callback_clean.cleaned_positions) == 1
     assert callback_clean.cleaned_orders[0].size_matched == 0
+    assert callback_clean.cleaned_orders[0].price_matched is None
     assert callback_clean.cleaned_orders[0].status is INSERT_STATUS.UNMATCHED
     assert (
         callback_clean.cleaned_positions[0].asset_id
@@ -1239,6 +1284,7 @@ def test_position_manager_none(
         is INSERT_STATUS.LIVE
     )
     assert om.get(status=INSERT_STATUS.LIVE)[0].size_matched == 0
+    assert om.get(status=INSERT_STATUS.LIVE)[0].price_matched is None
     assert om.valid is True
 
     stream.on_msg(order_update)
@@ -1252,6 +1298,7 @@ def test_position_manager_none(
         is INSERT_STATUS.MATCHED
     )
     assert om.get(status=INSERT_STATUS.MATCHED)[0].size_matched == 5
+    assert om.get(status=INSERT_STATUS.MATCHED)[0].price_matched == 0.56
     assert om.valid is True
 
     stream._stop_token.set()
@@ -1646,6 +1693,9 @@ def test_decimals(
     assert order_manager.get_by_id(
         "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
     ).size_matched == dec(5)
+    assert order_manager.get_by_id(
+        "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+    ).price_matched == dec(3) / dec(5)
     assert position_manager.get_by_id(
         "25742247876332768458781360292043764039507900813404980298479194684402595556451"
     ).size == dec(5)
@@ -1656,6 +1706,12 @@ def test_decimals(
         order_manager.get_by_id(
             "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
         ).size_matched,
+        Decimal,
+    )
+    assert isinstance(
+        order_manager.get_by_id(
+            "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+        ).price_matched,
         Decimal,
     )
 
