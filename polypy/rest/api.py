@@ -892,7 +892,7 @@ def cancel_asset(
 
 
 # todo overload
-def get_order_updates(
+def get_orders_info(
     endpoint: str | ENDPOINT,
     orders: OrderProtocol | list[OrderProtocol],
     private_key: str | PrivateKey | PrivateKeyType,
@@ -973,7 +973,7 @@ def get_order_updates(
     return orders, ret_responses
 
 
-def get_orders_by_ids_(
+def get_orders_info_by_ids_(
     endpoint: str | ENDPOINT,
     order_ids: str | list[str],
     private_key: str | PrivateKey | PrivateKeyType,
