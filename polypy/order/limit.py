@@ -82,6 +82,7 @@ def create_limit_order(
     idx: str | None = None,
     status: INSERT_STATUS = INSERT_STATUS.DEFINED,
     size_matched: NumericAlias | None = None,
+    price_matched: NumericAlias | None = None,
     created_at: int | None = None,
     defined_at: int | None = None,
     expiration: int = 0,
@@ -116,12 +117,6 @@ def create_limit_order(
         extra_precision_buffer,
     )
 
-    # ensure same numeric type
-    if size_matched is None:
-        size_matched = numeric_type(0)
-    else:
-        size_matched = numeric_type(size_matched)
-
     return Order.create(
         token_id=token_id,
         side=side,
@@ -130,6 +125,7 @@ def create_limit_order(
         private_key=private_key,
         domain=domain,
         size_matched=size_matched,
+        price_matched=price_matched,
         tif=tif,
         signature=signature,
         strategy_id=strategy_id,
