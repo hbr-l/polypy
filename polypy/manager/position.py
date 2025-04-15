@@ -272,7 +272,7 @@ class PositionManagerProtocol(Protocol):
     ) -> tuple[RelayerResponse | None, HexBytes | None, TxReceipt | None]:
         """Convert NO position/s to complementary YES positions and potentially USDC.
 
-        Users should manually call `update_augmented_conversions` periodically.
+        Users should manually call `pull_augmented_conversions` periodically.
 
         Parameters
         ----------
@@ -280,7 +280,7 @@ class PositionManagerProtocol(Protocol):
         all_market_quintets: list[MarketQuintet] | None,
             - if None: all markets will be fetched via Gamma API (recommended),
             - if not None: specify all markets including closed (!) markets.
-              Consider using `get_neg_risk_markets` for this. If `update_augmented_conversions` gets called,
+              Consider using `get_neg_risk_markets` for this. If `pull_augmented_conversions` gets called,
               this might fix-up any missed markets, but users should not rely on this mechanism though.
         size
         bookkeep_deposit: bool
@@ -334,7 +334,7 @@ class PositionManagerProtocol(Protocol):
         Use `get_balance_POL(...)` and check manually if necessary."""
         ...
 
-    def update_augmented_conversions(self) -> bool:
+    def pull_augmented_conversions(self) -> bool:
         """If a negative risk market adds a new outcome, in which we previously performed a NO-conversion before,
         then we have to update new complementary YES positions accordingly (increase).
 
@@ -914,7 +914,7 @@ class PositionManager(PositionManagerProtocol):
                 endpoint_gamma=self.gamma_endpoint,
             )
 
-    def update_augmented_conversions(self) -> bool:
+    def pull_augmented_conversions(self) -> bool:
         if self.conversion_cache is None:
             raise PositionTrackingException(
                 "No cache configured. Cannot convert negative risk market."

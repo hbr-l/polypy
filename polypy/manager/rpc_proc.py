@@ -289,10 +289,10 @@ def _tx_pre_convert_position(
             "user responsibility is advised."
         )
     logging.info(
-        "Users have to periodically call `PositionManager.update_augmented_conversions(...)` "
+        "Users have to periodically call `PositionManager.pull_augmented_conversions(...)` "
         "in order to correctly account for new YES shares in case a new outcome/condition is added to "
         "the negative risk market (see Polymarket's Augmented Negative Risk Adapter). "
-        "If the PositionManager is associated with an UserStream which automates `.update_augmented_conversion(...)`,"
+        "If the PositionManager is associated with an UserStream which automates `.pull_augmented_conversions(...)`,"
         "be aware that this incurs two Gamma API REST calls per update."
     )
 

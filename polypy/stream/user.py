@@ -288,7 +288,7 @@ class UserStream(AbstractStreamer):
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
-        update_aug_conversion_s: float | None = None,
+        pull_aug_conversion_s: float | None = None,
         ping_time: float | None = 5,
         update_mode: Literal["explicit", "implicit"] = "explicit",
         invalidate_on_exc: bool = True,
@@ -341,7 +341,7 @@ class UserStream(AbstractStreamer):
         self.monitor_assets_thread_s = monitor_assets_thread_s
 
         self.aug_conv_thread: threading.Thread | None = None
-        self.update_aug_conversion_s = update_aug_conversion_s
+        self.pull_aug_conversion_s = pull_aug_conversion_s
 
         self.api_key = api_key
         self.secret = secret
@@ -479,25 +479,25 @@ class UserStream(AbstractStreamer):
             # if no managers assigned, we exit immediately:
             return
 
-        if self.update_aug_conversion_s is None or self.update_aug_conversion_s <= 0:
+        if self.pull_aug_conversion_s is None or self.pull_aug_conversion_s <= 0:
             warnings.warn(
-                "PositionManagerProtocol.update_augmented_conversions(...) is "
-                "not updated automatically (update_aug_conversion_s=None). "
+                "PositionManagerProtocol.pull_augmented_conversions(...) is "
+                "not pulled automatically (pull_aug_conversion_s=None). "
                 "Make sure to manually call it periodically after converting positions in "
                 "negative risk markets, else ignore this message."
             )
             return
 
         warnings.warn(
-            "PositionManagerProtocol.update_augmented_conversions(...) will be called automatically. "
-            "Underlying Gamma API REST calls might impede performance if update time is set too short."
+            "PositionManagerProtocol.pull_augmented_conversions(...) will be called automatically. "
+            "Underlying Gamma API REST calls might impede performance if pull time is set too short."
         )
 
-        while not self._stop_token.wait(self.update_aug_conversion_s):
+        while not self._stop_token.wait(self.pull_aug_conversion_s):
             try:
                 for tm in self.tuple_mngs:
                     if tm[1] is not None:
-                        tm[1].update_augmented_conversions()
+                        tm[1].pull_augmented_conversions()
             except Exception as e:
                 self.register_exception(e)
 
