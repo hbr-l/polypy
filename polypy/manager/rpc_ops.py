@@ -1,5 +1,5 @@
 import warnings
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, TypeAlias
 
 import attrs
 from hexbytes import HexBytes
@@ -48,22 +48,26 @@ if TYPE_CHECKING:
     from polypy.manager.position import PositionManagerProtocol
 
 
+MarketTriplet: TypeAlias = MarketIdTriplet | tuple[str, str, str]
+MarketQuintet: TypeAlias = MarketIdQuintet | tuple[str, str, str, str, str]
+
+
 @attrs.define
 class MTX:
     type: MTX_TYPE
-    market_triplet: MarketIdTriplet | None = None
+    market_triplet: MarketTriplet | None = None
     amount: NumericAlias | None = None
     size: NumericAlias | None = None
     outcome: Literal["YES", "NO"] | None = None
-    cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet] | None = None
-    all_market_quintets: list[MarketIdQuintet] | None = None
+    cvt_market_quintets: MarketQuintet | list[MarketQuintet] | None = None
+    all_market_quintets: list[MarketQuintet] | None = None
     neg_risk: bool | None = None
     bookkeep_deposit: bool | None = None
 
     @classmethod
     def split(
         cls,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         amount: NumericAlias,
         neg_risk: bool | None = None,
     ) -> Self:
@@ -77,7 +81,7 @@ class MTX:
     @classmethod
     def merge(
         cls,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         size: NumericAlias | None,
         neg_risk: bool | None = None,
     ) -> Self:
@@ -91,8 +95,8 @@ class MTX:
     @classmethod
     def convert(
         cls,
-        cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
-        all_market_quintets: list[MarketIdQuintet] | None,
+        cvt_market_quintets: MarketQuintet | list[MarketQuintet],
+        all_market_quintets: list[MarketQuintet] | None,
         size: NumericAlias | None,
         bookkeep_deposit: bool,
     ) -> Self:

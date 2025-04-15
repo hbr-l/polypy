@@ -11,6 +11,7 @@ from typing import (
     Literal,
     Protocol,
     Self,
+    TypeAlias,
     Union,
 )
 
@@ -54,6 +55,10 @@ from polypy.typing import NumericAlias, infer_numeric_type
 
 if TYPE_CHECKING:
     from polypy.manager.order import OrderManagerProtocol
+
+
+MarketTriplet: TypeAlias = MarketIdTriplet | tuple[str, str, str]
+MarketQuintet: TypeAlias = MarketIdQuintet | tuple[str, str, str, str, str]
 
 
 class PositionManagerProtocol(Protocol):
@@ -200,7 +205,7 @@ class PositionManagerProtocol(Protocol):
 
     def split_positions(
         self,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         amount: NumericAlias,
         rpc_settings: RPCSettings,
         neg_risk: bool | None = None,
@@ -216,7 +221,7 @@ class PositionManagerProtocol(Protocol):
 
     def merge_positions(
         self,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         size: NumericAlias | None,
         rpc_settings: RPCSettings,
         neg_risk: bool | None = None,
@@ -232,7 +237,7 @@ class PositionManagerProtocol(Protocol):
     def redeem_positions(
         self,
         position_managers: list["PositionManagerProtocol"],
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         rpc_settings: RPCSettings,
         outcome: Literal["YES", "NO"] | None = None,
         neg_risk: bool | None = None,
@@ -259,8 +264,8 @@ class PositionManagerProtocol(Protocol):
 
     def convert_positions(
         self,
-        cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
-        all_market_quintets: list[MarketIdQuintet] | None,
+        cvt_market_quintets: MarketQuintet | list[MarketQuintet],
+        all_market_quintets: list[MarketQuintet] | None,
         size: NumericAlias | None,
         bookkeep_deposit: bool,
         rpc_settings: RPCSettings,
@@ -272,7 +277,7 @@ class PositionManagerProtocol(Protocol):
         Parameters
         ----------
         cvt_market_quintets
-        all_market_quintets: list[MarketIdQuintet] | None,
+        all_market_quintets: list[MarketQuintet] | None,
             - if None: all markets will be fetched via Gamma API (recommended),
             - if not None: specify all markets including closed (!) markets.
               Consider using `get_neg_risk_markets` for this. If `update_augmented_conversions` gets called,
@@ -779,7 +784,7 @@ class PositionManager(PositionManagerProtocol):
 
     def split_positions(
         self,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         amount: NumericAlias,
         rpc_settings: RPCSettings,
         neg_risk: bool | None = None,
@@ -798,7 +803,7 @@ class PositionManager(PositionManagerProtocol):
 
     def merge_positions(
         self,
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         size: NumericAlias | None,
         rpc_settings: RPCSettings,
         neg_risk: bool | None = None,
@@ -818,7 +823,7 @@ class PositionManager(PositionManagerProtocol):
     def redeem_positions(
         self,
         position_managers: list["PositionManagerProtocol"],
-        market_triplet: MarketIdTriplet,
+        market_triplet: MarketTriplet,
         rpc_settings: RPCSettings,
         outcome: Literal["YES", "NO"] | None = None,
         neg_risk: bool | None = None,
@@ -861,8 +866,8 @@ class PositionManager(PositionManagerProtocol):
 
     def convert_positions(
         self,
-        cvt_market_quintets: MarketIdQuintet | list[MarketIdQuintet],
-        all_market_quintets: list[MarketIdQuintet] | None,
+        cvt_market_quintets: MarketQuintet | list[MarketQuintet],
+        all_market_quintets: list[MarketQuintet] | None,
         size: NumericAlias | None,
         bookkeep_deposit: bool,
         rpc_settings: RPCSettings,
