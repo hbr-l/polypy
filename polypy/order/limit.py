@@ -1,7 +1,7 @@
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
-from polypy.constants import CHAIN_ID, SIG_DIGITS_SIZE, ZERO_ADDRESS
+from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
 from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
@@ -19,8 +19,8 @@ def limit_order_taker_maker_amount(
     side: SIDE,
     price: NumericAlias,
     size: NumericAlias,
-    tick_size_sig_digits: int,
-    order_size_sig_digits: int,
+    n_digits_tick_size: int,
+    n_digits_order_size: int,
     extra_precision_buffer: int = 4,
 ) -> tuple[int, int]:
     # todo premature (double) rounding of price and size might lead to loss of precision -> only round end result, i.e.:
@@ -31,9 +31,9 @@ def limit_order_taker_maker_amount(
 
     # todo whole rounding approach needs thorough revision
 
-    amount_sig_digits = tick_size_sig_digits + order_size_sig_digits
-    round_price = round_half_even(price, tick_size_sig_digits)
-    round_size = round_floor(size, order_size_sig_digits)
+    n_digits_amount = n_digits_tick_size + n_digits_order_size
+    round_price = round_half_even(price, n_digits_tick_size)
+    round_size = round_floor(size, n_digits_order_size)
 
     if side is SIDE.BUY:
         # round_floor: we do not want to buy more than specified size
@@ -42,7 +42,7 @@ def limit_order_taker_maker_amount(
 
         round_maker_amt = round_taker_amt * round_price
         round_maker_amt = round_floor_tenuis_ceil(
-            round_maker_amt, amount_sig_digits, extra_precision_buffer
+            round_maker_amt, n_digits_amount, extra_precision_buffer
         )
 
     elif side is SIDE.SELL:
@@ -52,7 +52,7 @@ def limit_order_taker_maker_amount(
 
         round_taker_amt = round_maker_amt * round_price
         round_taker_amt = round_floor_tenuis_ceil(
-            round_taker_amt, amount_sig_digits, extra_precision_buffer
+            round_taker_amt, n_digits_amount, extra_precision_buffer
         )
 
     else:
@@ -89,14 +89,14 @@ def create_limit_order(
     fee_rate_bps: int = 0,
     taker: str = ZERO_ADDRESS,
     signer: str | None = None,
-    sig_digits_order_size: int = SIG_DIGITS_SIZE,
+    n_digits_order_size: int = N_DIGITS_SIZE,
     extra_precision_buffer: int = 4,
 ) -> Order:
     """Build Limit Order.
 
     Notes
     -----
-    price and size will be round automatically according to tick_size and SIG_DIGITS_SIZE.
+    price and size will be round automatically according to tick_size and N_DIGITS_SIZE.
     If price is pre-round accordingly (precision), then tick_size can be set to any sufficiently small
     min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as tick_size is
     sufficiently small).
@@ -112,7 +112,7 @@ def create_limit_order(
         price,
         size,
         nb_tick_digits,
-        sig_digits_order_size,
+        n_digits_order_size,
         extra_precision_buffer,
     )
 

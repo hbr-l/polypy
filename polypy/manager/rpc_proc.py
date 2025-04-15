@@ -407,7 +407,7 @@ def _bookkeep_no_deposit_convert_position(
         )
 
     # compensate for numerical instability due to rounding
-    usdc_sig = position_manager.get_by_id(USDC).size_sig_digits
+    usdc_sig = position_manager.get_by_id(USDC).n_digits_size
     c_amount = (
         dec(size) * (n - 1)
         - round_down_tenuis_up(price_no * dec(size), usdc_sig, 4) * n

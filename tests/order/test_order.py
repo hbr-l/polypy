@@ -15,7 +15,7 @@ from py_clob_client.order_builder.constants import BUY, SELL
 from py_clob_client.order_builder.helpers import decimal_places, round_down, round_up
 
 from polypy.book import OrderBook, dict_to_sha1
-from polypy.constants import CHAIN_ID, SIG_DIGITS_SIZE
+from polypy.constants import CHAIN_ID, N_DIGITS_SIZE
 from polypy.exceptions import OrderCreationException, OrderUpdateException
 from polypy.order.base import Order
 from polypy.order.common import (
@@ -269,11 +269,11 @@ def test_regression_max_allowed_decimals():
                 assert allowed_decimals_v2(x, n_true)
 
 
-def round_clob(x_, sig_digits, extra_digits=4):
-    if decimal_places(x_) > sig_digits:
-        x_ = round_up(x_, sig_digits + extra_digits)
-        if decimal_places(x_) > sig_digits:
-            x_ = round_down(x_, sig_digits)
+def round_clob(x_, nb_digits, extra_digits=4):
+    if decimal_places(x_) > nb_digits:
+        x_ = round_up(x_, nb_digits + extra_digits)
+        if decimal_places(x_) > nb_digits:
+            x_ = round_down(x_, nb_digits)
 
     return x_
 
@@ -361,14 +361,12 @@ def test_limit_order_buy_against_clob(
 ):
     token_id, _, tick_size = get_token_ids(pth)
 
-    sig_digits = -int(math.log10(tick_size))
+    nb_digits = -int(math.log10(tick_size))
     for n_pot, n_dec, i, neg_risk in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25), [False, True]
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25), [False, True]
     ):
-        price = round_half_even(gen_rand_price(n_dec), min(sig_digits, n_dec))
-        size = round_floor(
-            gen_rand_float_dec(n_pot, n_dec), min(SIG_DIGITS_SIZE, n_dec)
-        )
+        price = round_half_even(gen_rand_price(n_dec), min(nb_digits, n_dec))
+        size = round_floor(gen_rand_float_dec(n_pot, n_dec), min(N_DIGITS_SIZE, n_dec))
 
         polypy_order = fix_seed(create_limit_order)(
             price,
@@ -412,14 +410,12 @@ def test_limit_order_sell_against_clob(
 ):
     token_id, _, tick_size = get_token_ids(pth)
 
-    sig_digits = -int(math.log10(tick_size))
+    nb_digits = -int(math.log10(tick_size))
     for n_pot, n_dec, i, neg_risk in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25), [False, True]
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25), [False, True]
     ):
-        price = round_half_even(gen_rand_price(n_dec), min(sig_digits, n_dec))
-        size = round_floor(
-            gen_rand_float_dec(n_pot, n_dec), min(SIG_DIGITS_SIZE, n_dec)
-        )
+        price = round_half_even(gen_rand_price(n_dec), min(nb_digits, n_dec))
+        size = round_floor(gen_rand_float_dec(n_pot, n_dec), min(N_DIGITS_SIZE, n_dec))
 
         polypy_order = fix_seed(create_limit_order)(
             price,
@@ -459,9 +455,9 @@ def test_market_buy_against_clob(
     token_id, _, tick_size = get_token_ids(pth)
 
     for n_pot, n_dec, i, neg_risk in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25), [False, True]
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25), [False, True]
     ):
-        amount = round_floor(gen_rand_float_dec(n_pot, n_dec), SIG_DIGITS_SIZE)
+        amount = round_floor(gen_rand_float_dec(n_pot, n_dec), N_DIGITS_SIZE)
 
         polypy_order = fix_seed(create_market_order)(
             amount,
@@ -563,12 +559,12 @@ def test_market_buy_quasi_equiv_deep_limit_buy(
 
     token_id, _, tick_size = get_token_ids(pth)
 
-    sig_digits = -int(math.log10(tick_size))
+    nb_digits = -int(math.log10(tick_size))
     for n_pot, n_dec, i in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25)
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25)
     ):
         amount = round_floor(
-            gen_rand_float_dec(n_pot, n_dec), min(n_dec, SIG_DIGITS_SIZE)
+            gen_rand_float_dec(n_pot, n_dec), min(n_dec, N_DIGITS_SIZE)
         )
         price = 1 - tick_size  # buy at the highest price to be marketable
         size = amount / price
@@ -600,16 +596,16 @@ def test_market_buy_quasi_equiv_deep_limit_buy(
         # limit buy: exact size, rounding error in amount (taker vs maker)
         # market buy: exact in amount, rounding error in size  (maker vs taker)
         assert polypy_limit_buy.taker_amount == scale_1e06(
-            round_floor(size, SIG_DIGITS_SIZE)
+            round_floor(size, N_DIGITS_SIZE)
         )  # limit buy exact size
         assert polypy_limit_buy.maker_amount <= scale_1e06(
-            round_floor_tenuis_ceil(amount, SIG_DIGITS_SIZE + sig_digits, 4)
+            round_floor_tenuis_ceil(amount, N_DIGITS_SIZE + nb_digits, 4)
         )  # limit buy amount not more spent than specified amount
         assert polypy_market_buy.maker_amount == scale_1e06(
-            round_floor(amount, SIG_DIGITS_SIZE)
+            round_floor(amount, N_DIGITS_SIZE)
         )  # market buy exact amount
         assert polypy_market_buy.taker_amount >= scale_1e06(
-            round_floor_tenuis_ceil(size, SIG_DIGITS_SIZE + sig_digits, 4)
+            round_floor_tenuis_ceil(size, N_DIGITS_SIZE + nb_digits, 4)
         )  # market buy at least buy size
 
         # limit order spends less equal to the amount (prioritize exact size in limit order)
@@ -621,14 +617,14 @@ def test_market_buy_quasi_equiv_deep_limit_buy(
         assert math.isclose(
             round_half_even(
                 polypy_limit_buy.maker_amount / polypy_limit_buy.taker_amount,
-                sig_digits,
+                nb_digits,
             ),
             price,
         )
         assert math.isclose(
             round_half_even(
                 polypy_market_buy.maker_amount / polypy_market_buy.taker_amount,
-                sig_digits,
+                nb_digits,
             ),
             price,
         )
@@ -644,16 +640,16 @@ def test_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
     # so to test market sell order, we  compare against limit sell order
     token_id, complement_token_id, tick_size = get_token_ids(pth)
 
-    sig_digits = -int(math.log10(tick_size))
+    nb_digits = -int(math.log10(tick_size))
 
     for n_pot, n_dec, _ in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25)
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25)
     ):
         amount = round_floor(
-            gen_rand_float_dec(n_pot, n_dec), min(SIG_DIGITS_SIZE, n_dec)
+            gen_rand_float_dec(n_pot, n_dec), min(N_DIGITS_SIZE, n_dec)
         )
         price = tick_size  # sell at the lowest price to be marketable
-        size = round_half_even(amount / price, sig_digits)
+        size = round_half_even(amount / price, nb_digits)
 
         market_sell = create_market_order(
             amount,
@@ -689,16 +685,16 @@ def test_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
         # limit sell: exact size, rounding error in amount (maker vs taker)
         # market sell: exact in amount, rounding error in size  (taker vs maker)
         assert limit_sell.maker_amount == scale_1e06(
-            round_floor(size, SIG_DIGITS_SIZE)
+            round_floor(size, N_DIGITS_SIZE)
         )  # limit sell exact size
         assert limit_sell.taker_amount >= scale_1e06(
-            round_floor_tenuis_ceil(amount, SIG_DIGITS_SIZE + sig_digits, 4)
+            round_floor_tenuis_ceil(amount, N_DIGITS_SIZE + nb_digits, 4)
         )  # limit receives at least or more than specified amount
         assert market_sell.taker_amount == scale_1e06(
-            round_floor_tenuis_ceil(amount, SIG_DIGITS_SIZE + sig_digits, 4)
+            round_floor_tenuis_ceil(amount, N_DIGITS_SIZE + nb_digits, 4)
         )  # market sell exact amount
         assert market_sell.maker_amount <= scale_1e06(
-            round_floor(size, SIG_DIGITS_SIZE)
+            round_floor(size, N_DIGITS_SIZE)
         )  # market sell less or equal than size
 
         # limit sell receives at least or more the specified amount
@@ -709,14 +705,14 @@ def test_market_sell_quasi_equiv_deep_limit_sell(pth, private_key):
         # price can be approximated by takerAmount/makerAmount
         assert math.isclose(
             round_half_even(
-                limit_sell.taker_amount / limit_sell.maker_amount, sig_digits
+                limit_sell.taker_amount / limit_sell.maker_amount, nb_digits
             ),
             price,
         )
         assert math.isclose(
             round_half_even(
                 market_sell.taker_amount / market_sell.maker_amount,
-                sig_digits,
+                nb_digits,
             ),
             price,
         )
@@ -739,16 +735,16 @@ def test_market_sell_vs_clob_market_buy_complement(
     # so to test market sell order, we have compare against market buy of complement token
     token_id, complement_token_id, tick_size = get_token_ids(pth)
 
-    sig_digits = -int(math.log10(tick_size))
+    nb_digits = -int(math.log10(tick_size))
 
     for n_pot, n_dec, _ in itertools.product(
-        range(1, 4), range(1, SIG_DIGITS_SIZE + 1), range(25)
+        range(1, 4), range(1, N_DIGITS_SIZE + 1), range(25)
     ):
         amount = round_floor(
-            gen_rand_float_dec(n_pot, n_dec), min(SIG_DIGITS_SIZE, n_dec)
+            gen_rand_float_dec(n_pot, n_dec), min(N_DIGITS_SIZE, n_dec)
         )
         price = tick_size  # sell at the lowest price to be marketable
-        size = round_half_even(amount / price, sig_digits)
+        size = round_half_even(amount / price, nb_digits)
 
         sell_order = fix_seed(create_market_order)(
             amount,
@@ -794,7 +790,7 @@ def test_market_sell_vs_clob_market_buy_complement(
         # 2) vice versa
         # the absolut max floor rounding error is 9.9999... * 10**-(nb_digits+1) ~ 10**-nb_digits,
         # which we add or subtract to the denominator and numerator
-        eps = scale_1e06(10 ** -(SIG_DIGITS_SIZE + sig_digits))
+        eps = scale_1e06(10 ** -(N_DIGITS_SIZE + nb_digits))
         lower = (sell_order.maker_amount - eps) / (int(buy_dict["takerAmount"]) + eps)
         upper = (sell_order.maker_amount + eps) / (int(buy_dict["takerAmount"]) - eps)
         assert lower < ratio < upper
@@ -802,7 +798,7 @@ def test_market_sell_vs_clob_market_buy_complement(
         # price can be approximated by takerAmount/makerAmount
         assert math.isclose(
             round_half_even(
-                sell_order.taker_amount / sell_order.maker_amount, sig_digits
+                sell_order.taker_amount / sell_order.maker_amount, nb_digits
             ),
             price,
         )
@@ -810,7 +806,7 @@ def test_market_sell_vs_clob_market_buy_complement(
         assert math.isclose(
             round_half_even(
                 int(buy_dict["makerAmount"]) / int(buy_dict["takerAmount"]),
-                sig_digits,
+                nb_digits,
             ),
             1 - price,
         )
@@ -832,7 +828,7 @@ def test_market_sell_raise_overspending(private_key):
             private_key,
             None,
             SIGNATURE_TYPE.EOA,
-            max_size=10_000 - SIG_DIGITS_SIZE,
+            max_size=10_000 - N_DIGITS_SIZE,
         )
 
 

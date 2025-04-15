@@ -4,7 +4,7 @@ import numpy as np
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
-from polypy.constants import CHAIN_ID, SIG_DIGITS_SIZE, ZERO_ADDRESS
+from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, PolyPyException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
 from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
@@ -25,8 +25,8 @@ def market_order_taker_maker_amount(
     side: SIDE,
     amount: NumericAlias,
     price: NumericAlias,
-    tick_size_sig_digits: int,
-    order_size_sig_digits: int,
+    n_digits_tick_size: int,
+    n_digits_order_size: int,
     extra_precision_buffer: int = 4,
     max_size: NumericAlias | None = None,
 ) -> tuple[int, int]:
@@ -38,9 +38,9 @@ def market_order_taker_maker_amount(
 
     # todo whole rounding approach needs thorough revision
 
-    amount_sig_digits = tick_size_sig_digits + order_size_sig_digits
-    round_price = round_half_even(price, tick_size_sig_digits)
-    round_amount = round_floor(amount, order_size_sig_digits)
+    n_digits_amount = n_digits_tick_size + n_digits_order_size
+    round_price = round_half_even(price, n_digits_tick_size)
+    round_amount = round_floor(amount, n_digits_order_size)
 
     if side is SIDE.BUY:
         # round_floor: we do not want to spend more cash than specified
@@ -49,7 +49,7 @@ def market_order_taker_maker_amount(
 
         round_taker_amt = round_maker_amt / round_price
         round_taker_amt = round_floor_tenuis_ceil(
-            round_taker_amt, amount_sig_digits, extra_precision_buffer
+            round_taker_amt, n_digits_amount, extra_precision_buffer
         )
     elif side is SIDE.SELL:
         if max_size is None:
@@ -65,7 +65,7 @@ def market_order_taker_maker_amount(
 
         round_maker_amt = round_taker_amt / round_price  # size
         round_maker_amt = round_floor_tenuis_ceil(
-            round_maker_amt, amount_sig_digits, extra_precision_buffer
+            round_maker_amt, n_digits_amount, extra_precision_buffer
         )
 
         if round_maker_amt > max_size:
@@ -130,7 +130,7 @@ def create_market_order(
     fee_rate_bps: int = 0,
     taker: str = ZERO_ADDRESS,
     signer: str | None = None,
-    sig_digits_order_size: int = SIG_DIGITS_SIZE,
+    n_digits_order_size: int = N_DIGITS_SIZE,
     extra_precision_buffer: int = 4,
     price: NumericAlias | None = None,
 ) -> Order:
@@ -139,7 +139,7 @@ def create_market_order(
     Parameters
     ----------
     amount: NumericAlias,
-        will be rounded to `sig_digits_order_size`, which defaults to 2 - even though usually amount
+        will be rounded to `n_digits_order_size`, which defaults to 2 - even though usually amount
         has 4 to 5 decimal digits (depending on tick size). Though, this might change in the future to
         rounding to 4 to 5 decimal digits.
     token_id
@@ -165,7 +165,7 @@ def create_market_order(
     maker
     signer
     signature_type
-    sig_digits_order_size
+    n_digits_order_size
     extra_precision_buffer
     price: NumericAlias | None
         If None, sets price to tick_size (SELL) or 1 - ticksize (BUY),
@@ -177,7 +177,7 @@ def create_market_order(
 
     Notes
     -----
-    amount (and price) will be rounded automatically according to tick_size and SIG_DIGITS_SIZE.
+    amount (and price) will be rounded automatically according to tick_size and N_DIGITS_SIZE.
     If amount is pre-round accordingly (precision), then tick_size can be set to any sufficiently small
     min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as tick_size is
     sufficiently small).
@@ -204,7 +204,7 @@ def create_market_order(
         amount,
         price,
         nb_tick_digits,
-        sig_digits_order_size,
+        n_digits_order_size,
         extra_precision_buffer,
         max_size,
     )

@@ -4,7 +4,7 @@ from typing import Any, Literal, NoReturn, Protocol, Self
 
 import attrs
 
-from polypy.constants import SIG_DIGITS_SIZE, USDC
+from polypy.constants import N_DIGITS_SIZE, USDC
 from polypy.exceptions import (
     PositionException,
     PositionNegativeException,
@@ -25,15 +25,15 @@ class PositionProtocol(Protocol):
     # noinspection PyTypeHints
     asset_id: str | Literal[USDC]
     size: NumericAlias
-    size_sig_digits: int
-    """int: should default to polypy.constant.SIG_DIGITS_SIZE."""
+    n_digits_size: int
+    """int: should default to polypy.constant.N_DIGITS_SIZE."""
 
     @classmethod
     def create(
         cls,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         **kwargs,
     ) -> Self:
         ...
@@ -125,7 +125,7 @@ class Position(PositionProtocol):
     allow_neg: bool = attrs.field(on_setattr=_frozen)
     """Allow negative size."""
 
-    size_sig_digits: int = attrs.field()
+    n_digits_size: int = attrs.field()
     """Number of decimal places for size."""
 
     # noinspection PyTypeHints
@@ -134,7 +134,7 @@ class Position(PositionProtocol):
         cls,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         allow_neg: bool = False,
         **_,
     ) -> Self:
@@ -143,7 +143,7 @@ class Position(PositionProtocol):
             asset_id=asset_id,
             size=numeric_type(size),
             allow_neg=allow_neg,
-            size_sig_digits=size_sig_digits,
+            n_digits_size=n_digits_size,
         )
 
     @property
@@ -171,11 +171,11 @@ class Position(PositionProtocol):
     ) -> None:
         # we only consider .MATCHED and .FAILED
         if trade_status is TRADE_STATUS.MATCHED:
-            self.size = round_down(self.size + delta_size, self.size_sig_digits)
+            self.size = round_down(self.size + delta_size, self.n_digits_size)
         elif trade_status is TRADE_STATUS.FAILED:
             # todo assumption: FAILED is always preceded by MATCHED
             # revert trade
-            self.size = round_down(self.size - delta_size, self.size_sig_digits)
+            self.size = round_down(self.size - delta_size, self.n_digits_size)
         # all other states will be ignored
 
     def _act_maker(
@@ -186,10 +186,10 @@ class Position(PositionProtocol):
     ) -> None:
         # we only consider .MATCHED and .FAILED
         if trade_status is TRADE_STATUS.MATCHED:
-            self.size = round_down(self.size - delta_size, self.size_sig_digits)
+            self.size = round_down(self.size - delta_size, self.n_digits_size)
         elif trade_status is TRADE_STATUS.FAILED:
             # todo assumption: FAILED is always preceded by MATCHED
-            self.size = round_down(self.size + delta_size, self.size_sig_digits)
+            self.size = round_down(self.size + delta_size, self.n_digits_size)
 
     def act(
         self,
@@ -204,7 +204,7 @@ class Position(PositionProtocol):
                 f"trade_id={trade_id}, trade_side={act_side}, trade_status={trade_status}."
             )
 
-        delta_size = round_down(delta_size, self.size_sig_digits)
+        delta_size = round_down(delta_size, self.n_digits_size)
 
         if act_side is ACT_SIDE.TAKER:
             self._act_taker(
@@ -300,7 +300,7 @@ class CSMPosition(Position):
         cls,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         pending_maker: NumericAlias = 0,
         pending_taker: NumericAlias = 0,
         settlement_status: TRADE_STATUS = TRADE_STATUS.CONFIRMED,
@@ -320,19 +320,19 @@ class CSMPosition(Position):
             allow_neg=allow_neg,
             pending_trade_ids=pending_trade_ids,
             max_size_trade_ids=max_size_trade_ids,
-            size_sig_digits=size_sig_digits,
+            n_digits_size=n_digits_size,
         )
 
     @property
     def size_available(self) -> NumericAlias:
         """Available and settled size to perform trades on (buying power)."""
-        return round_down(self.size + self.pending_maker, self.size_sig_digits)
+        return round_down(self.size + self.pending_maker, self.n_digits_size)
 
     @property
     def size_total(self) -> NumericAlias:
         """Total position size including pending size."""
         return round_down(
-            self.size + self.pending_maker + self.pending_taker, self.size_sig_digits
+            self.size + self.pending_maker + self.pending_taker, self.n_digits_size
         )
 
     @property
@@ -392,7 +392,7 @@ class CSMPosition(Position):
             self.pending_taker -= delta_size
 
         self.size += delta_size
-        self.size = round_down(self.size, self.size_sig_digits)
+        self.size = round_down(self.size, self.n_digits_size)
 
     def _act_taker(
         self,
@@ -431,7 +431,7 @@ class CSMPosition(Position):
                 f"delta_size={delta_size}, trade_id={trade_id}, trade_status={trade_status}."
             )
 
-        self.pending_taker = round_down(self.pending_taker, self.size_sig_digits)
+        self.pending_taker = round_down(self.pending_taker, self.n_digits_size)
 
     def _init_act_maker(self, delta_size: NumericAlias, trade_id: str) -> None:
         self._add_trade_id(trade_id, -delta_size)
@@ -442,7 +442,7 @@ class CSMPosition(Position):
             self.pending_maker += delta_size
 
         self.size -= delta_size
-        self.size = round_down(self.size, self.size_sig_digits)
+        self.size = round_down(self.size, self.n_digits_size)
 
     def _act_maker(
         self,
@@ -480,7 +480,7 @@ class CSMPosition(Position):
                 f"delta_size={delta_size}, trade_id={trade_id}, trade_status={trade_status}."
             )
 
-        self.pending_maker = round_down(self.pending_maker, self.size_sig_digits)
+        self.pending_maker = round_down(self.pending_maker, self.n_digits_size)
 
 
 class PositionFactory(Protocol):
@@ -488,7 +488,7 @@ class PositionFactory(Protocol):
         self,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         **kwargs,
     ) -> PositionProtocol:
         ...

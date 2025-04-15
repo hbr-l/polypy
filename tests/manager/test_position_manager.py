@@ -28,17 +28,17 @@ from polypy.typing import dec
 def test_create_get_position(local_host_addr):
     pm = PositionManager(local_host_addr, None, 10)
 
-    pm.create_position("test", 10, size_sig_digits=3, allow_neg=True)
+    pm.create_position("test", 10, n_digits_size=3, allow_neg=True)
 
     assert list(list(pm.asset_ids)) == [USDC, "test"]
     assert pm.get_by_id(USDC).size == 10
-    assert pm.get_by_id(USDC).size_sig_digits == 5
+    assert pm.get_by_id(USDC).n_digits_size == 5
     assert pm.get_by_id(USDC).allow_neg == False
     assert pm.get_by_id("test").size == 10
-    assert pm.get_by_id("test").size_sig_digits == 3
+    assert pm.get_by_id("test").n_digits_size == 3
     assert pm.get_by_id("test").allow_neg == True
     assert [p.asset_id for p in pm.get(size=10)] == [USDC, "test"]
-    assert [p.asset_id for p in pm.get(size_sig_digits=3)] == ["test"]
+    assert [p.asset_id for p in pm.get(n_digits_size=3)] == ["test"]
     assert [p.asset_id for p in pm.get(allow_neg=True)] == ["test"]
 
 

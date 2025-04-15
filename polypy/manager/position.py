@@ -19,7 +19,7 @@ from hexbytes import HexBytes
 from web3.types import TxReceipt
 
 from polypy.book import OrderBook
-from polypy.constants import ENDPOINT, SIG_DIGITS_SIZE, USDC
+from polypy.constants import ENDPOINT, N_DIGITS_SIZE, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     ManagerInvalidException,
@@ -176,7 +176,7 @@ class PositionManagerProtocol(Protocol):
             key: asset_id, value: NumericAlias (supplied midpoint), order book or None (REST call)
         tick_size: float | None
             if float: same tick_size for all assets
-            if None: use size_sig_digits from USDC position (which defaults to 5)
+            if None: use n_digits_size from USDC position (which defaults to 5)
         """
         ...
 
@@ -192,7 +192,7 @@ class PositionManagerProtocol(Protocol):
         self,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         **kwargs,
     ) -> FrozenPosition:
         """Create and track new position"""
@@ -349,7 +349,7 @@ class PositionManagerProtocol(Protocol):
 def buying_power(
     position_manager: PositionManagerProtocol,
     order_managers: list["OrderManagerProtocol"],
-    amount_sig_digits: int,
+    n_digits_amount: int,
     mode: Literal["available", "total", "settled"],
 ) -> NumericAlias:
     """Might suffer from float imprecision rounding error if not Decimal type used."""
@@ -368,11 +368,11 @@ def buying_power(
                 order.amount
                 for order in order_manager.get(side=SIDE.BUY, status=INSERT_STATUS.LIVE)
             ),
-            amount_sig_digits,
+            n_digits_amount,
         )
         for order_manager in order_managers
     )
-    return round_down(cash - buy_amount, amount_sig_digits)
+    return round_down(cash - buy_amount, n_digits_amount)
 
 
 def _is_trackable(position: PositionProtocol) -> None:
@@ -431,7 +431,7 @@ class PositionManager(PositionManagerProtocol):
             USDC: usdc_position
             if _is_position(usdc_position)
             else self.position_factory(
-                asset_id=USDC, size=usdc_position, size_sig_digits=5
+                asset_id=USDC, size=usdc_position, n_digits_size=5
             )
         }
 
@@ -522,7 +522,7 @@ class PositionManager(PositionManagerProtocol):
         self, asset_id: str, size: NumericAlias, allow_create: bool
     ) -> None:
         position = self._get_or_create_position(asset_id, allow_create)
-        position.size = round_down(position.size + size, position.size_sig_digits)
+        position.size = round_down(position.size + size, position.n_digits_size)
 
     def transact(
         self,
@@ -565,7 +565,7 @@ class PositionManager(PositionManagerProtocol):
             )
             usdc.act(
                 delta_size=round_down_tenuis_up(
-                    delta_size * price, usdc.size_sig_digits, 4
+                    delta_size * price, usdc.n_digits_size, 4
                 ),
                 trade_id=trade_id,
                 act_side=counter_party_side,
@@ -725,7 +725,7 @@ class PositionManager(PositionManagerProtocol):
             midpoints = self._parse_midpoints(midpoints)
 
             if tick_size is None:
-                tick_size_digits = self.position_dict[USDC].size_sig_digits
+                tick_size_digits = self.position_dict[USDC].n_digits_size
             else:
                 tick_size_digits = -int(math.log10(tick_size))
 
@@ -767,12 +767,12 @@ class PositionManager(PositionManagerProtocol):
         self,
         asset_id: str,
         size: NumericAlias,
-        size_sig_digits: int = SIG_DIGITS_SIZE,
+        n_digits_size: int = N_DIGITS_SIZE,
         **kwargs,
     ) -> FrozenPosition:
         size = float(size) if isinstance(size, int) else size
         position = self.position_factory(
-            asset_id=asset_id, size=size, size_sig_digits=size_sig_digits, **kwargs
+            asset_id=asset_id, size=size, n_digits_size=n_digits_size, **kwargs
         )
         self.track(position)
         return frozen_position(position)
@@ -939,5 +939,5 @@ class PositionManager(PositionManagerProtocol):
             self._validate()
 
         return buying_power(
-            self, order_managers, self.position_dict[USDC].size_sig_digits, "available"
+            self, order_managers, self.position_dict[USDC].n_digits_size, "available"
         )

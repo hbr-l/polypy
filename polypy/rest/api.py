@@ -11,7 +11,7 @@ import requests
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
-from polypy.constants import ENDPOINT, SIG_DIGITS_SIZE
+from polypy.constants import ENDPOINT, N_DIGITS_SIZE
 from polypy.exceptions import OrderUpdateException, PolyPyException
 from polypy.order.common import SIDE, OrderProtocol, update_order
 from polypy.position import PositionFactory, PositionProtocol
@@ -1187,7 +1187,7 @@ def get_positions(
     size_threshold: float = 1,
     limit: int = 500,
     offset: int = 0,
-    size_sig_digits: int = SIG_DIGITS_SIZE,
+    n_digits_size: int = N_DIGITS_SIZE,
 ) -> list[PositionProtocol] | list[dict[str, Any]]:
     if isinstance(endpoint_data, ENDPOINT) and endpoint_data is not ENDPOINT.DATA:
         raise PolyPyException(
@@ -1219,7 +1219,7 @@ def get_positions(
 
     return [
         position_factory(
-            asset_id=r["asset"], size=r["size"], size_sig_digits=size_sig_digits
+            asset_id=r["asset"], size=r["size"], n_digits_size=n_digits_size
         )
         for r in resp
     ]
