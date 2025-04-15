@@ -51,7 +51,7 @@ from polypy.stream.market import STATUS_ORDERBOOK, CheckHashParams, MarketStream
 test_pth = pathlib.Path(__file__).parent
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def setup_streamer():
     class Storage:
         def __init__(self):
@@ -94,7 +94,7 @@ def setup_streamer():
     time.sleep(0.05)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def callback_exception_storage():
     class ExcStorage:
         def __init__(self):
@@ -106,7 +106,7 @@ def callback_exception_storage():
     return ExcStorage()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def callback_thread_id_storage():
     class Storage:
         def __init__(self):

@@ -1701,7 +1701,7 @@ def test_raises_max_subscriptions(
 
 
 # noinspection DuplicatedCode
-def test_update_augmented_conversions(mocker, api_key, passphrase, secret):
+def test_pull_augmented_conversions(mocker, api_key, passphrase, secret):
     # sourcery skip: extract-duplicate-method
     cache = AugmentedConversionCache("")
     pm = PositionManager("", "", dec(100), conversion_cache=cache)
@@ -1748,7 +1748,7 @@ def test_update_augmented_conversions(mocker, api_key, passphrase, secret):
         None,
         buffer_thread_settings=(0.01, 10),
         update_mode="implicit",
-        update_aug_conversion_s=0.1,
+        pull_aug_conversion_s=0.1,
     )
     stream._stop_token.clear()
     stream.pre_start()

@@ -163,7 +163,7 @@ def hash_dict(func):
     return wrapped
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def clob_client_factory():
     # mock http requests
 
@@ -336,7 +336,7 @@ class MockServerClickOn:
             self.thread.join(timeout)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_server_click_on():
     click_on = MockServerClickOn()
 

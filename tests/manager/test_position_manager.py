@@ -386,7 +386,7 @@ def test_invalidate():
 
 
 # noinspection DuplicatedCode
-def test_update_augmented_conversions(mocker):
+def test_pull_augmented_conversions(mocker):
     # sourcery skip: extract-duplicate-method
     cache = AugmentedConversionCache("")
     pm = PositionManager("", "", dec(100), conversion_cache=cache)
@@ -421,7 +421,7 @@ def test_update_augmented_conversions(mocker):
         ),
     )
 
-    pm.update_augmented_conversions()
+    pm.pull_augmented_conversions()
     assert pm.get_by_id("Y2").size == dec(5)
     assert pm.get_by_id("Y3").size == dec(5)
     assert pm.get_by_id("Y4").size == dec(5)
@@ -433,7 +433,7 @@ def test_update_augmented_conversions(mocker):
     assert cache.caches["0x9"].cumulative_size == dec(5)
     assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3", "0x4"}
 
-    pm.update_augmented_conversions()
+    pm.pull_augmented_conversions()
     assert pm.get_by_id("Y2").size == dec(5)
     assert pm.get_by_id("Y3").size == dec(5)
     assert pm.get_by_id("Y4").size == dec(5)
