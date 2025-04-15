@@ -125,7 +125,7 @@ class Position(PositionProtocol):
     allow_neg: bool = attrs.field(on_setattr=_frozen)
     """Allow negative size."""
 
-    n_digits_size: int = attrs.field()
+    n_digits_size: int = attrs.field(converter=int, on_setattr=_frozen)
     """Number of decimal places for size."""
 
     # noinspection PyTypeHints
