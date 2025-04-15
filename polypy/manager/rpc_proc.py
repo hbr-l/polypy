@@ -25,7 +25,13 @@ from polypy.rpc.api import get_balance_token
 from polypy.rpc.tx import W3POA
 from polypy.signing import generate_seed
 from polypy.trade import IDEAL_TRADE_LIFECYCLE
-from polypy.typing import NumericAlias, dec, infer_numeric_type, is_iter
+from polypy.typing import (
+    NumericAlias,
+    dec,
+    first_iterable_element,
+    infer_numeric_type,
+    is_iter,
+)
 
 if TYPE_CHECKING:
     from polypy.manager.position import PositionManagerProtocol
@@ -59,13 +65,25 @@ def _rand_trade_id(x: str | int, addendum: str) -> str:
 
 
 def _check_triplet(x: Any) -> None:
-    if not (len(x) == 3 and is_iter(x)):
+    if not (len(x) == 3 and isinstance(x, tuple)):
         raise PolyPyException(f"Expected triplet. Got: {x}.")
 
 
 def _check_quintet(x: Any) -> None:
-    if not (len(x) == 5 and is_iter(x)):
+    if not (len(x) == 5 and isinstance(x, tuple)):
         raise PolyPyException(f"Expected quintet. Got: {x}.")
+
+
+def _check_non_empty_list_quintet(x: Any) -> None:
+    if not is_iter(x):
+        raise PolyPyException(f"Expected Iterable[MarketIdQuintet | tuple]. Got: {x}.")
+
+    if len(x) == 0:
+        raise PolyPyException(
+            f"Expected Iterable[MarketIdQuintet | tuple]. Got empty: {x}."
+        )
+
+    _check_quintet(first_iterable_element(x))
 
 
 def _transact_position(
@@ -282,9 +300,9 @@ def _tx_pre_convert_position(
         cvt_market_quintets = [cvt_market_quintets]
 
     # fast check only first element, todo: check all?
-    _check_quintet(cvt_market_quintets[0])
+    _check_non_empty_list_quintet(cvt_market_quintets)
     if all_market_quintets is not None:
-        _check_quintet(all_market_quintets[0])
+        _check_non_empty_list_quintet(all_market_quintets)
 
     all_market_quintets = _parse_all_market_quintets(
         cvt_market_quintets=cvt_market_quintets,
@@ -626,32 +644,29 @@ def _tx_post_redeem_positions(
     # this is equivalent so selling, since we receive USDC and spend shares
     # price is either 1 or 0 depending on outcome
 
-    # we don't check this anymore because sizes are supposed to be correctly determined by _tx_pre_redeem_positions
-    #   additionally, this would hide unnoticed bugs
-    # if market_triplet[1] in position_manager:
+    if size_yes:
+        _transact_position(
+            position_manager,
+            False,
+            market_triplet[1],
+            size_yes,
+            1 if outcome == "YES" else 0,
+            _rand_trade_id(market_triplet[1], "REDEEM"),
+            SIDE.SELL,
+            False,
+        )
 
-    _transact_position(
-        position_manager,
-        False,
-        market_triplet[1],
-        size_yes,
-        1 if outcome == "YES" else 0,
-        _rand_trade_id(market_triplet[1], "REDEEM"),
-        SIDE.SELL,
-        False,
-    )
-
-    # if market_triplet[2] in position_manager:
-    _transact_position(
-        position_manager,
-        False,
-        market_triplet[2],
-        size_no,
-        1 if outcome == "NO" else 0,
-        _rand_trade_id(market_triplet[2], "REDEEM"),
-        SIDE.SELL,
-        False,
-    )
+    if size_no:
+        _transact_position(
+            position_manager,
+            False,
+            market_triplet[2],
+            size_no,
+            1 if outcome == "NO" else 0,
+            _rand_trade_id(market_triplet[2], "REDEEM"),
+            SIDE.SELL,
+            False,
+        )
 
     # not every position manager will have each market_triplet, so we don't check if
     #   even at least one transaction has been executed (there's a possibility, that the position manager
