@@ -896,6 +896,7 @@ def test_limit_order_decimals(private_key, fix_seed):
         None,
         SIGNATURE_TYPE.EOA,
         size_matched=Decimal(20),
+        price_matched=Decimal(0.5),
     )
 
     assert sell.to_dict() == decimal_sell.to_dict()
@@ -1410,6 +1411,7 @@ def test_numeric_type_create(private_key):
             polymarket_domain(CHAIN_ID.POLYGON, False),
             TIME_IN_FORCE.GTC,
             size_matched=10,
+            price_matched=Decimal(0.5),
             numeric_type=Decimal,
         )
     assert "type" in str(record)
