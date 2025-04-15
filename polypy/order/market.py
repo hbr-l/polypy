@@ -4,18 +4,10 @@ import numpy as np
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
-from polypy import (
-    CHAIN_ID,
-    SIDE,
-    SIGNATURE_TYPE,
-    NumericAlias,
-    OrderBook,
-    OrderProtocol,
-)
 from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, PolyPyException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
-from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
+from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE, OrderProtocol
 from polypy.rounding import (
     round_floor,
     round_floor_tenuis_ceil,
@@ -256,7 +248,7 @@ class MarketOrderFactory(Protocol):
         private_key: PrivateKey | str | PrivateKeyType,
         maker: str | None,
         signature_type: SIGNATURE_TYPE,
-        book: OrderBook,
+        book: "OrderBook",
         max_size: NumericAlias | None,
         *args,
         **kwargs,
