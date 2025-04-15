@@ -159,6 +159,10 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/04/15
+- In UserStream, when parsing TradeWSInfo in case of a taker order, use all maker orders to transact positions, which
+is more accurate than taking the taker price information
+- Renaming of 'sig_digits' to 'n_digits', and 'update_augmented_conversions' to 'pull_augmented_conversions'
 #### 2025/03/31
 - Implement monitoring ex-post added outcomes/conditions in augmented negative risk markets in UserStream
 - Implement Gamma API (`get_markets_gamma_model`, `get_events_gamma_model`, `get_neg_risk_market`)
