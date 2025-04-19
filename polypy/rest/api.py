@@ -370,6 +370,7 @@ def gamma_event_to_neg_risk_market(
     for m in markets:
         if (
             (m["active"] is False)
+            or (m["negRisk"] is False)
             or ("negRiskMarketID" not in m)
             or (m["enableOrderBook"] is False)
         ):
@@ -561,7 +562,7 @@ def _get_last_trade_price(
     return numeric_type(resp["price"]), SIDE(resp["side"])
 
 
-def get_last_trades_prices(
+def get_last_trade_prices(
     endpoint: str | ENDPOINT,
     asset_ids: str | list[str],
     numeric_type: type[NumericAlias] | Callable[[str], NumericAlias],
