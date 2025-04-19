@@ -251,6 +251,10 @@ class MarketStream:
             except EventTypeException:
                 with self.lock_dict[msg["asset_id"]]:
                     self._update_last_traded_price(msg)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Couldn't update book. Original msg: {msg}. Traceback: {str(e)}"
+                ) from e
 
             if self.callback_msg:
                 self.callback_msg(msg, self)
