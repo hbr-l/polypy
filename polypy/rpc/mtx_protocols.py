@@ -14,7 +14,7 @@ from polypy.typing import NumericAlias
 
 
 # noinspection PyPep8Naming
-class MTX_TYPE(StrEnum):
+class RPC_TYPE(StrEnum):
     SPLIT = "SPLIT"
     MERGE = "MERGE"
     REDEEM = "REDEEM"
