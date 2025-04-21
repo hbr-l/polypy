@@ -166,7 +166,7 @@ def update_order(
     size_matched: NumericAlias | None = None,
     strategy_id: str | None = None,
     created_at: int | None = None,
-) -> OrderProtocol:
+) -> None:
     if strategy_id is not None:
         order.strategy_id = strategy_id
 
@@ -199,5 +199,3 @@ def update_order(
             )
         # else: order.created_at == created_at -> ignore
     # else: created_at = None -> ignore
-
-    return order

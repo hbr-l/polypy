@@ -119,10 +119,11 @@ def create_market_order(
     signature_type: SIGNATURE_TYPE,
     book: "OrderBook | None" = None,
     max_size: NumericAlias | None = None,
+    salt: int | None = None,
+    order_id: str | None = None,
     signature: str | None = None,
     strategy_id: str | None = None,
     aux_id: str | None = None,
-    idx: str | None = None,
     status: INSERT_STATUS = INSERT_STATUS.DEFINED,
     created_at: int | None = None,
     defined_at: int | None = None,
@@ -152,10 +153,11 @@ def create_market_order(
         if defined, checks the oder book if enough liquidity is available in the order book to fill the order
     max_size: NumericAlias | None,
         only required if SIDE.SELL
+    salt
+    order_id
     signature
     strategy_id
     aux_id
-    idx
     status
     created_at
     defined_at
@@ -218,10 +220,11 @@ def create_market_order(
         domain=domain,
         size_matched=numeric_type(0),
         tif=TIME_IN_FORCE.FOK,
+        salt=salt,
+        order_id=order_id,
         signature=signature,
         strategy_id=strategy_id,
         aux_id=aux_id,
-        idx=idx,
         status=status,
         created_at=created_at,
         defined_at=defined_at,

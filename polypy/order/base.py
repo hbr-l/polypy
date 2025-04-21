@@ -1,5 +1,6 @@
 import datetime
 import math
+import warnings
 from typing import Any, Callable, NoReturn, Self
 
 import attrs
@@ -10,7 +11,7 @@ from poly_eip712_structs import EIP712Struct
 from polypy.constants import ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, OrderUpdateException
 from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE
-from polypy.order.eip712 import SIDE_INDEX, EIP712Order, order_signature
+from polypy.order.eip712 import SIDE_INDEX, EIP712Order, order_id_hash, order_signature
 from polypy.rounding import round_half_even
 from polypy.signing import SIGNATURE_TYPE, parse_private_key
 from polypy.typing import NumericAlias
@@ -109,6 +110,11 @@ def _validate_numeric_type(inst: "Order", attr, val: NumericAlias) -> None:
         )
 
 
+def _validate_not_none(_, attr, val: str | None) -> None:
+    if not val:
+        raise OrderCreationException(f"{attr.name} must not be None or empty string.")
+
+
 def _optional_frozen(inst: "Order", attr, val: Any) -> Any:
     if getattr(inst, attr.name) is not None:
         raise OrderUpdateException("Can only be set if None. Read-only if once set.")
@@ -119,20 +125,73 @@ def _frozen(_, attr, ___) -> NoReturn:
     raise OrderUpdateException(f"Frozen attribute: {attr.name}.")
 
 
+def _parse_optional_defined_at(defined_at: int | None) -> int:
+    if defined_at is None:
+        defined_at = int(1_000 * datetime.datetime.now().timestamp())
+    return defined_at
+
+
+def _parse_optional_order_id(
+    order_id: str | None, eip712order: EIP712Order, domain: EIP712Struct
+) -> str:
+    if order_id is None:
+        order_id = order_id_hash(eip712order, domain)
+    else:
+        warnings.warn(
+            "Manually specified `order_id` will not be validated separately "
+            "(test injection purpose only). "
+            "Use `Order.validate_id()` if necessary."
+        )
+    return order_id
+
+
+def _parse_optional_signature(
+    signature: str | None,
+    order_id: str,
+    eip712order: EIP712Order,
+    private_key: PrivateKey | str | PrivateKeyType,
+) -> str:
+    if signature is None:
+        signature = order_signature(eip712order, order_id, private_key)
+    else:
+        warnings.warn(
+            "Manually specified `signature` will not be validated separately "
+            "(test injection purpose only). "
+            "Use `Order.validate_signature()` if necessary."
+        )
+    return signature
+
+
+def _parse_optional_size_matched(
+    size_matched: NumericAlias | None,
+    numeric_type: type[NumericAlias] | Callable[[int], NumericAlias],
+) -> NumericAlias:
+    if size_matched is None:
+        size_matched = numeric_type(0)
+    elif type(size_matched) != numeric_type:
+        raise OrderCreationException(
+            f"Type of size_matched={type(size_matched)} does not match numeric_type={numeric_type}."
+        )
+
+    return size_matched
+
+
 # todo shared memory version
 @attrs.define
 class Order:
     eip712order: EIP712Order = attrs.field(on_setattr=_frozen)
 
-    id: str | None = attrs.field(
+    id: str = attrs.field(
         converter=attrs.converters.optional(str),
-        on_setattr=[attrs.setters.convert, _optional_frozen],
+        on_setattr=_frozen,
+        validator=_validate_not_none,
     )
-    """Will be created after posting the order."""
-    signature: str | None = attrs.field(
+    signature: str = attrs.field(
         converter=attrs.converters.optional(str),
-        on_setattr=[attrs.setters.convert, _optional_frozen],
+        on_setattr=_frozen,
+        validator=_validate_not_none,
     )
+
     tif: TIME_IN_FORCE = attrs.field(converter=TIME_IN_FORCE, on_setattr=_frozen)
 
     strategy_id: str | None = attrs.field(converter=attrs.converters.optional(str))
@@ -169,11 +228,12 @@ class Order:
         signature_type: SIGNATURE_TYPE,
         domain: EIP712Struct,
         tif: TIME_IN_FORCE = TIME_IN_FORCE.GTC,
+        salt: int | None = None,
+        order_id: str | None = None,
         signature: str | None = None,
         size_matched: NumericAlias | None = None,
         strategy_id: str | None = None,
         aux_id: str | None = None,
-        idx: str | None = None,
         status: INSERT_STATUS = INSERT_STATUS.DEFINED,
         created_at: int | None = None,
         defined_at: int | None = None,
@@ -187,9 +247,8 @@ class Order:
         private_key = parse_private_key(private_key)
 
         # noinspection PyTypeChecker
-        side_idx: SIDE_INDEX = SIDE_INDEX[side]
-
         eip712order = EIP712Order.create(
+            salt=salt,
             maker=maker,
             signer=signer,
             taker=taker,
@@ -198,28 +257,22 @@ class Order:
             taker_amount=taker_amount,
             nonce=nonce,
             fee_rate_bps=fee_rate_bps,
-            side=side_idx,
+            side=SIDE_INDEX[side],
             signature_type=signature_type,
             expiration=expiration,
             private_key=private_key,
         )
 
-        if defined_at is None:
-            defined_at = int(1_000 * datetime.datetime.now().timestamp())
-
-        if signature is None:
-            signature = order_signature(eip712order, domain, private_key)
-
-        if size_matched is None:
-            size_matched = numeric_type(0)
-        elif type(size_matched) != numeric_type:
-            raise OrderCreationException(
-                f"Type of size_matched={type(size_matched)} does not match numeric_type={numeric_type}."
-            )
+        defined_at = _parse_optional_defined_at(defined_at)
+        order_id = _parse_optional_order_id(order_id, eip712order, domain)
+        signature = _parse_optional_signature(
+            signature, order_id, eip712order, private_key
+        )
+        size_matched = _parse_optional_size_matched(size_matched, numeric_type)
 
         return cls(
             eip712order=eip712order,
-            id=idx,
+            id=order_id,
             signature=signature,
             tif=tif,
             strategy_id=strategy_id,
@@ -230,6 +283,16 @@ class Order:
             size_matched=size_matched,
             numeric_type=numeric_type,
         )
+
+    def validate_id(self, domain: EIP712Struct) -> bool:
+        order_id = order_id_hash(self.eip712order, domain)
+        return self.id == order_id
+
+    def validate_signature(
+        self, private_key: PrivateKey | str | PrivateKeyType
+    ) -> bool:
+        signature = order_signature(self.eip712order, self.id, private_key)
+        return self.signature == signature
 
     def to_dict(self) -> dict[str, Any]:
         eip712_dict = self.eip712order.to_dict()

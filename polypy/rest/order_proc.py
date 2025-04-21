@@ -54,35 +54,26 @@ def _find_status_unmatched_delayed_from_exc_note(
 
 
 def _find_order_id_from_str(note: str) -> str:
-    id_cands = re.findall(r"0x[a-fA-F0-9]{24,128}", note)
+    id_cands = re.findall(r"0x[a-fA-F0-9]{64}", note)
     return id_cands[0] if len(id_cands) == 1 else ""
 
 
-def _update_order_id(
-    order: OrderProtocol, resp_struc: PostOrderResponse | None, note: str
-) -> OrderProtocol:
-    if order.id is not None and order.id != "":
-        return order
+def _optimistic_check_errmsg_order_id(
+    order: OrderProtocol, note: str, exc_str: str
+) -> None:
+    idx = _find_order_id_from_str(note)
 
-    if (
-        resp_struc is not None
-        and resp_struc.orderID != ""
-        and resp_struc.orderID is not None
-    ):
-        order.id = resp_struc.orderID
-        return order
-
-    if (idx := _find_order_id_from_str(note)) != "":
-        order.id = idx
-        return order
-
-    if order.id is None or order.id == "":
-        # we do not raise because we do not know order status for sure at this point (might be assigned downstream)
-        warnings.warn(
-            f"{datetime.datetime.now()} | Could not infer order id. Order: {order}."
+    if idx and order.id != idx:
+        raise OrderPlacementFailure(
+            f"order.id={order.id} does not match orderID inferred from exception note={idx}. {exc_str}"
         )
-
-    return order
+    else:
+        warnings.warn(
+            f"Cannot infer orderID from exception note. "
+            f"Optimistic assumption: response covers order.id={order.id}. "
+            f"\nTraceback: {exc_str}"
+        )
+        # optimistic update, that response actually covers specified order object...
 
 
 # todo test
@@ -96,8 +87,11 @@ def _raise_post_order_exception(
         f"Original exception: {exc}. Original exception note: {note}. Order: {order}."
     ).replace("\n", "")
 
-    order = _update_order_id(order, None, note)
+    _optimistic_check_errmsg_order_id(order, note, exc_str)
+    # todo optimistic assumption: response covers specified order object
 
+    # in case of an exception, we still try to infer the order state
+    # todo: in case of DELAYED or UNMATCHED we assume, that no size was matched at all (not even partially)
     if "delayed" in note:
         order.status = INSERT_STATUS.DELAYED
         raise OrderPlacementDelayed(
@@ -113,17 +107,6 @@ def _raise_post_order_exception(
         raise OrderPlacementFailure(f"Order placement failed. {exc_str}") from exc
 
 
-def _assert_post_order_server_success(
-    resp_struct: PostOrderResponse, order: OrderProtocol
-) -> None:
-    if resp_struct.success is False:
-        raise OrderPlacementFailure(
-            f"Server-side error when posting order. "
-            f"Original response: {msgspec.structs.asdict(resp_struct)}."
-            f"Order: {order}"
-        )
-
-
 def _assert_post_order_errmsg(
     resp_struct: PostOrderResponse, order: OrderProtocol
 ) -> None:
@@ -133,7 +116,15 @@ def _assert_post_order_errmsg(
 
     # non-empty error message: we know for sure, failure has happened
 
-    order = _update_order_id(order, resp_struct, resp_struct.errorMsg)
+    # try to check order id first
+    if resp_struct.orderID and resp_struct.orderID != order.id:
+        raise OrderPlacementFailure(
+            f"order.id={order.id} does not match response.orderID={resp_struct.orderID}."
+        )
+    elif not resp_struct.orderID:
+        _optimistic_check_errmsg_order_id(
+            order, resp_struct.errorMsg, resp_struct.errorMsg
+        )
 
     if resp_struct.status.lower() not in {"", "live", "matched"}:
         # Following states are invalid at this stage:
@@ -170,11 +161,25 @@ def _assert_post_order_errmsg(
         )
 
 
-def _assert_post_order_valid(order: OrderProtocol) -> None:
+def _assert_post_order_server_success(
+    resp_struct: PostOrderResponse, order: OrderProtocol
+) -> None:
+    if resp_struct.success is False:
+        raise OrderPlacementFailure(
+            f"Server-side error when posting order. "
+            f"Original response: {msgspec.structs.asdict(resp_struct)}."
+            f"Order: {order}"
+        )
+
+
+def _assert_post_order_insert_state(order: OrderProtocol) -> None:
     if not isinstance(order.status, INSERT_STATUS):
         raise OrderPlacementFailure(
             f"order.status is not of type INSERT_STATUS. Got: {order.status}."
         )
+
+    if order.status in {INSERT_STATUS.LIVE, INSERT_STATUS.MATCHED}:
+        return
 
     if order.status is INSERT_STATUS.UNMATCHED:
         raise OrderPlacementUnmatched(
@@ -185,20 +190,18 @@ def _assert_post_order_valid(order: OrderProtocol) -> None:
         raise OrderPlacementDelayed(
             f"Order marketable, but subject to matching delay. Order: {order}."
         )
-    elif order.status not in {INSERT_STATUS.LIVE, INSERT_STATUS.MATCHED}:
+    else:
         raise OrderPlacementFailure(
             f"Order state invalid after posting order. Order: {order}."
         )
 
-    if order.id is None or order.id == "":
+
+def _update_post_order_fill(order: OrderProtocol, resp: PostOrderResponse) -> None:
+    if order.id != resp.orderID:
         raise OrderPlacementFailure(
-            f"order.id is invalid, got: {order.id}. Order: {order}."
+            f"order.id={order.id} does not match response.orderID={resp.orderID}."
         )
 
-
-def _update_post_order_fill(
-    order: OrderProtocol, resp: PostOrderResponse
-) -> OrderProtocol:
     status = INSERT_STATUS(resp.status.upper())
 
     if order.side is SIDE.BUY:
@@ -212,8 +215,7 @@ def _update_post_order_fill(
 
     # we use update_order instead of directly setting the attributes to assure, that
     #   we don't set outdated data (update_order has some basic checks)
-    order = update_order(order=order, status=status, size_matched=size_matched)
-    return order
+    update_order(order=order, status=status, size_matched=size_matched)
 
 
 def _update_cancel_orders(

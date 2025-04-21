@@ -33,7 +33,7 @@ def _cvt_expiration(x: Any | None) -> int:
 class EIP712Order:
     """Order object from REST API"""
 
-    salt: int = attrs.field(init=False, factory=generate_seed)
+    salt: int = attrs.field(converter=int)
     maker: str = attrs.field(converter=str)
     signer: str | None = attrs.field(converter=attrs.converters.optional(str))
     taker: str = attrs.field(converter=str)
@@ -69,6 +69,7 @@ class EIP712Order:
         fee_rate_bps: int = 0,
         taker: str = ZERO_ADDRESS,
         signer: str | None = None,
+        salt: int | None = None,
     ) -> Self:
         if maker is None:
             maker = private_key_checksum_address(private_key)
@@ -79,7 +80,11 @@ class EIP712Order:
         if signature_type is None:
             signature_type = SIGNATURE_TYPE.EOA
 
+        if salt is None:
+            salt = generate_seed()
+
         return cls(
+            salt=salt,
             maker=maker,
             signer=signer,
             taker=taker,
@@ -145,14 +150,16 @@ def order_signable_bytes(x: EIP712Order, domain: EIP712Struct) -> bytes:
     return b"\x19\x01" + domain.hash_struct() + order_hash_struct(x)
 
 
-def order_signature(
-    x: EIP712Order, domain: EIP712Struct, private_key: str | PrivateKey | PrivateKeyType
-) -> str:
-    hash_struct = prepend_zx(keccak(order_signable_bytes(x, domain)).hex())
+def order_id_hash(x: EIP712Order, domain: EIP712Struct) -> str:
+    return prepend_zx(keccak(order_signable_bytes(x, domain)).hex())
 
+
+def order_signature(
+    x: EIP712Order, order_id: str, private_key: str | PrivateKey | PrivateKeyType
+) -> str:
     key = parse_private_key(private_key)  # make sure we have PrivateKey obj
     if x.signer != private_key_checksum_address(key):
         raise OrderCreationException("Signer does not match")
 
-    signed_hash_struct = _eth_sign_hash(hash_struct, key).signature.hex()
+    signed_hash_struct = _eth_sign_hash(order_id, key).signature.hex()
     return prepend_zx(signed_hash_struct)
