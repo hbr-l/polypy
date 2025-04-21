@@ -1,3 +1,9 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from polypy.order.common import OrderProtocol
+
+
 class PolyPyException(Exception):
     """Base exception for polypy."""
 
@@ -32,6 +38,10 @@ class OrderCreationException(OrderException):
 
 class OrderPlacementException(OrderException):
     """Base exception related to order placement."""
+
+    def __init__(self, msg: str, order: "OrderProtocol") -> None:
+        super().__init__(msg)
+        self.order = order
 
 
 class OrderPlacementFailure(OrderPlacementException):
