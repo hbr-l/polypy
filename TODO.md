@@ -49,11 +49,14 @@ _(backward-incompatible changes, changes in signatures)_
   - PositionManager._fill_no_orderbook_midpoints(...)
   - rest.api.get_neg_risk_market(...)
 - [ ] More msgspec.Structs for decoding JSON
-- [ ] Use more TypeVar for better typing (e.g., `create_limit_order`, `create_market_order`)
+- [ ] Use more TypeVar for better typing (e.g., in `create_limit_order`, `create_market_order`)
 - [ ] Remove INSERT_STATUS.DEFINED from `polypy.order.common.CANCELABLE_INSERT_STATI` (debatable...?, tend to keep)
 
 ## Fix
 _(backward-compatible changes, no changes in signatures)_
+- [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
+but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
+- [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
 - [ ] __Rewrite `MarketStream`__: 
   - [ ] use AbstractStreamer
   - [ ] if specified, merge complement asset_id (invert before) into order book as well
@@ -61,9 +64,9 @@ _(backward-compatible changes, no changes in signatures)_
   - [ ] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [ ] __Port `polypy.stream.common.AbstractStreamer` to async (performance and buffering)__
 - [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
-- [ ] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
-but this might mess with specific `PositionProtocol` implementation
+- [ ] parse `amount` in `_raise_post_order_exception` instead of defaulting to OrderPlacementFailure for better order update in case of an exception
 - [ ] Additional checks for `all_market_quintets` in `_check_conversion_all_quintets(...)` (used in PositionManager.convert_positions and its conversion cache) (necessary?, probably not and current implementation is sufficient)
+- [ ] Profile and optimize PositionManager rpc methods
 - [ ] Better cache size handling instead of hard coding
 - [ ] Fix typing of `FrozenOrder` and `FrozenPosition` (currently, autocomplete does not work for class attributes and methods)
 - [ ] Rounding routines cost a lot of compute time
@@ -80,14 +83,14 @@ enables trading positions as soon as they hit MATCHED - at least given limited a
 
 ## Open Unknowns
 - [x] GTC security threshold for expiration? c.f. `polypy.order.base.compute_expiration_timestamp` and change if necessary -> always add 1 minute
+- [x] Computation of order id? (instead of waiting until REST response is received -> would make buffering in UserStream obsolete) -> done, use order hash
 - [ ] __Computation of token_id based on condition_id?__
   - https://github.com/Polymarket/ctf-utils/blob/main/src/utils.ts
   - https://github.com/Polymarket/ctf-utils/blob/main/test/util.test.ts
   - makes supplying token_ids to UserStream obsolete (more convenient if only market id needs to be supplied)
 - [ ] When `price_change` market stream message is received, the `timestamp` field does not conform with the `hash`. This 
 leads to iterating over timestamps in order to find the correct hash if and only if the local book is still in sync. Assumption:
-`timestamp` is the _time of message emission_ and not the _time of book generation_. 
-- [ ] Computation of order id? (instead of waiting until REST response is received)
+`timestamp` is the _time of message emission_ and not the _time of book generation_.
 
 ## Repository and Git
 - [ ] Documentation

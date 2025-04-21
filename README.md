@@ -128,7 +128,9 @@ will be subject to future changes.
 Quite a few of the REST calls are not yet implemented (e.g., _get_spread()_), as development currently focuses on features 
 needed for personal projects/trading bots - though implementing REST calls by oneself should be relatively easy.  
 Large parts of the code base are not yet fully tested, though most common classes and functions are covered 
-fairly thoroughly.
+fairly thoroughly.  
+  
+Especially `MarketStream` and `UserStream` will be subject to future changes (design pattern).
 
 Known Issues
 ------------
@@ -159,6 +161,12 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/04/20
+- Pre-compute `order_id`
+  - OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) returns order in its `.order` attribute (append order object to exception)
+  - in `OrderManager`, order can now be tracked before being submitted to Polymarket via REST
+  - no need to wait on REST response anymore to get oder_id (no need for buffering in UserStream anymore, though this fix is only scheduled in the future and not yet done...)
+- Rename `MTX_TYPE` to `RPC_TYPE`
 #### 2025/04/15
 - In UserStream, when parsing TradeWSInfo in case of a taker order, use all maker orders to transact positions, which
 is more accurate than taking the taker price information
