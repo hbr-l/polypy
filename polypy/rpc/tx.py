@@ -2,7 +2,6 @@ from functools import lru_cache
 from typing import Literal, Self
 
 import attrs
-import web3
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 from hexbytes import HexBytes
@@ -25,7 +24,7 @@ from polypy.signing import private_key_checksum_address
 from polypy.typing import NumericAlias
 
 
-class W3POA(web3.Web3):
+class W3POA(Web3):
     def __init__(
         self,
         rpc_url: str | ENDPOINT,
