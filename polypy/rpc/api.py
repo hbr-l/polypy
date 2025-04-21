@@ -114,17 +114,16 @@ def _transact(
     )
 
     if endpoint_relayer is not None:
-        payload = _prepare_relayer_payload(
-            txn_params=txn,
-            w3=w3,
-            endpoint_relayer=endpoint_relayer,
-            cookies=cookies,
-            private_key=private_key,
-            maker_funder=maker_funder,
-            max_gas_limit=max_gas_limit_relayer,
-        )
-
         try:
+            payload = _prepare_relayer_payload(
+                txn_params=txn,
+                w3=w3,
+                endpoint_relayer=endpoint_relayer,
+                cookies=cookies,
+                private_key=private_key,
+                maker_funder=maker_funder,
+                max_gas_limit=max_gas_limit_relayer,
+            )
             resp = submit(endpoint=endpoint_relayer, payload=payload, cookies=cookies)
             return resp, None, None
         except Exception as e:
@@ -132,7 +131,7 @@ def _transact(
                 raise e
             else:
                 warnings.warn(
-                    f"Relayer failed for transaction: {payload}. "
+                    f"Relayer failed for transaction: {txn}. "
                     f"Falling back to on-chain RPC transaction inducing gas costs. "
                     f"Traceback: {str(e)}"
                 )
