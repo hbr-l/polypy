@@ -65,7 +65,8 @@ def _optimistic_check_errmsg_order_id(
 
     if idx and order.id != idx:
         raise OrderPlacementFailure(
-            f"order.id={order.id} does not match orderID inferred from exception note={idx}. {exc_str}"
+            f"order.id={order.id} does not match orderID inferred from exception note={idx}. {exc_str}",
+            order,
         )
     else:
         warnings.warn(
@@ -83,28 +84,36 @@ def _raise_post_order_exception(
     # we for sure know, that e.__notes__ exists
     note = str(exc.__notes__[0])
 
-    exc_str = (
-        f"Original exception: {exc}. Original exception note: {note}. Order: {order}."
-    ).replace("\n", "")
+    exc_str = f"Original exception: {exc}. Original exception note: {note}.".replace(
+        "\n", ""
+    )
 
     _optimistic_check_errmsg_order_id(order, note, exc_str)
     # todo optimistic assumption: response covers specified order object
 
     # in case of an exception, we still try to infer the order state
-    # todo: in case of DELAYED or UNMATCHED we assume, that no size was matched at all (not even partially)
+    amt_exc = (
+        "AMOUNT IN EXCEPTION MESSAGE BUT COULD NOT PARSE AND UPDATE ORDER SIZE ACCORDINGLY! "
+        if "Amount" in note
+        else ""
+    )
+    # todo: parsing amount would be quite involved and error-prone, so we just opt into PlacementFailure instead...
+    #   though this could be changed in the future
+
     if "delayed" in note:
         order.status = INSERT_STATUS.DELAYED
-        raise OrderPlacementDelayed(
-            f"Order marketable, but subject to matching delay. {exc_str}"
-        ) from exc
+        exc_msg = f"{amt_exc}Order marketable, but subject to matching delay. {exc_str}"
+        exc_type = OrderPlacementFailure if amt_exc else OrderPlacementDelayed
     elif re.search(r"not\s+.*?\s+ready", note, re.IGNORECASE):
         order.status = _find_status_unmatched_delayed_from_exc_note(note, order.status)
-        raise OrderPlacementMarketNotReady(
-            f"The market is not yet ready to process new orders. {exc_str}"
-        ) from exc
+        exc_msg = f"{amt_exc}The market is not yet ready to process orders. {exc_str}"
+        exc_type = OrderPlacementFailure if amt_exc else OrderPlacementMarketNotReady
     else:
         order.status = _find_status_unmatched_delayed_from_exc_note(note, order.status)
-        raise OrderPlacementFailure(f"Order placement failed. {exc_str}") from exc
+        exc_msg = f"{amt_exc}Order placement failed. {exc_str}"
+        exc_type = OrderPlacementFailure
+
+    raise exc_type(exc_msg, order) from exc
 
 
 def _assert_post_order_errmsg(
@@ -119,9 +128,10 @@ def _assert_post_order_errmsg(
     # try to check order id first
     if resp_struct.orderID and resp_struct.orderID != order.id:
         raise OrderPlacementFailure(
-            f"order.id={order.id} does not match response.orderID={resp_struct.orderID}."
-        )
-    elif not resp_struct.orderID:
+            f"order.id={order.id} does not match response.orderID={resp_struct.orderID}.",
+            order,
+        )  # else: resp_struct.orderID == order.id
+    if not resp_struct.orderID:
         _optimistic_check_errmsg_order_id(
             order, resp_struct.errorMsg, resp_struct.errorMsg
         )
@@ -143,21 +153,21 @@ def _assert_post_order_errmsg(
         order.status = INSERT_STATUS.DELAYED
         raise OrderPlacementDelayed(
             f"Order marketable, but subject to matching delay. "
-            f"Server response: {msgspec.structs.asdict(resp_struct)}."
-            f"Order: {order}."
+            f"Server response: {msgspec.structs.asdict(resp_struct)}.",
+            order,
         )
     elif "unmatched" in search_msg:
         order.status = INSERT_STATUS.UNMATCHED
         raise OrderPlacementUnmatched(
             f"Order marketable, but failure delaying, placement not successful. "
-            f"Server response: {msgspec.structs.asdict(resp_struct)}."
-            f"Order: {order}."
+            f"Server response: {msgspec.structs.asdict(resp_struct)}.",
+            order,
         )
     else:
         raise OrderPlacementFailure(
             f"Client-side error when posting order. "
-            f"Cannot infer state from: {msgspec.structs.asdict(resp_struct)}."
-            f"Order: {order}."
+            f"Cannot infer state from: {msgspec.structs.asdict(resp_struct)}.",
+            order,
         )
 
 
@@ -167,15 +177,15 @@ def _assert_post_order_server_success(
     if resp_struct.success is False:
         raise OrderPlacementFailure(
             f"Server-side error when posting order. "
-            f"Original response: {msgspec.structs.asdict(resp_struct)}."
-            f"Order: {order}"
+            f"Original response: {msgspec.structs.asdict(resp_struct)}.",
+            order,
         )
 
 
 def _assert_post_order_insert_state(order: OrderProtocol) -> None:
     if not isinstance(order.status, INSERT_STATUS):
         raise OrderPlacementFailure(
-            f"order.status is not of type INSERT_STATUS. Got: {order.status}."
+            f"order.status is not of type INSERT_STATUS. Got: {order.status}.", order
         )
 
     if order.status in {INSERT_STATUS.LIVE, INSERT_STATUS.MATCHED}:
@@ -183,23 +193,22 @@ def _assert_post_order_insert_state(order: OrderProtocol) -> None:
 
     if order.status is INSERT_STATUS.UNMATCHED:
         raise OrderPlacementUnmatched(
-            f"Order marketable, but failure delaying, placement not successful. "
-            f"Order: {order}."
+            "Order marketable, but failure delaying, placement not successful.",
+            order,
         )
     elif order.status is INSERT_STATUS.DELAYED:
         raise OrderPlacementDelayed(
-            f"Order marketable, but subject to matching delay. Order: {order}."
+            "Order marketable, but subject to matching delay.", order
         )
     else:
-        raise OrderPlacementFailure(
-            f"Order state invalid after posting order. Order: {order}."
-        )
+        raise OrderPlacementFailure("Order state invalid after posting order.", order)
 
 
 def _update_post_order_fill(order: OrderProtocol, resp: PostOrderResponse) -> None:
     if order.id != resp.orderID:
         raise OrderPlacementFailure(
-            f"order.id={order.id} does not match response.orderID={resp.orderID}."
+            f"order.id={order.id} does not match response.orderID={resp.orderID}.",
+            order,
         )
 
     status = INSERT_STATUS(resp.status.upper())

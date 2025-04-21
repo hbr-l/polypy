@@ -15,15 +15,14 @@ from polypy.constants import ENDPOINT, N_DIGITS_SIZE
 from polypy.exceptions import OrderUpdateException, PolyPyException
 from polypy.order.common import SIDE, OrderProtocol, update_order
 from polypy.position import PositionFactory, PositionProtocol
-from polypy.rest.order_processing import (
+from polypy.rest.order_proc import (
     _assert_cancel_orders_mode,
     _assert_post_order_errmsg,
+    _assert_post_order_insert_state,
     _assert_post_order_server_success,
-    _assert_post_order_valid,
     _not_frozen,
     _raise_post_order_exception,
     _update_cancel_orders,
-    _update_order_id,
     _update_post_order_fill,
 )
 from polypy.rounding import round_floor_tenuis_ceil
@@ -693,13 +692,15 @@ def post_order(
         This can be caused by either a server-side or client-side error.
     msgspec.ValidationError: if any exception during JSON decoding (this indicates an internal error).
 
+    OrderPlacementExceptions return the order in their `exc.order` attribute e.g., to retrieve the order ID.
+
     Notes
     -----
     User has responsibility that order is in a state, that can be posted (INSERT_STATE.DEFINED).
     This is not checked separately.
     Any INSERT_STATUS other than LIVE or MATCHED (other: DELAYED, UNMATCHED) raises an exception. DELAYED and
-    MATCHED raise specific errors after which the order object is updated accordingly to be used further on after
-    try-except. This is NOT the case for other exceptions.
+    MATCHED raise specific errors after which the order object is attempted to be updated accordingly
+    to be used further on after try-except. This is NOT the case for other exceptions.
     """
     _not_frozen(order)
 
@@ -719,13 +720,16 @@ def post_order(
 
     resp = msgspec.json.decode(resp.text, type=PostOrderResponse)
 
-    # update order
-    order = _update_order_id(order, resp, resp.errorMsg)
-    order = _update_post_order_fill(order, resp)
-
-    _assert_post_order_server_success(resp, order)
+    # check response and in case of an exchange-related error,
+    #   try to update order as much as possible
     _assert_post_order_errmsg(resp, order)
-    _assert_post_order_valid(order)
+
+    # update order
+    _update_post_order_fill(order, resp)
+
+    # just for sake of safety... both assert do not modify the order
+    _assert_post_order_server_success(resp, order)
+    _assert_post_order_insert_state(order)
 
     return order, resp
 
