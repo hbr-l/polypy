@@ -846,7 +846,7 @@ class PositionManager(PositionManagerProtocol):
             )
 
         # sort to avoid deadlock when acquiring lock
-        pms = [self] + position_managers
+        pms = list(set([self] + position_managers))
         pms = [pm for _, pm in sorted(zip([pm.gid for pm in pms], pms))]
 
         fn = partial(
