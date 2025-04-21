@@ -36,7 +36,7 @@ from polypy.rpc.api import (
     split_positions,
 )
 from polypy.rpc.mtx_protocols import (
-    MTX_TYPE,
+    RPC_TYPE,
     ConvertTransaction,
     MergeTransaction,
     SplitTransaction,
@@ -54,7 +54,7 @@ MarketQuintet: TypeAlias = MarketIdQuintet | tuple[str, str, str, str, str]
 
 @attrs.define
 class MTX:
-    type: MTX_TYPE
+    type: RPC_TYPE
     market_triplet: MarketTriplet | None = None
     amount: NumericAlias | None = None
     size: NumericAlias | None = None
@@ -72,7 +72,7 @@ class MTX:
         neg_risk: bool | None = None,
     ) -> Self:
         return cls(
-            type=MTX_TYPE.SPLIT,
+            type=RPC_TYPE.SPLIT,
             market_triplet=market_triplet,
             amount=amount,
             neg_risk=neg_risk,
@@ -86,7 +86,7 @@ class MTX:
         neg_risk: bool | None = None,
     ) -> Self:
         return cls(
-            type=MTX_TYPE.MERGE,
+            type=RPC_TYPE.MERGE,
             market_triplet=market_triplet,
             size=size,
             neg_risk=neg_risk,
@@ -101,7 +101,7 @@ class MTX:
         bookkeep_deposit: bool,
     ) -> Self:
         return cls(
-            type=MTX_TYPE.CONVERT,
+            type=RPC_TYPE.CONVERT,
             cvt_market_quintets=cvt_market_quintets,
             all_market_quintets=all_market_quintets,
             size=size,
@@ -211,7 +211,7 @@ def _tx_pre_batch_operate_positions(
     transactions = []
 
     for mtx in batch_mtx:
-        if mtx.type is MTX_TYPE.SPLIT:
+        if mtx.type is RPC_TYPE.SPLIT:
             transactions.append(
                 _parse_split_mtx(
                     mtx=mtx,
@@ -219,7 +219,7 @@ def _tx_pre_batch_operate_positions(
                     endpoint_rest=endpoint_rest,
                 )
             )
-        elif mtx.type is MTX_TYPE.MERGE:
+        elif mtx.type is RPC_TYPE.MERGE:
             transactions.append(
                 _parse_merge_mtx(
                     mtx=mtx,
@@ -227,9 +227,9 @@ def _tx_pre_batch_operate_positions(
                     endpoint_rest=endpoint_rest,
                 )
             )
-        elif mtx.type is MTX_TYPE.REDEEM:
+        elif mtx.type is RPC_TYPE.REDEEM:
             raise PolyPyException("REDEEM not allowed in batch operation.")
-        elif mtx.type is MTX_TYPE.CONVERT:
+        elif mtx.type is RPC_TYPE.CONVERT:
             transactions.append(
                 _parse_convert_mtx(
                     mtx=mtx,
@@ -250,21 +250,21 @@ def _tx_post_batch_operate_positions(
     batch_txn: list[SplitTransaction | MergeTransaction | ConvertTransaction],
 ) -> None:
     for mtx, ta in zip(batch_mtx, batch_txn):
-        if mtx.type is MTX_TYPE.SPLIT:
+        if mtx.type is RPC_TYPE.SPLIT:
             _tx_post_split_positions(
                 position_manager=position_manager,
                 market_triplet=mtx.market_triplet,
                 amount=ta.amount_usdc,
             )
-        elif mtx.type is MTX_TYPE.MERGE:
+        elif mtx.type is RPC_TYPE.MERGE:
             _tx_post_merge_positions(
                 position_manager=position_manager,
                 market_triplet=mtx.market_triplet,
                 size=ta.size,
             )
-        elif mtx.type is MTX_TYPE.REDEEM:
+        elif mtx.type is RPC_TYPE.REDEEM:
             raise PolyPyException("REDEEM not allowed in batch operation.")
-        elif mtx.type is MTX_TYPE.CONVERT:
+        elif mtx.type is RPC_TYPE.CONVERT:
             _tx_post_convert_positions(
                 position_manager=position_manager,
                 conversion_cache=conversion_cache,
