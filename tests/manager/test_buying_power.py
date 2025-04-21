@@ -12,7 +12,7 @@ from polypy.trade import TRADE_STATUS
 
 @pytest.fixture
 def sample_order(private_key):
-    def _closure(order_id, token_id, price, size, side):
+    def _closure(order_id, token_id, price, size, side, signature="signature"):
         order = create_limit_order(
             price,
             size,
@@ -24,8 +24,9 @@ def sample_order(private_key):
             private_key,
             None,
             SIGNATURE_TYPE.EOA,
+            order_id=order_id,
+            signature=signature,
         )
-        order.id = order_id
         return order
 
     return _closure

@@ -356,7 +356,16 @@ def test_buffer_trade_info_taker_order(
 
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
     time.sleep(0.1)
 
@@ -384,7 +393,16 @@ def test_buffer_trade_info_maker_order(
 
     stream.on_msg(trade_info_maker_buy_matched)
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     time.sleep(0.1)
 
@@ -419,7 +437,16 @@ def test_buffer_order_info_maker_order(
     # this simulates websocket msg recv which first will be buffered until rest call returns
     stream.on_msg(data_placement)
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     time.sleep(0.1)
 
@@ -486,7 +513,16 @@ def test_no_buffer_trade_info_taker_order(
     stream, om, pm = streamer(buffer_settings=None)
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
     stream.on_msg(trade_info_taker_buy_matched)  # this simulates websocket msg recv
     time.sleep(0.1)
@@ -531,7 +567,16 @@ def test_no_buffer_trade_info_maker_order(
     stream, om, pm = streamer(buffer_settings=None)
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     stream.on_msg(trade_info_maker_buy_matched)
     time.sleep(0.1)
@@ -584,7 +629,16 @@ def test_no_buffer_order_info_maker_order(
     data_placement, data_update = order_info_maker_buy_placement_update
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     stream.on_msg(data_placement)
     time.sleep(0.1)
@@ -652,6 +706,8 @@ def test_untrack_trade_status_matched(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     order_taker = create_limit_order(
         0.99,
@@ -664,12 +720,8 @@ def test_untrack_trade_status_matched(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
-    )
-    order_maker.id = (
-        "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
-    )
-    order_taker.id = (
-        "0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000"
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
     om.track(order_maker, False)
     om.track(order_taker, False)
@@ -738,7 +790,16 @@ def test_untrack_insert_status_at_unmatched_order_info(
     data = order_info_maker_buy_unmatched
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     assert len(om.token_ids) == 1
     assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
@@ -770,7 +831,16 @@ def test_untrack_insert_status_at_matched_order_info(
     data_placement, data_update = order_info_maker_buy_placement_update
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     assert len(om.token_ids) == 1
     assert len(om.get(status=INSERT_STATUS.LIVE)) == 1
@@ -836,7 +906,16 @@ def test_untrack_insert_status_unmatched_trade_status_confirmed(
     )
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     assert len(om.token_ids) == 1
     assert len(pm.asset_ids) == 2
@@ -881,7 +960,16 @@ def test_raise_monitor_order_assets(streamer, mock_std_post_order):
     assert pm.valid is True
 
     om.limit_order(
-        0.99, 5, "1234", SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        "1234",
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
     time.sleep(0.1)
 
@@ -946,9 +1034,8 @@ def test_raise_multiple_updates_order_info(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
-    )
-    unique_order.id = (
-        "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     om1.track(unique_order, False)
 
@@ -964,8 +1051,9 @@ def test_raise_multiple_updates_order_info(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="1234",
+        signature="signature",
     )
-    common_order.id = "1234"
     om1.track(common_order, False)
     om2.track(common_order, False)
 
@@ -1065,9 +1153,8 @@ def test_raise_multiple_updates_trade_info(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
-    )
-    unique_order.id = (
-        "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     om1.track(unique_order, False)
 
@@ -1083,8 +1170,9 @@ def test_raise_multiple_updates_trade_info(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="1234",
+        signature="signature",
     )
-    common_order.id = "1234"
     om1.track(common_order, False)
     om2.track(common_order, False)
 
@@ -1226,7 +1314,16 @@ def test_position_manager_none(
 
     stream.on_msg(order_placement)
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.BUY, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.BUY,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
     stream.on_msg(trade_info_maker_buy_matched)
     time.sleep(0.0001)
@@ -1317,8 +1414,9 @@ def test_multi_order_manager(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
     )
-    order1.id = "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000"
     om1.track(order1, False)
 
     order2 = create_limit_order(
@@ -1332,8 +1430,9 @@ def test_multi_order_manager(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="12345",
+        signature="signature",
     )
-    order2.id = "12345"
     om2.track(order2, False)
 
     assert list(om1.order_ids) == [
@@ -1370,7 +1469,16 @@ def test_raise_explicit_sell_market_position_not_yet_created(
     data = trade_info_taker_sell_matched
 
     om.limit_order(
-        0.99, 5, yes_asset_id, SIDE.SELL, 0.01, TIME_IN_FORCE.GTC, None, neg_risk=None
+        0.99,
+        5,
+        yes_asset_id,
+        SIDE.SELL,
+        0.01,
+        TIME_IN_FORCE.GTC,
+        None,
+        neg_risk=None,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
 
     with pytest.raises(PositionNegativeException):
@@ -1587,8 +1695,9 @@ def test_raise_order_manager_pre_loaded_token_ids(
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        order_id="5678",
+        signature="signature",
     )
-    order.id = "5678"
     order_manager.track(order, False)
 
     with pytest.raises(StreamException) as record:
@@ -1638,6 +1747,8 @@ def test_decimals(
         TIME_IN_FORCE.GTC,
         None,
         neg_risk=None,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
     )
     time.sleep(0.1)
 

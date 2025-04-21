@@ -25,6 +25,7 @@ from polypy.order.common import (
     frozen_order,
     update_order,
 )
+from polypy.order.eip712 import SIDE_INDEX, EIP712Order
 from polypy.order.limit import create_limit_order
 from polypy.order.market import create_market_order, is_marketable_amount
 from polypy.rounding import max_allowed_decimals, round_ceil
@@ -1196,7 +1197,73 @@ def test_market_order_amount_auto_rounding(private_key):
     assert market_order.amount == 21.34
 
 
-def test_order_optional_frozen(private_key):
+# noinspection PyTypeChecker
+def test_order_id_signature_salt_not_none(private_key):
+    order = Order.create(
+        "1234",
+        SIDE.BUY,
+        200,
+        200,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        polymarket_domain(CHAIN_ID.POLYGON, False),
+        order_id=None,
+        signature=None,
+        salt=None,
+    )
+    assert order.eip712order.salt is not None
+    assert order.signature is not None
+    assert order.id is not None
+
+    with pytest.raises(OrderCreationException):
+        Order(
+            order.eip712order,
+            None,
+            "123",
+            TIME_IN_FORCE.GTC,
+            None,
+            None,
+            INSERT_STATUS.DEFINED,
+            None,
+            1234,
+            float,
+            0,
+        )
+
+    with pytest.raises(OrderCreationException):
+        Order(
+            order.eip712order,
+            "123",
+            None,
+            TIME_IN_FORCE.GTC,
+            None,
+            None,
+            INSERT_STATUS.DEFINED,
+            None,
+            1234,
+            float,
+            0,
+        )
+
+    with pytest.raises(TypeError):
+        EIP712Order(
+            None,
+            "123",
+            None,
+            "123",
+            1234,
+            100,
+            100,
+            2,
+            0,
+            SIDE_INDEX.BUY,
+            SIGNATURE_TYPE.EOA,
+            0,
+        )
+
+
+def test_order_attrib_frozen(private_key):
     order = create_market_order(
         21.345,
         "1234",
@@ -1207,14 +1274,50 @@ def test_order_optional_frozen(private_key):
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
+        salt=1,
     )
 
-    assert order.id is None
-    assert order.signature is not None
-    assert order.created_at is None
+    assert (
+        order.id == "0x254a20b16e4ff5c673cee83941d472b5dc7f524e30036df6dd27518603c467db"
+    )
+    assert (
+        order.signature
+        == "0x553f6d9b0f308bd991cca70fe41ad0ac976be4764b01a1704deae68bb38a40310640423e43c3b443a0ad31efa671e2b04f877b2f58cf4c5bc978c3b817102d2f1c"
+    )
 
-    order.id = 4321
-    assert order.id == "4321"
+    with pytest.raises(OrderUpdateException):
+        order.id = "1234"
+
+    with pytest.raises(OrderUpdateException):
+        order.signature = "1234"
+
+    with pytest.raises(OrderUpdateException):
+        order.tif = TIME_IN_FORCE.FOK
+
+
+def test_order_attrib_optional_frozen(private_key):
+    order = create_market_order(
+        21.345,
+        "1234",
+        SIDE.BUY,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        salt=1,
+    )
+
+    assert (
+        order.id == "0x254a20b16e4ff5c673cee83941d472b5dc7f524e30036df6dd27518603c467db"
+    )
+    assert (
+        order.signature
+        == "0x553f6d9b0f308bd991cca70fe41ad0ac976be4764b01a1704deae68bb38a40310640423e43c3b443a0ad31efa671e2b04f877b2f58cf4c5bc978c3b817102d2f1c"
+    )
+
+    assert order.created_at is None
 
     order.created_at = 1234
     assert order.created_at == 1234
@@ -1370,6 +1473,11 @@ def test_update_order(private_key):  # sourcery skip: extract-duplicate-method
     assert order.created_at == 1200
     assert order.strategy_id is None
     assert order.size_matched == 0
+
+    update_order(order, size_matched=1)
+    assert order.size_matched == 1
+    update_order(order, size_matched=0)
+    assert order.size_matched == 1
 
 
 def test_numeric_type_create(private_key):

@@ -59,7 +59,10 @@ def order_manager(
 @pytest.fixture
 def sample_order(private_key):
     def _closure(
-        idx: str, strategy_id: str = STRATEGY_ID, token_id: int | str | None = None
+        order_id: str,
+        strategy_id: str = STRATEGY_ID,
+        token_id: int | str | None = None,
+        signature: str | None = "some_signature",
     ) -> OrderProtocol:
         return create_market_order(
             21.345,
@@ -72,7 +75,8 @@ def sample_order(private_key):
             None,
             SIGNATURE_TYPE.EOA,
             strategy_id=strategy_id,
-            idx=idx,
+            order_id=order_id,
+            signature=signature,
         )
 
     return _closure
@@ -157,7 +161,9 @@ def test_raise_track_no_sync(order_manager, sample_order):
     # cannot track order without ID
     with pytest.raises(OrderTrackingException):
         # noinspection PyTypeChecker
-        order_manager.track(sample_order(None), False)
+        order = sample_order(None)
+        object.__setattr__(order, "id", None)
+        order_manager.track(order, False)
 
     # cannot track frozen order
     with pytest.raises(OrderTrackingException):
@@ -408,6 +414,41 @@ def test_modify(order_manager, sample_order):
     assert order_manager.get_by_id("one").size_matched == 12
 
 
+def test_order_id_response_raises_not_matching_id(
+    order_manager,
+    mock_get_order,
+    mock_post_order,
+    mock_tick_size,
+    mock_neg_risk,
+):
+    mock_tick_size(ASSET_ID_YES, 0.01)
+    mock_neg_risk(ASSET_ID_YES)
+    mock_post_order(
+        {
+            "success": True,
+            "errorMsg": "",
+            "orderID": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "transactionsHashes": None,
+            "status": str(INSERT_STATUS.LIVE),
+            "takingAmount": "0.5",
+            "makingAmount": "0.25",
+        },
+    )
+
+    with pytest.raises(OrderPlacementFailure) as record:
+        order_manager.limit_order(
+            Decimal("0.3"),
+            Decimal(10),
+            ASSET_ID_YES,
+            SIDE.BUY,
+            None,
+            TIME_IN_FORCE.GTC,
+            None,
+            neg_risk=None,
+        )
+    assert "does not match" in str(record)
+
+
 # noinspection DuplicatedCode
 def test_market_order(
     order_manager,
@@ -439,6 +480,8 @@ def test_market_order(
         None,
         strategy_id="strat",
         neg_risk=None,
+        order_id="1234",
+        signature="signature",
     )
     assert list(order_manager.order_ids) == ["1234"]
     assert order_manager.get_by_id("1234").id == "1234"
@@ -456,7 +499,7 @@ def test_market_order(
             "makingAmount": "",
         },
     )
-    with pytest.raises(OrderPlacementUnmatched):
+    with pytest.raises(OrderPlacementUnmatched) as e:
         order_manager.market_order(
             20,
             ASSET_ID_YES,
@@ -466,7 +509,10 @@ def test_market_order(
             math.inf,
             strategy_id="tactic",
             neg_risk=None,
+            order_id="2345",
+            signature="signature",
         )
+    assert e.value.order.id == "2345"
     assert list(order_manager.order_ids) == ["1234", "2345"]
     assert order_manager.get_by_id("2345").status == INSERT_STATUS.UNMATCHED
     assert order_manager.get_by_id("2345").strategy_id == "tactic"
@@ -475,11 +521,20 @@ def test_market_order(
     assert order_manager.get_by_id("1234").side is SIDE.BUY
 
     mock_post_order({"error": "order 2345 is invalid. Duplicated."}, 400)
-    with pytest.raises(OrderPlacementFailure):
+    with pytest.raises(OrderPlacementFailure) as e:
         order_manager.market_order(
-            20, ASSET_ID_YES, SIDE.SELL, None, None, math.inf, neg_risk=None
+            20,
+            ASSET_ID_YES,
+            SIDE.SELL,
+            None,
+            None,
+            math.inf,
+            neg_risk=None,
+            order_id="3456",
+            signature="signature",
         )
-    assert list(order_manager.order_ids) == ["1234", "2345"]
+    assert e.value.order.id == "3456"
+    assert list(order_manager.order_ids) == ["1234", "2345", "3456"]
 
 
 def test_market_order_raise_book(
@@ -533,6 +588,8 @@ def test_limit_order(
         None,
         neg_risk=None,
         strategy_id="strat",
+        order_id="1234",
+        signature="signature",
     )
     assert list(order_manager.order_ids) == ["1234"]
     assert order_manager.get_by_id("1234").id == "1234"
@@ -550,7 +607,7 @@ def test_limit_order(
             "makingAmount": "",
         },
     )
-    with pytest.raises(OrderPlacementUnmatched):
+    with pytest.raises(OrderPlacementUnmatched) as e:
         order_manager.limit_order(
             0.5,
             20,
@@ -561,7 +618,10 @@ def test_limit_order(
             None,
             neg_risk=None,
             strategy_id="tactic",
+            order_id="2345",
+            signature="signature",
         )
+    assert e.value.order.id == "2345"
     assert list(order_manager.order_ids) == ["1234", "2345"]
     assert order_manager.get_by_id("2345").status == INSERT_STATUS.UNMATCHED
     assert order_manager.get_by_id("2345").strategy_id == "tactic"
@@ -572,7 +632,7 @@ def test_limit_order(
     assert order_manager.get_by_id("1234").size == 10
 
     mock_post_order({"error": "order 2345 is invalid. Duplicated."}, 400)
-    with pytest.raises(OrderPlacementFailure):
+    with pytest.raises(OrderPlacementFailure) as e:
         order_manager.limit_order(
             0.2,
             50,
@@ -582,8 +642,11 @@ def test_limit_order(
             TIME_IN_FORCE.GTC,
             None,
             neg_risk=None,
+            order_id="3456",
+            signature="signature",
         )
-    assert list(order_manager.order_ids) == ["1234", "2345"]
+    assert e.value.order.id == "3456"
+    assert list(order_manager.order_ids) == ["1234", "2345", "3456"]
 
 
 @pytest.mark.skip(reason="Implicitly included in market order and limit order.")
@@ -1307,6 +1370,8 @@ def test_sync_decimal(
         TIME_IN_FORCE.GTC,
         None,
         neg_risk=None,
+        order_id="1234",
+        signature="signature",
     )
     assert order_manager.get_by_id("1234").size_matched == 0.5
 
@@ -1428,6 +1493,8 @@ def test_clean(
         TIME_IN_FORCE.GTC,
         1000,
         neg_risk=None,
+        order_id="1234",
+        signature="signature",
     )
     assert list(order_manager.order_ids) == ["1", "2", "3", "1234"]
     assert order_manager.get_by_id("1234").size_matched == 0
