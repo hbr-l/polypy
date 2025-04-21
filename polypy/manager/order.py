@@ -1,4 +1,3 @@
-import contextlib
 import datetime
 import math
 import threading
@@ -161,7 +160,7 @@ class OrderManagerProtocol(Protocol):
         Raises
         ------
         OrderTrackingException: if order_id not in order manager
-        OrderUpdateException: if kwargs could not be updated order
+        OrderUpdateException: if kwargs could not be updated
 
         Notes
         -----
@@ -218,6 +217,10 @@ class OrderManagerProtocol(Protocol):
         If amount is pre-round accordingly (precision), then tick_size can be set to any sufficiently small
         min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as
         tick_size is sufficiently small).
+
+        If an OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) is raised,
+        the created order will be in the `exc.order` attribute e.g., to retrieve the order ID, which can be
+        used to query the order via `get_orders_info` and check state, size_matched, etc.
         """
         ...
 
@@ -242,22 +245,25 @@ class OrderManagerProtocol(Protocol):
         If price is pre-round accordingly (precision), then tick_size can be set to any sufficiently small
         min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as
         tick_size is sufficiently small).
+
+        If an OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) is raised,
+        the created order will be in the `exc.order` attribute e.g., to retrieve the order ID, which can be
+        used to query the order via `get_orders_info` and check state, size_matched, etc.
         """
         ...
 
     def post(self, order: AnyOrderProtocol) -> tuple[FrozenOrder, PostOrderResponse]:
         """Post an order to the exchange. Order will be added to the Order Manager automatically.
 
-        If posting an order raises an exception, i.e. status UNMATCHED, the order will only be tracked
-        (added to the Order Manager) if we received an OrderId from the exchange (regardless of the order status).
-        If no OrderID was received from the exchange, the order will NOT be tracked!
+        If posting an order raises an exception, the order status will still be updated if possible,
+        though this might often not be possible and should not be relied on.
         See :py:func:`polypy.rest.api.post_order` which exception may be raised.
 
         Notes
         -----
-        Recipe: in case of an exception that still is able to assign an OrderID (e.g. status UNMATCHED),
-        use unique value for aux_id field (if :py:class:`polypy.order.base.Order`) to retrieve order via
-        :py:meth:`OrderManagerProtocol.retrieve` and check status.
+        If an OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) is raised,
+        the created order will be in the `exc.order` attribute e.g., to retrieve the order ID, which can be
+        used to query the order via `get_orders_info` and check state, size_matched, etc.
         """
         ...
 
@@ -334,7 +340,7 @@ class OrderManagerProtocol(Protocol):
         Call self.sync() if operating on already posted (submitted) orders. It is highly advised to
         use self.market_order or self.limit_order instead of creating orders manually.
 
-        Only syncs orders in states DEFINED (if order id is known in advance), LIVE and DELAYED.
+        Only syncs orders in states DEFINED, LIVE and DELAYED.
         """
         ...
 
@@ -343,7 +349,7 @@ class OrderManagerProtocol(Protocol):
         statuses: INSERT_STATUS | list[INSERT_STATUS] = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
-        """Untrack all orders with specified status OR expiration. This does not cancel any orders.
+        """Untrack all orders with specified status OR expiration. This does NOT cancel any orders.
 
         Parameters
         ----------
@@ -446,6 +452,7 @@ class OrderManager(OrderManagerProtocol):
         self._create_market_order = market_order_factory
         self._create_limit_order = limit_order_factory
 
+        # we don't use defaultdict on purpose to provoke key exceptions if necessary
         self.order_dict: dict[str, OrderProtocol] = {}
         self.token_dict: dict[str, int] = {}
         self.lock = threading.RLock()
@@ -502,7 +509,7 @@ class OrderManager(OrderManagerProtocol):
 
         if order.id is None or order.id == "":
             raise OrderTrackingException(
-                "Can only track orders, which already have an ID assigned (=submitted)."
+                "Can only track orders, which have an ID assigned."
             )
 
     def invalidate(self, reason: str | None = None) -> None:
@@ -513,7 +520,7 @@ class OrderManager(OrderManagerProtocol):
                 "E.g., Order Manager tried to create an order for an asset ID that is "
                 "not tracked by the corresponding User Stream that it was assigned to."
             )
-        self._invalid_reason = f"{_ERR_MSG_INVALID} Reason: {reason}"
+        self._invalid_reason = f"{self._invalid_reason} Reason: {reason};"
 
     def _validate(self) -> None:
         if self._invalid_token:
@@ -661,7 +668,7 @@ class OrderManager(OrderManagerProtocol):
             order = self._get_order(order_id)
             size_matched = _cvt_order_numeric(order, size_matched)
 
-            order = update_order(
+            update_order(
                 order=order,
                 status=status,
                 size_matched=size_matched,
@@ -700,6 +707,18 @@ class OrderManager(OrderManagerProtocol):
         **kwargs,
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a market order, posts it to the exchange and adds it to the Order Manager to be tracked.
+
+        Parameters
+        ----------
+        amount: NumericAlias,
+        token_id: str,
+        side: SIDE,
+        tick_size: float | NumericAlias | None,
+            if None, tries to infer tick_size by `book`. If book is also None, then calls REST.
+        book: OrderBook | None,
+            if not None, will check marketable amount.
+        max_size: NumericAlias | None,
+        neg_risk: bool | None = None,
 
         Notes
         -----
@@ -747,6 +766,18 @@ class OrderManager(OrderManagerProtocol):
     ) -> tuple[FrozenOrder, PostOrderResponse]:
         """Creates a limit order, posts it to the exchange and adds it to the Order Manager to be tracked.
 
+        Parameters
+        ----------
+        price: NumericAlias,
+        size: NumericAlias,
+        token_id: str,
+        side: SIDE,
+        tick_size: float | NumericAlias | None,
+            if None, then calls REST.
+        tif: TIME_IN_FORCE,
+        expiration: int | None,
+        neg_risk: bool | None = None,
+
         Notes
         -----
         Example for kwargs: aux_id='some additional info' in case of polypy.order.Order class.
@@ -784,18 +815,17 @@ class OrderManager(OrderManagerProtocol):
         # posting an order might raise an exception, i.e. server side error (e.g. order unmatched)
         with self.lock:
             self._validate()
-            try:
-                order, response = post_order(
-                    endpoint=self.rest_endpoint,
-                    order=order,
-                    private_key=self.private_key,
-                    api_key=self.api_key,
-                    secret=self.secret,
-                    passphrase=self.passphrase,
-                )
-            finally:
-                with contextlib.suppress(OrderTrackingException):
-                    self.track(order, sync=False)
+
+            self.track(order, sync=False)
+
+            order, response = post_order(
+                endpoint=self.rest_endpoint,
+                order=order,
+                private_key=self.private_key,
+                api_key=self.api_key,
+                secret=self.secret,
+                passphrase=self.passphrase,
+            )
 
         return frozen_order(order), response
 
@@ -935,8 +965,13 @@ class OrderManager(OrderManagerProtocol):
     ) -> tuple[FrozenOrder | list[FrozenOrder], list[OrderProtocol]]:
         with self.lock:
             self._validate()
+
+            # returns orders objects actually stored in self.order_dict by order IDs of `order` argument.
+            # This ensures, orders in the order manager will be updated, even if `order` was not the same
+            # object - as long as oder IDs match
             _single, orders = self._parse_syncable_orders(order)
 
+            # get_orders_info automatically updates orders
             orders, responses = get_orders_info(
                 endpoint=self.rest_endpoint,
                 orders=orders,
