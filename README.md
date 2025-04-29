@@ -161,6 +161,9 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/04/29
+- GAMMA API can only retrieve up to 20 items at once (`get_markets_gamma_model`, `get_events_gamma_model`)
+- Implement `__getnewargs__` for `MarketIdQuintet` and `MarketIdTriplet` to make them pickable
 #### 2025/04/20
 - Pre-compute `order_id`
   - OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) returns order in its `.order` attribute (append order object to exception)
