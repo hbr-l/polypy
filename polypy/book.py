@@ -18,6 +18,7 @@ from typing import (
 import attrs
 import numpy as np
 from msgspec import json as msgspec_json
+from numpy.typing import NDArray
 
 from polypy.exceptions import EventTypeException, OrderBookException
 from polypy.rest.api import get_book_summaries, get_tick_size
@@ -74,7 +75,7 @@ def _zeroing_array(x: ArrayCoercible) -> ArrayCoercible:
 
 def _linspace_array(
     start: float, stop: float, num: int, nb_digits: int, dtype: type
-) -> np.ndarray:
+) -> NDArray:
     arr = np.round(np.linspace(start, stop, num), nb_digits)
 
     if not isinstance(arr[0], dtype):
@@ -103,6 +104,51 @@ def dict_to_sha1(x: dict) -> str:
 
 def _conv_set_float(x: Sequence[Any]) -> set[float]:
     return {float(x_i) for x_i in x}
+
+
+def _coerce_inbound_idx(
+    level_idx: NDArray[int], sizes: list[NumericAlias] | ArrayCoercible, max_len: int
+) -> tuple[NDArray[int], NDArray[NumericAlias]]:
+    # todo could be more efficient if integrated into split_order_summaries_to_quotes() directly (?)
+
+    sizes = np.asarray(sizes)
+
+    underflow_idx = level_idx < 0
+    underflow_sum = np.sum(sizes[underflow_idx])
+
+    overflow_idx = level_idx > (max_len - 1)
+    overflow_sum = np.sum(sizes[overflow_idx])
+
+    out_of_bound_idx = underflow_idx | overflow_idx
+    in_bound_idx = ~out_of_bound_idx
+
+    level_idx = level_idx[in_bound_idx]
+    sizes = sizes[in_bound_idx]
+
+    if underflow_sum > 0:
+        zero_idx = np.where(level_idx == 0)[0]
+        if len(zero_idx):
+            sizes[zero_idx[0]] += underflow_sum
+        else:
+            # todo optimize: pre-allocate instead of append
+            level_idx = np.append(level_idx, 0)
+            sizes = np.append(sizes, underflow_sum)
+
+    if overflow_sum > 0:
+        last_idx = np.where(level_idx == max_len - 1)[0]
+        if len(last_idx):
+            sizes[last_idx[0]] += overflow_sum
+        else:
+            # todo optimize: pre-allocate instead of append
+            level_idx = np.append(level_idx, max_len - 1)
+            sizes = np.append(sizes, overflow_sum)
+
+    if np.any(out_of_bound_idx):
+        warnings.warn(
+            "Coercing level indices and sizes for out-of-bound prices (< 0 or > 1)."
+        )
+
+    return level_idx, sizes
 
 
 @attrs.define
@@ -151,6 +197,8 @@ class OrderBook:
         on_setattr=attrs.setters.frozen,
     )
 
+    coerce_inbound_prices: bool = attrs.field(default=False, converter=bool)
+
     # todo implement storing sizes as integers instead of floats or Decimals
     #   -> nope, rather implement ScaleInt as custom type class and use this in 'zeros_factory'
     _bid_quantities: ZerosProtocol = attrs.field(init=False)
@@ -160,8 +208,8 @@ class OrderBook:
     _dtype_quantities: UnionType = attrs.field(init=False)
     _dtype_item: type = attrs.field(init=False)
 
-    _bid_quote_levels: np.ndarray = attrs.field(init=False)
-    _ask_quote_levels: np.ndarray = attrs.field(init=False)
+    _bid_quote_levels: NDArray = attrs.field(init=False)
+    _ask_quote_levels: NDArray = attrs.field(init=False)
 
     def __attrs_post_init__(self):
         self._inv_min_tick_size = int(1 / min(self.allowed_tick_sizes))
@@ -228,11 +276,11 @@ class OrderBook:
         return type(self._bid_quantities[0])
 
     @property
-    def bids(self) -> tuple[np.ndarray, ArrayCoercible]:
+    def bids(self) -> tuple[NDArray, ArrayCoercible]:
         return self._bid_quote_levels, self._bid_quantities[::-1]
 
     @property
-    def asks(self) -> tuple[np.ndarray, ArrayCoercible]:
+    def asks(self) -> tuple[NDArray, ArrayCoercible]:
         return self._ask_quote_levels, self._ask_quantities
 
     @property
@@ -289,7 +337,9 @@ class OrderBook:
             raise OrderBookException("Only non-negative prices allowed.")
         return self._ask_quantities[int(price * self._inv_min_tick_size)]
 
-    def _prices_to_indices(self, price: list[NumericAlias] | np.ndarray) -> np.ndarray:
+    def _prices_to_indices(
+        self, price: list[NumericAlias] | NDArray[NumericAlias]
+    ) -> NDArray[int]:
         idx = (np.asarray(price) * self._inv_min_tick_size).astype(int)
 
         if np.min(idx) < 0:
@@ -331,6 +381,12 @@ class OrderBook:
         """
         self._check_args_set_quantities(bid_prices, bid_sizes)
         bid_idx = self._prices_to_indices(bid_prices)
+
+        if self.coerce_inbound_prices:
+            bid_idx, bid_sizes = _coerce_inbound_idx(
+                bid_idx, bid_sizes, len(self._bid_quantities)
+            )
+
         self._bid_quantities[bid_idx] = bid_sizes
 
     def set_asks(
@@ -353,6 +409,12 @@ class OrderBook:
         """
         self._check_args_set_quantities(ask_prices, ask_sizes)
         ask_idx = self._prices_to_indices(ask_prices)
+
+        if self.coerce_inbound_prices:
+            ask_idx, ask_sizes = _coerce_inbound_idx(
+                ask_idx, ask_sizes, len(self._ask_quantities)
+            )
+
         self._ask_quantities[ask_idx] = ask_sizes
 
     def null_bids(self) -> None:
@@ -365,14 +427,14 @@ class OrderBook:
 
     def reset_bids(
         self,
-        bid_prices: list[NumericAlias] | np.ndarray | None = None,
-        bid_sizes: list[NumericAlias] | np.ndarray | None = None,
+        bid_prices: list[NumericAlias] | NDArray[NumericAlias] | None = None,
+        bid_sizes: list[NumericAlias] | NDArray[NumericAlias] | None = None,
     ) -> None:
         """
 
         Parameters
         ----------
-        bid_prices: list[NumericAlias] | np.ndarray | None
+        bid_prices: list[NumericAlias] | NDArray[NumericAlias] | None
             prices are converted to position indices (internal buffer array), so doesn't really matter if
             float or any type, as long as it can be cast to int.
         bid_sizes
@@ -391,14 +453,14 @@ class OrderBook:
 
     def reset_asks(
         self,
-        ask_prices: list[NumericAlias] | np.ndarray | None = None,
-        ask_sizes: list[NumericAlias] | np.ndarray | None = None,
+        ask_prices: list[NumericAlias] | NDArray[NumericAlias] | None = None,
+        ask_sizes: list[NumericAlias] | NDArray[NumericAlias] | None = None,
     ) -> None:
         """
 
         Parameters
         ----------
-        ask_prices: list[NumericAlias] | np.ndarray | None
+        ask_prices: list[NumericAlias] | NDArray[NumericAlias] | None
             prices are converted to position indices (internal buffer array), so doesn't really matter if
             float or any type, as long as it can be cast to int.
         ask_sizes

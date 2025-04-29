@@ -16,6 +16,7 @@ from py_clob_client.utilities import parse_raw_orderbook_summary
 from polypy.book import (
     HASH_STATUS,
     OrderBook,
+    _coerce_inbound_idx,
     _quotes_event_type_price_change,
     _valid_message_asset_id,
     guess_check_orderbook_hash,
@@ -24,6 +25,7 @@ from polypy.book import (
     split_order_summaries_to_quotes,
 )
 from polypy.exceptions import EventTypeException, OrderBookException
+from polypy.typing import zeros_dec
 
 test_pth = pathlib.Path(__file__).parent
 
@@ -1313,6 +1315,122 @@ def test_valid_message_id(book_t0_ws_msg_hashed):
         _valid_message_asset_id(book_t0_ws_msg_hashed, book, "except")
 
     assert _valid_message_asset_id(book_t0_ws_msg_hashed, book, "silent") is False
+
+
+def test_coerce_inbound_idx():
+    # case: no side
+    idx = np.array([6, 0, 1, 2, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [6, 0, 1, 2, 3, 4]
+    assert list(n_sizes) == [10, 1, 1, 1, 1, 10]
+
+    # case: both sides
+    idx = np.array([-1, 0, 1, 2, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
+    assert list(n_idx) == [0, 1, 2, 3]
+    assert list(n_sizes) == [11, 1, 1, 11]
+
+    idx = np.array([-1, 0, 1, -2, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
+    assert list(n_idx) == [0, 1, 3]
+    assert list(n_sizes) == [12, 1, 11]
+
+    idx = np.array([-1, 0, 5, 1, -2, 3, 4])
+    sizes = np.array([10, 1, 4, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
+    assert list(n_idx) == [0, 1, 3]
+    assert list(n_sizes) == [12, 1, 15]
+
+    idx = np.array([-1, 2, 5, 1, -2, 4])
+    sizes = np.array([10, 1, 4, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
+    assert list(n_idx) == [2, 1, 0, 3]
+    assert list(n_sizes) == [1, 1, 11, 14]
+
+    # case: min side
+    idx = np.array([-1, 0, 1, 2, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 2, 3, 4]
+    assert list(n_sizes) == [11, 1, 1, 1, 10]
+
+    idx = np.array([-1, 0, 1, -2, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 3, 4]
+    assert list(n_sizes) == [12, 1, 1, 10]
+
+    # case: max side
+    idx = np.array([6, 0, 1, 2, 3, 7])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [6, 0, 1, 2, 3]
+    assert list(n_sizes) == [20, 1, 1, 1, 1]
+
+    idx = np.array([8, 0, 1, 7, 3, 4])
+    sizes = np.array([10, 1, 1, 1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 3, 4, 6]
+    assert list(n_sizes) == [1, 1, 1, 10, 11]
+
+
+def test_coerce_inbound_msg():
+    book = OrderBook(
+        "103709219220485385381402953404611086294052546893918388630950161985342301458022",
+        0.001,
+        coerce_inbound_prices=True,
+        zeros_factory=zeros_dec,
+    )
+
+    msg = {
+        "market": "0x4c48d72bee2347ee0a0802850be8a7f36d318b405fb4bacbba455eb8a68dc6a3",
+        "asset_id": "103709219220485385381402953404611086294052546893918388630950161985342301458022",
+        "timestamp": "1745946996141",
+        "hash": "4f4f191d88bf886c5f8c10786430528717591a18",
+        "bids": [
+            {"price": "0.001", "size": "200000"},
+            {"price": "0.25", "size": "5000"},
+            {"price": "0.4", "size": "2200"},
+            {"price": "0.401", "size": "1496"},
+            {"price": "0.81", "size": "222"},
+            {"price": "0.868", "size": "1982.88"},
+            {"price": "0.96", "size": "1173.95"},
+            {"price": "0.974", "size": "2000"},
+            {"price": "0.98", "size": "2540"},
+            {"price": "0.985", "size": "270"},
+            {"price": "0.988", "size": "1978.99"},
+            {"price": "0.989", "size": "1000"},
+            {"price": "0.99", "size": "10691.38"},
+            {"price": "0.991", "size": "1154.28"},
+            {"price": "0.992", "size": "851.14"},
+        ],
+        "asks": [
+            {"price": "1.01", "size": "500"},
+            {"price": "0.999", "size": "13072.46"},
+            {"price": "0.997", "size": "4000"},
+            {"price": "0.995", "size": "478.33"},
+        ],
+        "event_type": "book",
+    }
+
+    book, _ = message_to_orderbook(msg, book)
+
+    assert book.ask_size(1) == 500
+    assert book.ask_size(Decimal("0.999")) == Decimal("13072.46")
+    assert book.ask_size(Decimal("0.997")) == Decimal(4000)
+    assert book.ask_size(Decimal("0.995")) == Decimal("478.33")
+
+    assert book.bid_size(Decimal(".001")) == 200000
+    assert book.bid_size(Decimal(".25")) == 5000
+    assert book.bid_size(Decimal(".401")) == 1496
+    assert book.bid_size(Decimal(".974")) == 2000
+    assert book.bid_size(Decimal(".868")) == Decimal("1982.88")
+    assert book.bid_size(Decimal(".988")) == Decimal("1978.99")
+    assert book.bid_size(Decimal(".99")) == Decimal("10691.38")
+    assert book.bid_size(Decimal(".992")) == Decimal("851.14")
 
 
 @pytest.mark.skip(reason="only for visualization purpose")
