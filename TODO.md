@@ -56,6 +56,7 @@ _(backward-incompatible changes, changes in signatures)_
 _(backward-compatible changes, no changes in signatures)_
 - [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
+- [ ] __replace np.ndarray with NDArray for better type annotations__
 - [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
 - [ ] __Rewrite `MarketStream`__: 
   - [ ] use AbstractStreamer
@@ -64,7 +65,8 @@ but this might mess with specific `PositionProtocol` implementation (resolved: l
   - [ ] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [ ] __Port `polypy.stream.common.AbstractStreamer` to async (performance and buffering)__
 - [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
-- [ ] parse `amount` in `_raise_post_order_exception` instead of defaulting to OrderPlacementFailure for better order update in case of an exception
+- [ ] Optimize `_coerce_inbound_idx()` (though not urgent)
+- [ ] Parse `amount` in `_raise_post_order_exception` instead of defaulting to OrderPlacementFailure for better order update in case of an exception
 - [ ] Additional checks for `all_market_quintets` in `_check_conversion_all_quintets(...)` (used in PositionManager.convert_positions and its conversion cache) (necessary?, probably not and current implementation is sufficient)
 - [ ] Profile and optimize PositionManager rpc methods
 - [ ] Better cache size handling instead of hard coding

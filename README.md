@@ -164,6 +164,10 @@ Development
 #### 2025/04/29
 - GAMMA API can only retrieve up to 20 items at once (`get_markets_gamma_model`, `get_events_gamma_model`)
 - Implement `__getnewargs__` for `MarketIdQuintet` and `MarketIdTriplet` to make them pickable
+- Implement `coerce_inbound_prices` argument in `OrderBook`:
+  - Occasionally, price quotes in the order book are outside \[0, 1\] (for unknown reasons, this seems to be an issue on Polymarket's side though)
+  - This results in Out-Of-Index exceptions
+  - If `coerce_inbound_prices=True`, invalid prices outside \[0, 1\] will be accumulated into prices `0` and `1` - though current implementation is not yet the most efficient
 #### 2025/04/20
 - Pre-compute `order_id`
   - OrderPlacementException (e.g., OrderPlacementFailure, OrderPlacementDelayed, etc.) returns order in its `.order` attribute (append order object to exception)
