@@ -71,6 +71,16 @@ class MarketIdQuintet(
             token_id_2,
         )
 
+    def __getnewargs__(self):
+        return (
+            self.condition_id,
+            self.neg_risk_market_id,
+            self.question_id,
+            self.token_id_1,
+            self.token_id_2,
+            None,
+        )
+
     @classmethod
     def from_market_info(cls, market_info: MarketInfo) -> Self:
         return cls(
@@ -139,6 +149,9 @@ class MarketIdTriplet(
 
         # noinspection PyArgumentList
         return super().__new__(cls, condition_id, token_id_1, token_id_2)
+
+    def __getnewargs__(self):
+        return self.condition_id, self.token_id_1, self.token_id_2, None
 
     @classmethod
     def from_market_info(cls, market_info: MarketInfo) -> Self:
