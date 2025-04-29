@@ -261,7 +261,12 @@ def get_markets_gamma_model(
     """
     url = f"{endpoint_gamma}/markets"
 
-    _single = all(not is_iter(k) for k in [ids, condition_ids, token_ids, slugs])
+    _iterable_query = [k for k in [ids, condition_ids, token_ids, slugs] if is_iter(k)]
+    _single = not _iterable_query  # len(_iterable_query) == 0
+    if any(len(k) > 20 for k in _iterable_query):
+        raise PolyPyException("Can only query at max 20 items per GAMMA API.")
+
+    # _single = all(not is_iter(k) for k in [ids, condition_ids, token_ids, slugs])
 
     params = [
         *_parse_gamma_multi_query_params("id", ids),
@@ -324,7 +329,12 @@ def get_events_gamma_model(
     """
     url = f"{endpoint_gamma}/events"
 
-    _single = all(not is_iter(k) for k in [ids, slugs])
+    _iterable_query = [k for k in [ids, slugs] if is_iter(k)]
+    _single = not _iterable_query  # len(_iterable_query) == 0
+    if any(len(k) > 20 for k in _iterable_query):
+        raise PolyPyException("Can only query at max 20 items per GAMMA API.")
+
+    # _single = all(not is_iter(k) for k in [ids, slugs])
 
     params = [
         *_parse_gamma_multi_query_params("id", ids),
