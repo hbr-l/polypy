@@ -28,6 +28,10 @@ class TIME_IN_FORCE(StrEnum):
     """Good-Till-Cancel"""
     GTD = "GTD"
     """Good-Till-Day"""
+    FAK = "FAK"
+    """Fill-And-Kill"""
+    IOC = "FAK"
+    """Immediate-Or-Cancel, alias for FAK"""
 
 
 class SIDE(StrEnum):

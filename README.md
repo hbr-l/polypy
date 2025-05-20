@@ -8,7 +8,7 @@ Goals
 `PolyPy` is a Python wrapper around [Polymarket's API](https://docs.polymarket.com/) and aims to implement a 
 set of components for facilitating trading on Polymarket, whilst focusing on decent runtime performance.
 `PolyPy`'s implementation is opinionated and biased regarding architecture and design choices, and therefore tailored
-towards personal projects/ use in trading bots.
+towards personal projects/ use in trading bots (e.g. running different strategies on the same account).
   
 Although, [Polymarket's Python Client](https://github.com/Polymarket/py-clob-client/tree/main) is quite convenient, 
 it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of much faster 
@@ -161,6 +161,8 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/05/20
+- `FAK` (alia `IOC`) as additional `TIME_IN_FORCE` option
 #### 2025/04/29
 - GAMMA API can only retrieve up to 20 items at once (`get_markets_gamma_model`, `get_events_gamma_model`)
 - Implement `__getnewargs__` for `MarketIdQuintet` and `MarketIdTriplet` to make them pickable

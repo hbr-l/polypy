@@ -971,6 +971,7 @@ class OrderManager(OrderManagerProtocol):
             # object - as long as oder IDs match
             _single, orders = self._parse_syncable_orders(order)
 
+            # todo get_orders_info vs get_active_orders: use extra arg to choose between
             # get_orders_info automatically updates orders
             orders, responses = get_orders_info(
                 endpoint=self.rest_endpoint,
