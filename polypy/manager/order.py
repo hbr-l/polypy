@@ -463,6 +463,15 @@ class OrderManager(OrderManagerProtocol):
     def __contains__(self, order_id: str) -> bool:
         return order_id in self.order_dict
 
+    def __getstate__(self) -> dict:
+        state = dict(self.__dict__)
+        del state["lock"]
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self.lock = threading.RLock()
+
     @classmethod
     def create(
         cls,

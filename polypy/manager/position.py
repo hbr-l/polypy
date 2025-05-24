@@ -481,6 +481,15 @@ class PositionManager(PositionManagerProtocol):
             f"\nInvalidation state: {(self._invalid_token, self._invalid_reason if self._invalid_token else None)}"
         )
 
+    def __getstate__(self) -> dict:
+        state = dict(self.__dict__)
+        del state["lock"]
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self.lock = threading.RLock()
+
     @property
     def gid(self) -> int:
         return id(self.position_dict)
@@ -699,7 +708,10 @@ class PositionManager(PositionManagerProtocol):
         if midpoints is None:
             midpoints = {}
 
-        # parse order book vs NumericAlias
+        # parse order book vs NumericAlias:
+        #  we are only interested in midpoints of assets within position manager
+        position_asset_ids = set(self.position_dict.keys())
+        midpoints = {k: v for k, v in midpoints.items() if k in position_asset_ids}
         midpoints = {
             asset_id: val.midpoint_price if hasattr(val, "midpoint_price") else val
             for asset_id, val in midpoints.items()
@@ -709,13 +721,13 @@ class PositionManager(PositionManagerProtocol):
         midpoints = self._fill_usdc_midpoint(midpoints)
 
         # get asset ids for which we have to manually fetch midpoint
-        missed = (self.position_dict.keys() - midpoints.keys()) | {
+        missed = (position_asset_ids - midpoints.keys()) | {
             key for key, val in midpoints.items() if val is None
         }
         midpoints = self._fill_midpoints(missed, midpoints)
 
         # get asset ids of resolved markets/ no order book
-        missed = (self.position_dict.keys() - midpoints.keys()) | {
+        missed = (position_asset_ids - midpoints.keys()) | {
             key for key, val in midpoints.items() if val is None
         }
         return self._fill_no_orderbook_midpoints(missed, midpoints)

@@ -58,6 +58,17 @@ class RPCSettings:
     def __attrs_post_init__(self):
         self.w3 = W3POA(self.endpoint_rpc, self.private_key, self.maker)
 
+    def __getstate__(self) -> dict:
+        # noinspection PyTypeChecker
+        state = dict(attrs.asdict(self))
+        del state["w3"]
+        return state
+
+    def __setstate__(self, state) -> None:
+        for k, v in state.items():
+            setattr(self, k, v)
+        self.__attrs_post_init__()
+
 
 def _rand_trade_id(x: str | int, addendum: str) -> str:
     _hash = keccak(f"{x}_{generate_seed()}".encode()).hex()
