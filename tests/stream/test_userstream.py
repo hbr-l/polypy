@@ -1818,9 +1818,9 @@ def test_pull_augmented_conversions(mocker, api_key, passphrase, secret):
     pm = PositionManager("", "", dec(100), conversion_cache=cache)
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
 
     # simulate conversion
@@ -1839,7 +1839,7 @@ def test_pull_augmented_conversions(mocker, api_key, passphrase, secret):
     assert cache.caches["0x9"].cumulative_size == dec(5)
     assert cache.caches["0x9"].seen_condition_ids == {"0x1", "0x2", "0x3"}
 
-    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
+    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"))
     mocker.patch(
         "polypy.manager.cache.get_neg_risk_markets",
         return_value=(

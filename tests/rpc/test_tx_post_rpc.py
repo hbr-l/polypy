@@ -67,7 +67,7 @@ def rpc_settings(private_key) -> RPCSettings:
 
 @pytest.fixture(scope="function")
 def market_triplet() -> MarketIdTriplet:
-    return MarketIdTriplet("0x000000", "000001", "000002", None)
+    return MarketIdTriplet("0x000000", "000001", "000002")
 
 
 def test_post_split_position(position_manager, market_triplet):
@@ -138,9 +138,9 @@ def test_post_convert_positions_bookkeep_deposit_false_N_YY(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3): N1 -> Y2, Y3
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -168,8 +168,7 @@ def test_post_convert_positions_bookkeep_deposit_false_N_YY(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0]],
-        all_market_quintets
-        + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)],
+        all_market_quintets + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")],
         size2,
         False,
     )
@@ -187,9 +186,9 @@ def test_post_convert_positions_bookkeep_deposit_true_N_YY(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3): N1 -> Y2, Y3
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -217,8 +216,7 @@ def test_post_convert_positions_bookkeep_deposit_true_N_YY(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0]],
-        all_market_quintets
-        + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)],
+        all_market_quintets + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")],
         size2,
         True,
     )
@@ -236,9 +234,9 @@ def test_post_convert_positions_bookkeep_deposit_false_NN_Y(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3): N1, N2 -> Y3
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -269,8 +267,7 @@ def test_post_convert_positions_bookkeep_deposit_false_NN_Y(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0], all_market_quintets[1]],
-        all_market_quintets
-        + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)],
+        all_market_quintets + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")],
         size2,
         False,
     )
@@ -288,9 +285,9 @@ def test_post_convert_positions_bookkeep_deposit_true_NN_Y(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3): N1, N2 -> Y3
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -321,8 +318,7 @@ def test_post_convert_positions_bookkeep_deposit_true_NN_Y(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0], all_market_quintets[1]],
-        all_market_quintets
-        + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)],
+        all_market_quintets + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")],
         size2,
         True,
     )
@@ -339,10 +335,10 @@ def test_post_convert_positions_bookkeep_deposit_true_NN_Y(position_manager):
 def test_post_convert_positions_bookkeep_deposit_false_NN_YY(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3), (Y4, N4): N1, N2 -> Y3, Y4
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
-        MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
+        MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -374,8 +370,7 @@ def test_post_convert_positions_bookkeep_deposit_false_NN_YY(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0], all_market_quintets[1]],
-        all_market_quintets
-        + [MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5", None)],
+        all_market_quintets + [MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5")],
         size2,
         False,
     )
@@ -399,10 +394,10 @@ def test_post_convert_positions_bookkeep_deposit_false_NN_YY(position_manager):
 def test_post_convert_positions_bookkeep_deposit_true_NN_YY(position_manager):
     # (Y1, N1), (Y2, N2), (Y3, N3), (Y4, N4): N1, N2 -> Y3, Y4
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
-        MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
+        MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -434,8 +429,7 @@ def test_post_convert_positions_bookkeep_deposit_true_NN_YY(position_manager):
         position_manager,
         conv_cache,
         [all_market_quintets[0], all_market_quintets[1]],
-        all_market_quintets
-        + [MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5", None)],
+        all_market_quintets + [MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5")],
         size2,
         True,
     )
@@ -476,9 +470,9 @@ def gen_rand_float_dec(
 def test_post_convert_positions_bookkeep_deposit_false_numerical_stability():
     # N_YY no bookkeeping random numbers -> test for numeric stability
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
 
     def setup():
@@ -538,9 +532,9 @@ def test_post_convert_positions_raises_act_conversion_cache_invalidate(
     # N_YY invalidate position_manager through _act_conversion_cache
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -566,8 +560,7 @@ def test_post_convert_positions_raises_act_conversion_cache_invalidate(
             position_manager,
             conv_cache,
             [all_market_quintets[0]],
-            all_market_quintets
-            + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)],
+            all_market_quintets + [MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")],
             size2,
             False,
         )
@@ -581,9 +574,9 @@ def test_post_convert_positions_raises_overspending_invalidate(position_manager)
     # N_YY invalidate position_manager through overspending
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conv_cache = AugmentedConversionCache("")
     position_manager.transact(
@@ -606,7 +599,7 @@ def test_post_convert_positions_raises_overspending_invalidate(position_manager)
 
 
 def test_post_redeem_positions(position_manager):
-    triplet = MarketIdTriplet("0x01", "Y1", "N1", None)
+    triplet = MarketIdTriplet("0x01", "Y1", "N1")
     position_manager.transact(
         "Y1", dec(10), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True
     )
@@ -626,7 +619,7 @@ def test_post_redeem_positions(position_manager):
 
 
 def test_post_redeem_positions_one_side(position_manager):
-    triplet = MarketIdTriplet("0x01", "Y1", "N1", None)
+    triplet = MarketIdTriplet("0x01", "Y1", "N1")
     position_manager.transact(
         "N1", dec(10), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True
     )
@@ -638,7 +631,7 @@ def test_post_redeem_positions_one_side(position_manager):
 
 
 def test_post_redeem_positions_raises(position_manager):
-    triplet = MarketIdTriplet("0x01", "Y1", "N1", None)
+    triplet = MarketIdTriplet("0x01", "Y1", "N1")
     # failure case: positions not in position manager, overspending
 
     # positions not in position manager
@@ -656,12 +649,12 @@ def test_post_redeem_positions_raises(position_manager):
 
 
 def test_post_batch_operate_positions(position_manager):
-    triplet1 = MarketIdTriplet("0x01", "Y1", "N1", None)
-    triplet2 = MarketIdTriplet("0x02", "Y2", "N2", None)
+    triplet1 = MarketIdTriplet("0x01", "Y1", "N1")
+    triplet2 = MarketIdTriplet("0x02", "Y2", "N2")
     all_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13"),
     ]
     cvt_quintets = all_quintets[:2]
     position_manager.transact(

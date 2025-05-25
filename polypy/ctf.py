@@ -30,19 +30,24 @@ def _get_market_ids(endpoint: str | ENDPOINT, condition_id: str):
     )
 
 
-class MarketIdQuintet(
-    namedtuple(
-        "MarketIdTriplet",
-        [
-            "condition_id",  # 0
-            "neg_risk_market_id",  # 1
-            "question_id",  # 2
-            "token_id_1",  # 3: YES
-            "token_id_2",  # 4: NO
-        ],
-    )
-):
-    def __new__(
+_MarketIdQuintetBase = namedtuple(
+    "MarketIdQuintet",
+    [
+        "condition_id",  # 0
+        "neg_risk_market_id",  # 1
+        "question_id",  # 2
+        "token_id_1",  # 3: YES
+        "token_id_2",  # 4: NO
+    ],
+)
+
+
+# noinspection PyArgumentList
+class MarketIdQuintet(_MarketIdQuintetBase):
+    __slots__ = ()
+
+    @classmethod
+    def create(
         cls,
         condition_id: str,
         neg_risk_market_id: str | None,
@@ -50,7 +55,7 @@ class MarketIdQuintet(
         token_id_1: str | None,
         token_id_2: str | None,
         rest_endpoint: str | ENDPOINT | None,
-    ):
+    ) -> Self:
         if any(
             x is None for x in [neg_risk_market_id, question_id, token_id_1, token_id_2]
         ):
@@ -60,25 +65,8 @@ class MarketIdQuintet(
             token_id_2 = _optional_equiv(token_id_2, t_id_2)
             question_id = _optional_equiv(question_id, q_id)
             neg_risk_market_id = _optional_equiv(neg_risk_market_id, nrm_id)
-
-        # noinspection PyArgumentList
-        return super().__new__(
-            cls,
-            condition_id,
-            neg_risk_market_id,
-            question_id,
-            token_id_1,
-            token_id_2,
-        )
-
-    def __getnewargs__(self):
-        return (
-            self.condition_id,
-            self.neg_risk_market_id,
-            self.question_id,
-            self.token_id_1,
-            self.token_id_2,
-            None,
+        return cls(
+            condition_id, neg_risk_market_id, question_id, token_id_1, token_id_2
         )
 
     @classmethod
@@ -89,7 +77,6 @@ class MarketIdQuintet(
             market_info.question_id,
             market_info.tokens[0].token_id,
             market_info.tokens[1].token_id,
-            None,
         )
 
     @classmethod
@@ -107,51 +94,33 @@ class MarketIdQuintet(
             question_id=question_id,
             token_id_1=token_id_1,
             token_id_2=token_id_2,
-            rest_endpoint=None,
         )
 
 
-class MarketIdTriplet(
-    namedtuple("MarketIdTriplet", ["condition_id", "token_id_1", "token_id_2"])
-):
-    def __new__(
+_MarketIdTripletBase = namedtuple(
+    "MarketIdTriplet", ["condition_id", "token_id_1", "token_id_2"]
+)
+
+
+# noinspection PyArgumentList
+class MarketIdTriplet(_MarketIdTripletBase):
+    __slots__ = ()
+
+    @classmethod
+    def create(
         cls,
         condition_id: str,
         token_id_1: str | None,
         token_id_2: str | None,
         rest_endpoint: str | ENDPOINT | None,
-    ):
-        """Info bundle regarding market and tokens.
-
-        If `token_id` is None, performs REST request to fetch data. Requests will be lru cached (256).
-
-        Parameters
-        ----------
-        condition_id: str
-            condition id, also called market id
-        token_id_1: str | None
-            YES token (or equivalent), will be fetched if not specified.
-        token_id_2: str | None
-            NO token (or equivalent), will be fetched if not specified.
-        rest_endpoint: str | ENDPOINT | None
-            request url endpoint, can be set to None if all args specified.
-
-        Notes
-        -----
-        Naming convention of token_id_1 and token_id_2 refers to their partition position (since YES comes before NO,
-        x_0 and x_1 would be ambiguous and could be misinterpreted as boolean).
-        """
+    ) -> Self:
         if token_id_1 is None or token_id_2 is None:
             _, _, t_id_1, t_id_2 = _get_market_ids(rest_endpoint, condition_id)
 
             token_id_1 = _optional_equiv(token_id_1, t_id_1)
             token_id_2 = _optional_equiv(token_id_2, t_id_2)
 
-        # noinspection PyArgumentList
-        return super().__new__(cls, condition_id, token_id_1, token_id_2)
-
-    def __getnewargs__(self):
-        return self.condition_id, self.token_id_1, self.token_id_2, None
+        return cls(condition_id, token_id_1, token_id_2)
 
     @classmethod
     def from_market_info(cls, market_info: MarketInfo) -> Self:
@@ -159,7 +128,6 @@ class MarketIdTriplet(
             market_info.condition_id,
             market_info.tokens[0].token_id,
             market_info.tokens[1].token_id,
-            None,
         )
 
     @classmethod
@@ -168,7 +136,6 @@ class MarketIdTriplet(
             condition_id=market_quintet[0],
             token_id_1=market_quintet[3],
             token_id_2=market_quintet[4],
-            rest_endpoint=None,
         )
 
     @classmethod
@@ -177,5 +144,4 @@ class MarketIdTriplet(
             condition_id=condition_id,
             token_id_1=token_id_1,
             token_id_2=token_id_2,
-            rest_endpoint=None,
         )

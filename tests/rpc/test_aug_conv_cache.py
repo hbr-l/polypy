@@ -13,9 +13,9 @@ def conversion_cache() -> AugmentedConversionCache:
 
 def test_update_new(conversion_cache):
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     resize, new_quintets = conversion_cache.update(10, all_market_quintets)
 
@@ -31,12 +31,12 @@ def test_update_new(conversion_cache):
 
 def test_update_existing(conversion_cache):
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
-    add_quintet = MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None)
-    add_quintet2 = MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5", None)
+    add_quintet = MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4")
+    add_quintet2 = MarketIdQuintet("0x5", "0x9", "0x004", "Y5", "N5")
 
     resize, new_quintets = conversion_cache.update(10, all_market_quintets)
     resize2, new_quintets2 = conversion_cache.update(
@@ -78,9 +78,9 @@ def test_update_existing(conversion_cache):
 
 def test_update_new_raises_max_size(conversion_cache):
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     resize, new_quintets = conversion_cache.update(10, all_market_quintets)
 
@@ -88,7 +88,7 @@ def test_update_new_raises_max_size(conversion_cache):
         for i in range(20):
             market_quintets = [
                 MarketIdQuintet(
-                    f"0x{4+i}", f"0x{10+i}", f"0x00{3+i}", f"Y{4+i}", f"N{4+i}", None
+                    f"0x{4+i}", f"0x{10+i}", f"0x00{3+i}", f"Y{4+i}", f"N{4+i}"
                 )
             ]
             conversion_cache.update(1000000, market_quintets)
@@ -110,9 +110,9 @@ def test_update_raises_all_market_quintets(conversion_cache):
     #   empty all_market_quintets, non neg_risk all_market_quintets
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conversion_cache.update(10, all_market_quintets)
 
@@ -120,7 +120,7 @@ def test_update_raises_all_market_quintets(conversion_cache):
     with pytest.raises(PolyPyException) as record:
         conversion_cache.update(
             None,
-            [MarketIdQuintet("0x10", "0x9", "0x005", "Y5", "N5", None)],
+            [MarketIdQuintet("0x10", "0x9", "0x005", "Y5", "N5")],
         )
     assert "Missing" in str(record)
 
@@ -128,8 +128,7 @@ def test_update_raises_all_market_quintets(conversion_cache):
     with pytest.raises(PolyPyException) as record:
         conversion_cache.update(
             None,
-            all_market_quintets
-            + [MarketIdQuintet("0x10", "0x9", "0x005", "Y5", "N5", None)],
+            all_market_quintets + [MarketIdQuintet("0x10", "0x9", "0x005", "Y5", "N5")],
         )
     assert "not consecutive" in str(record)
 
@@ -137,8 +136,7 @@ def test_update_raises_all_market_quintets(conversion_cache):
     with pytest.raises(PolyPyException) as record:
         conversion_cache.update(
             None,
-            all_market_quintets
-            + [MarketIdQuintet("0x4", "0x1", "0x003", "Y4", "N4", None)],
+            all_market_quintets + [MarketIdQuintet("0x4", "0x1", "0x003", "Y4", "N4")],
         )
     assert "do not match" in str(record)
 
@@ -149,19 +147,15 @@ def test_update_raises_all_market_quintets(conversion_cache):
 
     # non neg_risk all_market_quintets
     with pytest.raises(PolyPyException) as record:
-        conversion_cache.update(
-            None, [MarketIdQuintet("0x3", "", "0x002", "Y3", "N3", None)]
-        )
+        conversion_cache.update(None, [MarketIdQuintet("0x3", "", "0x002", "Y3", "N3")])
     assert "Non-negative" in str(record)
     with pytest.raises(PolyPyException):
         conversion_cache.update(
-            None, [MarketIdQuintet("0x001", "", "0x002", "Y3", "N3", None)]
+            None, [MarketIdQuintet("0x001", "", "0x002", "Y3", "N3")]
         )
     assert "Non-negative" in str(record)
     with pytest.raises(PolyPyException) as record:
-        x = all_market_quintets + [
-            MarketIdQuintet("0x001", "", "0x003", "Y3", "N3", None)
-        ]
+        x = all_market_quintets + [MarketIdQuintet("0x001", "", "0x003", "Y3", "N3")]
         conversion_cache.update(
             None,
             x,
@@ -184,14 +178,14 @@ def test_pull(conversion_cache, mocker):
 
     # pre-load cache
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conversion_cache.update(10, all_market_quintets)
 
     # mock
-    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
+    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"))
     mocker.patch(
         "polypy.manager.cache.get_neg_risk_markets",
         return_value=(
@@ -211,8 +205,8 @@ def test_pull(conversion_cache, mocker):
 
     # no update
     all_market_quintets_2 = [
-        MarketIdQuintet("0x11", "0x19", "0x1000", "Y11", "N11", None),
-        MarketIdQuintet("0x12", "0x19", "0x1001", "Y12", "N12", None),
+        MarketIdQuintet("0x11", "0x19", "0x1000", "Y11", "N11"),
+        MarketIdQuintet("0x12", "0x19", "0x1001", "Y12", "N12"),
     ]
     conversion_cache.update(1, all_market_quintets_2)
     mocker.patch(
@@ -243,7 +237,7 @@ def test_pull(conversion_cache, mocker):
 
     # update existing with no diff and delete closed with diff
     all_market_quintets_2.append(
-        MarketIdQuintet("0x13", "0x19", "0x1002", "Y13", "N13", None)
+        MarketIdQuintet("0x13", "0x19", "0x1002", "Y13", "N13")
     )
     mocker.patch(
         "polypy.manager.cache.get_neg_risk_markets",
@@ -277,14 +271,14 @@ def test_pull_by_id(conversion_cache, mocker):
 
     # pre-load cache
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     conversion_cache.update(10, all_market_quintets)
 
     # mock
-    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None))
+    all_market_quintets.append(MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"))
     mocker.patch(
         "polypy.manager.cache.get_neg_risk_markets",
         return_value=(False, all_market_quintets),
@@ -344,13 +338,13 @@ def test_pull_by_id(conversion_cache, mocker):
 
 def test_pull_by_id_raises(conversion_cache):
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     all_market_quintets_2 = [
-        MarketIdQuintet("0x11", "0x19", "0x1000", "Y11", "N11", None),
-        MarketIdQuintet("0x12", "0x19", "0x1001", "Y12", "N12", None),
+        MarketIdQuintet("0x11", "0x19", "0x1000", "Y11", "N11"),
+        MarketIdQuintet("0x12", "0x19", "0x1001", "Y12", "N12"),
     ]
 
     conversion_cache.update(10, all_market_quintets)
@@ -367,9 +361,9 @@ def test_pull_by_id_raises(conversion_cache):
 
 def test_locking(conversion_cache):
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
 
     def f(cache: AugmentedConversionCache):

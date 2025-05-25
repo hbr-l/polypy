@@ -61,7 +61,7 @@ def rpc_settings(private_key) -> RPCSettings:
 
 @pytest.fixture(scope="function")
 def market_triplet() -> MarketIdTriplet:
-    return MarketIdTriplet("0x000000", "000001", "000002", None)
+    return MarketIdTriplet("0x000000", "000001", "000002")
 
 
 def test_pre_split_position(position_manager, rpc_settings, market_triplet):
@@ -135,16 +135,16 @@ def test_pre_convert_positions(position_manager, rpc_settings):
     )
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
 
     nrm_id, size, q_ids, all_mkt_qts = _tx_pre_convert_position(
         position_manager,
         [
-            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-            MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+            MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
         ],
         all_market_quintets,
         1,
@@ -159,7 +159,7 @@ def test_pre_convert_positions(position_manager, rpc_settings):
     nrm_id, size, q_ids, all_mkt_qts = _tx_pre_convert_position(
         position_manager,
         [
-            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
         ],
         all_market_quintets,
         None,
@@ -199,9 +199,9 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
     )
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
 
     # overspending
@@ -209,8 +209,8 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
             ],
             all_market_quintets,
             dec(12.001),
@@ -222,12 +222,12 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
             ],
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-                MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+                MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
             ],
             dec(1),
             "",
@@ -238,9 +238,9 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-                MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+                MarketIdQuintet("0x4", "0x9", "0x003", "Y4", "N4"),
             ],
             all_market_quintets,
             dec(1),
@@ -252,7 +252,7 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
     with pytest.raises(PositionTransactionException):
         _tx_pre_convert_position(
             position_manager,
-            [MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None)],
+            [MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3")],
             all_market_quintets,
             dec(2),
             "",
@@ -263,8 +263,8 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+                MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
             ],
             [],
             dec(2),
@@ -276,10 +276,9 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
             ],
-            all_market_quintets
-            + [MarketIdQuintet("0x22", "", "0x003", "Y22", "N22", None)],
+            all_market_quintets + [MarketIdQuintet("0x22", "", "0x003", "Y22", "N22")],
             dec(2),
             "",
         )
@@ -290,10 +289,10 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
         _tx_pre_convert_position(
             position_manager,
             [
-                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+                MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
             ],
             all_market_quintets
-            + [MarketIdQuintet("0x22", "0x5", "0x003", "Y22", "N22", None)],
+            + [MarketIdQuintet("0x22", "0x5", "0x003", "Y22", "N22")],
             dec(2),
             "",
         )
@@ -308,7 +307,7 @@ def test_pre_convert_positions_raises(position_manager, rpc_settings):
 
 def test_pre_redeem_positions(position_manager, rpc_settings):
     size_1, size_2 = _tx_pre_redeem_positions(
-        position_manager, MarketIdTriplet("0x1", "Y1", "N1", None)
+        position_manager, MarketIdTriplet("0x1", "Y1", "N1")
     )
     assert size_1 == 0
     assert size_2 == 0
@@ -317,7 +316,7 @@ def test_pre_redeem_positions(position_manager, rpc_settings):
         "Y1", dec(10), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True
     )
     size_1, size_2 = _tx_pre_redeem_positions(
-        position_manager, MarketIdTriplet("0x1", "Y1", "N1", None)
+        position_manager, MarketIdTriplet("0x1", "Y1", "N1")
     )
     assert size_1 == dec(10)
     assert size_2 == 0
@@ -326,7 +325,7 @@ def test_pre_redeem_positions(position_manager, rpc_settings):
         "N1", dec(12), dec(0), "some", SIDE.BUY, TRADE_STATUS.MATCHED, True
     )
     size_1, size_2 = _tx_pre_redeem_positions(
-        position_manager, MarketIdTriplet("0x1", "Y1", "N1", None)
+        position_manager, MarketIdTriplet("0x1", "Y1", "N1")
     )
     assert size_1 == dec(10)
     assert size_2 == dec(12)
@@ -334,9 +333,10 @@ def test_pre_redeem_positions(position_manager, rpc_settings):
 
 def test_raises_triplet_vs_quintet(position_manager, rpc_settings):
     with pytest.raises(PolyPyException) as record:
+        # noinspection PyTypeChecker
         _tx_pre_split_position(
             position_manager,
-            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
             dec(1),
             False,
             "",
@@ -344,9 +344,10 @@ def test_raises_triplet_vs_quintet(position_manager, rpc_settings):
     assert "triplet" in str(record)
 
     with pytest.raises(PolyPyException) as record:
+        # noinspection PyTypeChecker
         _tx_pre_merge_positions(
             position_manager,
-            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
+            MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
             dec(1),
             False,
             "",
@@ -354,14 +355,15 @@ def test_raises_triplet_vs_quintet(position_manager, rpc_settings):
     assert "triplet" in str(record)
 
     all_market_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y1", "N1"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y2", "N2"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y3", "N3"),
     ]
     with pytest.raises(PolyPyException) as record:
+        # noinspection PyTypeChecker
         _tx_pre_convert_position(
             position_manager,
-            MarketIdTriplet("0x1", "Y1", "N1", None),
+            MarketIdTriplet("0x1", "Y1", "N1"),
             all_market_quintets,
             dec(1),
             "",
@@ -369,11 +371,12 @@ def test_raises_triplet_vs_quintet(position_manager, rpc_settings):
     assert "quintet" in str(record)
 
     all_market_triplets = [
-        MarketIdTriplet("0x1", "Y1", "N1", None),
-        MarketIdTriplet("0x2", "Y2", "N2", None),
-        MarketIdTriplet("0x3", "Y3", "N3", None),
+        MarketIdTriplet("0x1", "Y1", "N1"),
+        MarketIdTriplet("0x2", "Y2", "N2"),
+        MarketIdTriplet("0x3", "Y3", "N3"),
     ]
     with pytest.raises(PolyPyException) as record:
+        # noinspection PyTypeChecker
         _tx_pre_convert_position(
             position_manager,
             all_market_quintets[0],
@@ -384,6 +387,7 @@ def test_raises_triplet_vs_quintet(position_manager, rpc_settings):
     assert "quintet" in str(record)
 
     with pytest.raises(PolyPyException) as record:
+        # noinspection PyTypeChecker
         tx_redeem_positions(
             rpc_settings, [position_manager], all_market_quintets[0], "YES", False, ""
         )
@@ -410,7 +414,6 @@ def test_assert_redeem_sizes_onchain(private_key):
         "0xd35868afa9257d08411f4c7d61601213fc3d9fa1ebbc1d963572263904be2616",
         "20043121189468219599437255198027106640631597812114545269112896531495574826378",
         "75308226540519873239233623140240170988653500419723135176760582150191967925886",
-        None,
     )
     _assert_redeem_sizes_onchain(rpc, 0, 0, triplet)
 
@@ -423,16 +426,17 @@ def test_assert_redeem_sizes_onchain(private_key):
     assert "on-chain" in str(record)
 
 
+# noinspection DuplicatedCode
 def test_pre_batch_operate_positions(position_manager):
     txn = _tx_pre_batch_operate_positions(position_manager, [], "", "")
     assert txn == []
 
-    triplet1 = MarketIdTriplet("0x01", "Y1", "N1", None)
-    triplet2 = MarketIdTriplet("0x02", "Y2", "N2", None)
+    triplet1 = MarketIdTriplet("0x01", "Y1", "N1")
+    triplet2 = MarketIdTriplet("0x02", "Y2", "N2")
     all_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13"),
     ]
     cvt_quintets = all_quintets[:2]
     position_manager.transact(
@@ -467,15 +471,16 @@ def test_pre_batch_operate_positions(position_manager):
     assert position_manager.balance == dec(100)
 
 
+# noinspection DuplicatedCode,SpellCheckingInspection
 def test_pre_batch_operate_positions_raises(position_manager):
     # failure cases (just test a few to see if _tx_pre ops trigger):
     #   triplet vs quintet, position not in position manager for merge, overspending for merge
-    triplet1 = MarketIdTriplet("0x01", "Y1", "N1", None)
-    triplet2 = MarketIdTriplet("0x02", "Y2", "N2", None)
+    triplet1 = MarketIdTriplet("0x01", "Y1", "N1")
+    triplet2 = MarketIdTriplet("0x02", "Y2", "N2")
     all_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13"),
     ]
     cvt_quintets = all_quintets[:2]
     position_manager.transact(
@@ -510,6 +515,7 @@ def test_pre_batch_operate_positions_raises(position_manager):
         _tx_pre_batch_operate_positions(position_manager, mtxs, "", "")
 
     # triplets in convert
+    # noinspection PyTypeChecker
     mtxs = [
         MTX.split(triplet1, dec(2), False),
         MTX.merge(triplet2, dec(8), False),
@@ -526,11 +532,12 @@ def test_pre_batch_operate_positions_raises(position_manager):
     assert position_manager.balance == dec(100)
 
 
+# noinspection DuplicatedCode
 def test_pre_batch_operate_positions_write_mtx(position_manager, mocker):
     all_quintets = [
-        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11", None),
-        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12", None),
-        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13", None),
+        MarketIdQuintet("0x1", "0x9", "0x000", "Y11", "N11"),
+        MarketIdQuintet("0x2", "0x9", "0x001", "Y12", "N12"),
+        MarketIdQuintet("0x3", "0x9", "0x002", "Y13", "N13"),
     ]
     cvt_quintets = all_quintets[:2]
     position_manager.transact(

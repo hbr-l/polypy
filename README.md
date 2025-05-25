@@ -161,6 +161,8 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/05/25
+- Simpler re-implementation of `MarketIdTriplet` and `MarketIdQuintet`
 #### 2025/05/24
 - Implement `__getstate__` and `__setstate__` for `OrderManager`, `PositionManager` and `RPCSettings`
 #### 2025/05/20
