@@ -275,6 +275,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: use TERMINAL_X_STATI for untrack_x_status
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 # todo doc: multiple default position manager use case: pm A only tracks one wallet (this user stream) whilst second pm tracks this wallet and an other wallet (other user stream) at once
+# todo doc: market orders are not untracked no matter of untrack_insert_status, since market orders have no OrderWSInfo (confirm!)
 class UserStream(AbstractStreamer):
     def __init__(
         self,
