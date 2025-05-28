@@ -275,7 +275,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: use TERMINAL_X_STATI for untrack_x_status
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 # todo doc: multiple default position manager use case: pm A only tracks one wallet (this user stream) whilst second pm tracks this wallet and an other wallet (other user stream) at once
-# todo doc: market orders are not untracked no matter of untrack_insert_status, since market orders have no OrderWSInfo (confirm!)
+# todo doc: untrack_order_by_trade in case of taker order: if TradeWSInfo arrives before REST or OrderWSInfo -> this will fail if "CONFIRMED" is missed -> taker/marketable orders should be cleaned manually from order manager
 class UserStream(AbstractStreamer):
     def __init__(
         self,
@@ -287,6 +287,7 @@ class UserStream(AbstractStreamer):
         passphrase: str,
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
+        untrack_order_by_trade: bool = True,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
         pull_aug_conversion_s: float | None = None,
@@ -325,6 +326,7 @@ class UserStream(AbstractStreamer):
 
         self.untrack_insert_status = _parse_untrack_insert_stati(untrack_insert_status)
         self.untrack_trade_status = _parse_untrack_trade_stati(untrack_trade_status)
+        self.untrack_order_by_trade = untrack_order_by_trade
         self.callback_untrack = callback_untrack
 
         if ws_endpoint[-1] != "/":
@@ -623,23 +625,50 @@ class UserStream(AbstractStreamer):
             # more (order tracked by multiple order managers) or fewer (order not tracked by any order manager)
             #  updates indicates an error
             for tm_idx in tpl_mngs_idx:
-                if self.tuple_mngs[tm_idx][1] is None:
-                    continue
-
                 # noinspection DuplicatedCode
-                numeric_type = self._numeric_type_pos_mng[tm_idx]
-                price = numeric_type(trade_order.price)
-                # if price is negative, we have to properly invert the price: 1 + p
-                # if price is positive, we take it as is: p + 0
-                self.tuple_mngs[tm_idx][1].transact(
-                    asset_id=trade_order.asset_id,
-                    delta_size=numeric_type(trade_order.size),
-                    price=price + (price < 0),
-                    trade_id=msg.id,
-                    side=trade_order.side,
-                    trade_status=msg.status,
-                    allow_create=True,
-                )  # will raise exception if transact fails
+                if self.tuple_mngs[tm_idx][1] is not None:
+                    # noinspection DuplicatedCode
+                    numeric_type = self._numeric_type_pos_mng[tm_idx]
+                    price = numeric_type(trade_order.price)
+                    # if price is negative, we have to properly invert the price: 1 + p
+                    # if price is positive, we take it as is: p + 0
+                    self.tuple_mngs[tm_idx][1].transact(
+                        asset_id=trade_order.asset_id,
+                        delta_size=numeric_type(trade_order.size),
+                        price=price + (price < 0),
+                        trade_id=msg.id,
+                        side=trade_order.side,
+                        trade_status=msg.status,
+                        allow_create=True,
+                    )  # will raise exception if transact fails
+
+                if (
+                    self.untrack_order_by_trade
+                    and self.tuple_mngs[tm_idx][0] is not None
+                    and (
+                        order := self.tuple_mngs[tm_idx][0].get_by_id(
+                            trade_order.order_id
+                        )
+                    )
+                ):
+                    # if OrderWSInfo arrives before TradeWSInfo:
+                    #   order is already updated and untracked (if applicable), in which case,
+                    #   this condition will be skipped and we are all good
+
+                    # if OrderWSInfo arrive before TradeWSInfo, we have three cases:
+                    #   1) maker order: OrderWSInfo will arrive later and will update and untrack order (if applicable)
+                    #   2) partial taker order with resting remainder: OrderWSInfo will be emitted as soon as resting
+                    #       remainder is matched, which then is case 1)
+                    #   3) (partial) taker order with no resting remainder:
+                    #       this can either be FOK (fully filled) or FAK (partially filled),
+                    #       in this case no (!) OrderWSInfo, we have two sub-cases:
+                    #           a) REST response arrives before TradeWSInfo: order is updated
+                    #               and untracked (if applicable), we are all good
+                    #           b) REST response arrives after TradeWSInfo:
+                    #               order status is not updated yet, but at latest when "CONFIRMED" arrives,
+                    #               order status will be in terminal state, such that we can untrack (if applicable)
+
+                    self._untrack_order_id(order.status, trade_order.order_id, {tm_idx})
 
             # should ideally be either 1 or 0
             nb_updates.append(len(tpl_mngs_idx))
@@ -675,6 +704,12 @@ class UserStream(AbstractStreamer):
                     trade_status=msg.status,
                     allow_create=True,
                 )
+            # if we evict a trade, we know, that there is no order manager assigned,
+            # so we do not need to untrack orders
+            # we only untrack from position manager
+            self._untrack_position(
+                msg.status, trade_order.asset_id, self._default_pos_mngs_idx
+            )
 
     def _order_message(self, msg: OrderWSInfo) -> int:
         tpl_mngs_idx = self._filter_tuple_mngs(msg.id)
