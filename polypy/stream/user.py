@@ -664,7 +664,9 @@ class UserStream(AbstractStreamer):
         untracked_positions = [
             self.tuple_mngs[tm_idx][1].untrack(asset_id)
             for tm_idx in pos_mngs_idx
-            if self.tuple_mngs[tm_idx][1].get_by_id(asset_id).empty
+            if (frozen_pos := self.tuple_mngs[tm_idx][1].get_by_id(asset_id))
+            is not None
+            and frozen_pos.empty
         ]  # only untrack empty positions
         untracked_positions = [pos for pos in untracked_positions if pos is not None]
 
