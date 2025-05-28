@@ -167,6 +167,8 @@ by `TradeWSInfo` (websocket message) if `Order.status` match `untrack_insert_sta
 for taker orders (only) if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
 - Fix bug in `UserStream` where positions in default `PositionManagers` where not automatically untracked based 
 on `untrack_trade_status`
+- Fix minor bug in `OrderManager.clean`, which now cleans per order status OR order expiration. Expiration-based 
+cleaning now works also even if no order status is specified (which previously only worked if an order status was set)
 #### 2025/05/25
 - Simpler re-implementation of `MarketIdTriplet` and `MarketIdQuintet`
 #### 2025/05/24

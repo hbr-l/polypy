@@ -1004,12 +1004,19 @@ class OrderManager(OrderManagerProtocol):
 
     def clean(
         self,
-        statuses: INSERT_STATUS | list[INSERT_STATUS] = TERMINAL_INSERT_STATI,
+        statuses: INSERT_STATUS | list[INSERT_STATUS] | None = TERMINAL_INSERT_STATI,
         expiration: int = -1,
     ) -> list[OrderProtocol]:
         # filter out status and expiration
 
-        if isinstance(statuses, (list, set, tuple)) and not statuses:
+        if statuses is None:
+            statuses = []
+
+        if (
+            isinstance(statuses, (list, set, tuple))
+            and not statuses
+            and expiration == -1
+        ):
             return []
 
         _, statuses = _parse_to_list(statuses)

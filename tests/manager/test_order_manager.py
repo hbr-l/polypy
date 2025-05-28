@@ -1510,12 +1510,53 @@ def test_clean(
     assert list(order_manager.order_ids) == ["2", "3"]
 
 
+def test_clean_expiration(order_manager, sample_order):
+    order = sample_order("123")
+    order.status = INSERT_STATUS.MATCHED
+    order_manager.track(order, False)
+
+    order2 = sample_order("456")
+    order2.status = INSERT_STATUS.UNMATCHED
+    order2.eip712order.expiration = 1000
+    order_manager.track(order2, False)
+
+    assert order_manager.order_ids == {"123", "456"}
+
+    # only clean expired
+    order_manager.clean(None, 1001)
+    assert order_manager.order_ids == {"123"}
+
+    # restore
+    order_manager.track(order2, False)
+    assert order_manager.order_ids == {"123", "456"}
+
+    # only clean status
+    order_manager.clean(INSERT_STATUS.MATCHED)
+    assert order_manager.order_ids == {"456"}
+
+    # restore
+    order_manager.track(order, False)
+    assert order_manager.order_ids == {"123", "456"}
+
+    # only clean status with expiration set
+    order_manager.clean(INSERT_STATUS.MATCHED, 500)
+    assert order_manager.order_ids == {"456"}
+
+    # restore
+    order_manager.track(order, False)
+    assert order_manager.order_ids == {"123", "456"}
+
+    # clean expired and status
+    order_manager.clean(expiration=1001)
+    assert not order_manager.order_ids
+
+
 def test_clean_empty(order_manager, sample_order):
     order = sample_order("123")
     order.status = INSERT_STATUS.UNMATCHED
     order_manager.track(order, False)
 
-    order_manager.clean([])
+    order_manager.clean(None)
     assert "123" in order_manager.order_ids
 
 
