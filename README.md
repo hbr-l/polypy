@@ -83,10 +83,10 @@ order, response = order_manager.limit_order(
 time.sleep(10)
 
 # check order status
-order_manager.get(order).status
+status = order_manager.get_by_id(order.id).status
 
 # check cash position
-position_manager.balance
+balance = position_manager.balance
 
 # check buying power (to submit next buy order)
 position_manager.buying_power(order_manager)
@@ -162,16 +162,10 @@ Development
 
 ### Change Log
 #### 2025/05/28
-- Add argument `untrack_order_by_trade` to `UserStream` to automatically untrack/clean orders in `OrderManager` 
-by `TradeWSInfo` (websocket message) if `Order.status` match `untrack_insert_status` (though this still might fail
-for taker orders (only) if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
-- Fix bug in `UserStream` where positions in default `PositionManagers` where not automatically untracked based 
-on `untrack_trade_status`
-- In `UserStream`, check `OrderManager` against `market_id` and not `asset_id` to determine if `OrderManager` is 
-updatable by `UserStream` (instead of checking `asset_id` which is too narrow, since a market covers both YES and 
-NO assets) 
-- Fix minor bug in `OrderManager.clean`, which now cleans per order status OR order expiration. Expiration-based 
-cleaning now works also even if no order status is specified (which previously only worked if an order status was set)
+- Add argument `untrack_order_terminal_by_trade` to `UserStream` to automatically untrack/clean orders in `OrderManager` by `TradeWSInfo` (websocket message) if `Order.status` in `TERMINAL_INSERT_STATI` (though this still might fail for taker orders (only) if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
+- Add argument `cover_mode` to `UserStream` controlling the behavior when checking if all `token_id` of `OrderManager`s are contained in `market_triplets` (which, i.e. might not be the case if an `OrderManager` is assigned to multiple `UserStream`s)
+- Fix bug in `UserStream` where positions in default `PositionManagers` where not automatically untracked based on `untrack_trade_status`
+- Fix minor bug in `OrderManager.clean`, which now cleans per order status OR order expiration. Expiration-based cleaning now works also even if no order status is specified (which previously only worked if an order status was set as well)
 #### 2025/05/25
 - Simpler re-implementation of `MarketIdTriplet` and `MarketIdQuintet`
 #### 2025/05/24

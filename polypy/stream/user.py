@@ -1,4 +1,5 @@
 import copy
+import itertools
 import threading
 import time
 import traceback
@@ -136,45 +137,28 @@ def _assert_unique_order_mngs(
         )
 
 
-def _assert_market_ids_order_mngs(
+def _assert_token_ids_order_mngs(
     tuple_manager: list[TupleManager],
-    market_triplets: MarketTriplet | list[MarketIdTriplet],
-    market_ids: set[str],
-):
-    id_dict = {}
-    if isinstance(market_triplets, (tuple, MarketIdTriplet)) and isinstance(
-        market_triplets[0], str
-    ):
-        id_dict[market_triplets[1]] = market_triplets[0]
-        id_dict[market_triplets[2]] = market_triplets[0]
-    elif isinstance(market_triplets, list):
-        for m in market_triplets:
-            id_dict[m[1]] = m[0]
-            id_dict[m[2]] = m[0]
-    else:
-        raise SubscriptionException(
-            f"`market_triplets` must either be MarketTriplet or list[MarketTriplet]. "
-            f"Got: {type(market_triplets)}"
+    asset_ids: set[str],
+    coverage_mode: Literal["except", "warn", "ignore"],
+) -> None:
+    token_ids = set(
+        itertools.chain.from_iterable(
+            tm[0].token_ids for tm in tuple_manager if tm[0] is not None
         )
+    )
 
-    try:
-        om_market_ids = set(
-            id_dict[token_id]
-            for tm in tuple_manager
-            if tm[0] is not None
-            for token_id in tm[0].token_ids
-        )
-    except KeyError as e:
-        raise SubscriptionException(
-            f"`token_id` of Order Manager not contained in `market_triplets`: {e}"
-        ) from e
-
-    # this in theory should never raise, but sanity check
-    if not om_market_ids.issubset(market_ids):
-        raise SubscriptionException(
-            f"Not all markets of all Order Managers contained in `market_triplets`: "
-            f"{om_market_ids - market_ids}"
-        )
+    if not token_ids.issubset(asset_ids):
+        if coverage_mode == "except":
+            raise SubscriptionException(
+                f"Not all token_ids of all Order Managers are contained in `market_assets`: "
+                f"{token_ids - asset_ids}"
+            )
+        elif coverage_mode == "warn":
+            warnings.warn(
+                f"Not all token_ids of all Order Managers are contained in `market_assets`: "
+                f"{token_ids - asset_ids}"
+            )
 
 
 def _check_max_subscriptions(market_ids: set[str], max_sub: int) -> None:
@@ -319,12 +303,13 @@ class UserStream(AbstractStreamer):
         passphrase: str,
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
-        untrack_order_by_trade: bool = True,
+        untrack_order_terminal_by_trade: bool = True,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
         pull_aug_conversion_s: float | None = None,
         ping_time: float | None = 5,
         update_mode: Literal["explicit", "implicit"] = "explicit",
+        coverage_mode: Literal["except", "warn", "ignore"] = "except",
         invalidate_on_exc: bool = True,
         callback_msg: Callable[[Self, TradeWSInfo | OrderWSInfo], None] | None = None,
         callback_exc: Callable[[Self, Exception], None] | None = None,
@@ -339,7 +324,7 @@ class UserStream(AbstractStreamer):
         _check_max_subscriptions(market_ids, max_subscriptions)
         _assert_api_key_order_mng(tuple_manager, api_key)
         _assert_unique_order_mngs(tuple_manager)
-        _assert_market_ids_order_mngs(tuple_manager, market_triplets, market_ids)
+        _assert_token_ids_order_mngs(tuple_manager, asset_ids, coverage_mode)
         # we do not check position manager asset_ids (=token_ids), because a single position manager
         #   can be coupled with multiple order managers
 
@@ -358,13 +343,14 @@ class UserStream(AbstractStreamer):
 
         self.untrack_insert_status = _parse_untrack_insert_stati(untrack_insert_status)
         self.untrack_trade_status = _parse_untrack_trade_stati(untrack_trade_status)
-        self.untrack_order_by_trade = untrack_order_by_trade
+        self.untrack_order_terminal_by_trade = untrack_order_terminal_by_trade
         self.callback_untrack = callback_untrack
 
         if ws_endpoint[-1] != "/":
             ws_endpoint = f"{ws_endpoint}/"
 
         self.update_mode = update_mode
+        self.coverage_mode = coverage_mode
         self.invalidate_on_exc = invalidate_on_exc
 
         self.buffer_thread_settings = _parse_buffer_settings(buffer_thread_settings)
@@ -620,6 +606,41 @@ class UserStream(AbstractStreamer):
         if self.callback_untrack is not None and untracked_orders:
             self.callback_untrack(untracked_orders, [])
 
+    def _untrack_order_id_terminal(self, order_id: str, ord_mngs_id: int) -> None:
+        # if OrderWSInfo arrives before TradeWSInfo:
+        #   order is already updated and untracked (if applicable), in which case,
+        #   this condition will be skipped and we are all good
+
+        # if OrderWSInfo arrive before TradeWSInfo, we have three cases:
+        #   1) maker order: OrderWSInfo will arrive later and will update and untrack order (if applicable)
+        #   2) partial taker order with resting remainder: OrderWSInfo will be emitted as soon as resting
+        #       remainder is matched, which then is case 1)
+        #   3) (partial) taker order with no resting remainder:
+        #       this can either be FOK (fully filled) or FAK (partially filled),
+        #       in this case no (!) OrderWSInfo, we have two sub-cases:
+        #           a) REST response arrives before TradeWSInfo: order is updated
+        #               and untracked (if applicable), we are all good
+        #           b) REST response arrives after TradeWSInfo:
+        #               order status is not updated yet, but at latest when "CONFIRMED" arrives,
+        #               order status will be in terminal state, such that we can untrack (if applicable)
+
+        if not self.untrack_order_terminal_by_trade:
+            return
+
+        if self.tuple_mngs[ord_mngs_id][0] is None:
+            return
+
+        if (order := self.tuple_mngs[ord_mngs_id][0].get_by_id(order_id)) is None:
+            return
+
+        if order.status not in TERMINAL_INSERT_STATI:
+            return
+
+        untracked_order = self.tuple_mngs[ord_mngs_id][0].untrack(order_id, False)
+
+        if self.callback_untrack is not None and untracked_order:
+            self.callback_untrack([untracked_order], [])
+
     def _untrack_position(
         self, status: TRADE_STATUS, asset_id: str, pos_mngs_idx: set[int]
     ) -> None:
@@ -674,33 +695,7 @@ class UserStream(AbstractStreamer):
                         allow_create=True,
                     )  # will raise exception if transact fails
 
-                if (
-                    self.untrack_order_by_trade
-                    and self.tuple_mngs[tm_idx][0] is not None
-                    and (
-                        order := self.tuple_mngs[tm_idx][0].get_by_id(
-                            trade_order.order_id
-                        )
-                    )
-                ):
-                    # if OrderWSInfo arrives before TradeWSInfo:
-                    #   order is already updated and untracked (if applicable), in which case,
-                    #   this condition will be skipped and we are all good
-
-                    # if OrderWSInfo arrive before TradeWSInfo, we have three cases:
-                    #   1) maker order: OrderWSInfo will arrive later and will update and untrack order (if applicable)
-                    #   2) partial taker order with resting remainder: OrderWSInfo will be emitted as soon as resting
-                    #       remainder is matched, which then is case 1)
-                    #   3) (partial) taker order with no resting remainder:
-                    #       this can either be FOK (fully filled) or FAK (partially filled),
-                    #       in this case no (!) OrderWSInfo, we have two sub-cases:
-                    #           a) REST response arrives before TradeWSInfo: order is updated
-                    #               and untracked (if applicable), we are all good
-                    #           b) REST response arrives after TradeWSInfo:
-                    #               order status is not updated yet, but at latest when "CONFIRMED" arrives,
-                    #               order status will be in terminal state, such that we can untrack (if applicable)
-
-                    self._untrack_order_id(order.status, trade_order.order_id, {tm_idx})
+                self._untrack_order_id_terminal(trade_order.order_id, tm_idx)
 
             # should ideally be either 1 or 0
             nb_updates.append(len(tpl_mngs_idx))

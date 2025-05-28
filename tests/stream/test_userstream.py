@@ -102,10 +102,11 @@ def streamer(
     def _closure(
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
-        untrack_order_by_trade: bool = True,
+        untrack_order_terminal_by_trade: bool = True,
         monitor_assets_thread_s: float | None = None,
         buffer_settings: BufferThreadSettings | None = (5, 5_000),
         update_mode: Literal["explicit", "implicit"] = "explicit",
+        coverage_mode: Literal["except", "warn", "ignore"] = "except",
         invalidate_on_exc: bool = True,
         callback_msg: Callable[[UserStream, TradeWSInfo | OrderWSInfo], None]
         | None = None,
@@ -122,12 +123,13 @@ def streamer(
             passphrase,
             untrack_insert_status,
             untrack_trade_status,
-            untrack_order_by_trade,
+            untrack_order_terminal_by_trade,
             monitor_assets_thread_s,
             buffer_settings,
             None,
             5,
             update_mode,
+            coverage_mode,
             invalidate_on_exc,
             callback_msg,
             callback_exc,
@@ -787,7 +789,7 @@ def test_untrack_order_by_trade(
     stream, om, pm = streamer(
         callback_clean=callback_clean,
         untrack_insert_status=INSERT_STATUS.MATCHED,
-        untrack_order_by_trade=True,
+        untrack_order_terminal_by_trade=True,
     )
 
     pm.track(Position.create("1234", 0))
@@ -893,13 +895,12 @@ def test_untrack_order_by_trade_inactive(
     callback_clean,
     private_key,
 ):
-    # same as test_untrack_order_by_trade, but untrack_insert_status=None,
-    # which renders untrack_order_by_trade inactive (will be ignored)
+    # same as test_untrack_order_by_trade, but untrack_order_terminal_by_trade=False
 
     stream, om, pm = streamer(
         callback_clean=callback_clean,
         untrack_insert_status=None,
-        untrack_order_by_trade=True,
+        untrack_order_terminal_by_trade=False,
     )
 
     pm.track(Position.create("1234", 0))
@@ -1840,6 +1841,36 @@ def test_implicit_no_buffer_trade_info(streamer, trade_info_taker_buy_matched):
 
     assert om.valid is True
     assert pm.valid is True
+
+
+def test_raise_market_triplet_not_list(
+    order_manager,
+    position_manager,
+    api_key,
+    secret,
+    passphrase,
+    market_id,
+    yes_asset_id,
+    no_asset_id,
+):
+    UserStream(
+        "ws://localhost:8002/",
+        (order_manager, position_manager),
+        [(market_id, yes_asset_id, no_asset_id)],
+        api_key,
+        secret,
+        passphrase,
+    )
+    with pytest.raises(StreamException):
+        # noinspection PyTypeChecker
+        UserStream(
+            "ws://localhost:8002/",
+            (order_manager, position_manager),
+            ((market_id, yes_asset_id, no_asset_id),),
+            api_key,
+            secret,
+            passphrase,
+        )
 
 
 def test_raise_no_market_id(
