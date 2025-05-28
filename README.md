@@ -162,7 +162,7 @@ Development
 
 ### Change Log
 #### 2025/05/28
-- Add argument `untrack_order_terminal_by_trade` to `UserStream` to automatically untrack/clean orders in `OrderManager` by `TradeWSInfo` (websocket message) if `Order.status` in `TERMINAL_INSERT_STATI` (though this still might fail for taker orders (only) if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
+- Add argument `untrack_order_by_trade_terminal` to `UserStream` to automatically untrack/clean orders in `OrderManager` by `TradeWSInfo` (websocket message) if `Order.status` in `TERMINAL_INSERT_STATI` and `TradeWSInfo.status` in `TERMINAL_TRADE_STATI` (though this will fail if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
 - Add argument `cover_mode` to `UserStream` controlling the behavior when checking if all `token_id` of `OrderManager`s are contained in `market_triplets` (which, i.e. might not be the case if an `OrderManager` is assigned to multiple `UserStream`s)
 - Fix bug in `UserStream` where positions in default `PositionManagers` where not automatically untracked based on `untrack_trade_status`
 - Fix minor bug in `OrderManager.clean`, which now cleans per order status OR order expiration. Expiration-based cleaning now works also even if no order status is specified (which previously only worked if an order status was set as well)

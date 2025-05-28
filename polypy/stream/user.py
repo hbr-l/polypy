@@ -291,7 +291,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: use TERMINAL_X_STATI for untrack_x_status
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 # todo doc: multiple default position manager use case: pm A only tracks one wallet (this user stream) whilst second pm tracks this wallet and an other wallet (other user stream) at once
-# todo doc: untrack_order_by_trade in case of taker order: if TradeWSInfo arrives before REST or OrderWSInfo -> this will fail if "CONFIRMED" is missed -> taker/marketable orders should be cleaned manually from order manager
+# todo doc: untrack_order_by_trade_terminal -> this will fail if "CONFIRMED" is missed
 class UserStream(AbstractStreamer):
     def __init__(
         self,
@@ -303,7 +303,7 @@ class UserStream(AbstractStreamer):
         passphrase: str,
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
-        untrack_order_terminal_by_trade: bool = True,
+        untrack_order_by_trade_terminal: bool = True,
         monitor_assets_thread_s: float | None = 0.1,
         buffer_thread_settings: BufferThreadSettings | None = (2, 5_000),
         pull_aug_conversion_s: float | None = None,
@@ -343,7 +343,7 @@ class UserStream(AbstractStreamer):
 
         self.untrack_insert_status = _parse_untrack_insert_stati(untrack_insert_status)
         self.untrack_trade_status = _parse_untrack_trade_stati(untrack_trade_status)
-        self.untrack_order_terminal_by_trade = untrack_order_terminal_by_trade
+        self.untrack_order_by_trade_terminal = untrack_order_by_trade_terminal
         self.callback_untrack = callback_untrack
 
         if ws_endpoint[-1] != "/":
@@ -606,12 +606,14 @@ class UserStream(AbstractStreamer):
         if self.callback_untrack is not None and untracked_orders:
             self.callback_untrack(untracked_orders, [])
 
-    def _untrack_order_id_terminal(self, order_id: str, ord_mngs_id: int) -> None:
+    def _untrack_order_trade_terminal(
+        self, trade_status: TRADE_STATUS, order_id: str, ord_mngs_id: int
+    ) -> None:
         # if OrderWSInfo arrives before TradeWSInfo:
         #   order is already updated and untracked (if applicable), in which case,
         #   this condition will be skipped and we are all good
 
-        # if OrderWSInfo arrive before TradeWSInfo, we have three cases:
+        # if OrderWSInfo arrives before TradeWSInfo, we have three cases:
         #   1) maker order: OrderWSInfo will arrive later and will update and untrack order (if applicable)
         #   2) partial taker order with resting remainder: OrderWSInfo will be emitted as soon as resting
         #       remainder is matched, which then is case 1)
@@ -624,10 +626,16 @@ class UserStream(AbstractStreamer):
         #               order status is not updated yet, but at latest when "CONFIRMED" arrives,
         #               order status will be in terminal state, such that we can untrack (if applicable)
 
-        if not self.untrack_order_terminal_by_trade:
+        # todo
+        # if CONFIRMED was missed, this will always fail
+
+        if not self.untrack_order_by_trade_terminal:
             return
 
         if self.tuple_mngs[ord_mngs_id][0] is None:
+            return
+
+        if trade_status not in TERMINAL_TRADE_STATI:
             return
 
         if (order := self.tuple_mngs[ord_mngs_id][0].get_by_id(order_id)) is None:
@@ -695,7 +703,9 @@ class UserStream(AbstractStreamer):
                         allow_create=True,
                     )  # will raise exception if transact fails
 
-                self._untrack_order_id_terminal(trade_order.order_id, tm_idx)
+                self._untrack_order_trade_terminal(
+                    msg.status, trade_order.order_id, tm_idx
+                )
 
             # should ideally be either 1 or 0
             nb_updates.append(len(tpl_mngs_idx))

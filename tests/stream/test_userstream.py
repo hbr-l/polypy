@@ -102,7 +102,7 @@ def streamer(
     def _closure(
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
-        untrack_order_terminal_by_trade: bool = True,
+        untrack_order_by_trade_terminal: bool = True,
         monitor_assets_thread_s: float | None = None,
         buffer_settings: BufferThreadSettings | None = (5, 5_000),
         update_mode: Literal["explicit", "implicit"] = "explicit",
@@ -123,7 +123,7 @@ def streamer(
             passphrase,
             untrack_insert_status,
             untrack_trade_status,
-            untrack_order_terminal_by_trade,
+            untrack_order_by_trade_terminal,
             monitor_assets_thread_s,
             buffer_settings,
             None,
@@ -788,8 +788,7 @@ def test_untrack_order_by_trade(
 
     stream, om, pm = streamer(
         callback_clean=callback_clean,
-        untrack_insert_status=INSERT_STATUS.MATCHED,
-        untrack_order_terminal_by_trade=True,
+        untrack_order_by_trade_terminal=True,
     )
 
     pm.track(Position.create("1234", 0))
@@ -895,12 +894,11 @@ def test_untrack_order_by_trade_inactive(
     callback_clean,
     private_key,
 ):
-    # same as test_untrack_order_by_trade, but untrack_order_terminal_by_trade=False
+    # same as test_untrack_order_by_trade, but untrack_order_by_trade_terminal=False
 
     stream, om, pm = streamer(
         callback_clean=callback_clean,
-        untrack_insert_status=None,
-        untrack_order_terminal_by_trade=False,
+        untrack_order_by_trade_terminal=False,
     )
 
     pm.track(Position.create("1234", 0))
