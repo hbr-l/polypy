@@ -102,6 +102,7 @@ def streamer(
     def _closure(
         untrack_insert_status: INSERT_STATUS | list[INSERT_STATUS] | None = None,
         untrack_trade_status: TRADE_STATUS | list[TRADE_STATUS] | None = None,
+        untrack_order_by_trade: bool = True,
         monitor_assets_thread_s: float | None = None,
         buffer_settings: BufferThreadSettings | None = (5, 5_000),
         update_mode: Literal["explicit", "implicit"] = "explicit",
@@ -121,6 +122,7 @@ def streamer(
             passphrase,
             untrack_insert_status,
             untrack_trade_status,
+            untrack_order_by_trade,
             monitor_assets_thread_s,
             buffer_settings,
             None,
@@ -664,6 +666,7 @@ def test_no_buffer_order_info_maker_order(
     )
 
 
+# noinspection DuplicatedCode
 def test_untrack_trade_status_matched(
     streamer,
     yes_asset_id,
@@ -768,6 +771,225 @@ def test_untrack_trade_status_matched(
     assert list(pm.asset_ids) == [USDC, "1234"]
     assert pm.balance_total == 112
     assert pm.get_by_id("1234").size_total == 0
+
+
+# noinspection DuplicatedCode
+def test_untrack_order_by_trade(
+    streamer,
+    yes_asset_id,
+    trade_info_maker_sell_matched,
+    trade_info_taker_sell_matched,
+    callback_clean,
+    private_key,
+):
+    # maker vs taker
+
+    stream, om, pm = streamer(
+        callback_clean=callback_clean,
+        untrack_insert_status=INSERT_STATUS.MATCHED,
+        untrack_order_by_trade=True,
+    )
+
+    pm.track(Position.create("1234", 0))
+    # maker position
+    pos_maker = Position.create(
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        100,
+    )
+    pm.track(pos_maker)
+    # taker position
+    pos_taker = Position.create(
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        100,
+    )
+    pm.track(pos_taker)
+
+    # we only need some fake orders s.t. trade messages will be assigned to the correct position manager
+    order_maker = create_limit_order(
+        0.99,
+        10,
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
+    )
+    order_taker = create_limit_order(
+        0.99,
+        10,
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
+    )
+    om.track(order_maker, False)
+    om.track(order_taker, False)
+
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(2)
+
+    assert order_taker.status is INSERT_STATUS.DEFINED
+    assert order_taker.status is INSERT_STATUS.DEFINED
+    assert len(om.token_ids) == 2
+    assert len(callback_clean.cleaned_orders) == 0
+
+    # update afterward: simulate delayed REST
+    order_maker.status = INSERT_STATUS.MATCHED
+    order_taker.status = INSERT_STATUS.MATCHED
+
+    trade_info_maker_sell_matched = msgspec.structs.replace(
+        trade_info_maker_sell_matched, status=TRADE_STATUS.CONFIRMED
+    )
+    trade_info_taker_sell_matched = msgspec.structs.replace(
+        trade_info_taker_sell_matched, status=TRADE_STATUS.CONFIRMED
+    )
+
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(0.2)
+
+    assert len(om.token_ids) == 0
+    assert len(callback_clean.cleaned_orders) == 2
+    assert {o.id for o in callback_clean.cleaned_orders} == {
+        order_taker.id,
+        order_maker.id,
+    }
+    assert callback_clean.cleaned_positions == []
+    assert (
+        pm.get_by_id(
+            "25742247876332768458781360292043764039507900813404980298479194684402595556451"
+        ).size_total
+        == 95
+    )
+    assert (
+        pm.get_by_id(
+            "95786924372760057572092804419385993470890190892343223404877167501659835222533"
+        ).size_total
+        == 95
+    )
+    assert pm.get_by_id("1234").size_total == 0
+    assert pm.balance_total == 106
+    assert len(pm.asset_ids) == 4
+
+
+# noinspection DuplicatedCode
+def test_untrack_order_by_trade_inactive(
+    streamer,
+    yes_asset_id,
+    trade_info_maker_sell_matched,
+    trade_info_taker_sell_matched,
+    callback_clean,
+    private_key,
+):
+    # same as test_untrack_order_by_trade, but untrack_insert_status=None,
+    # which renders untrack_order_by_trade inactive (will be ignored)
+
+    stream, om, pm = streamer(
+        callback_clean=callback_clean,
+        untrack_insert_status=None,
+        untrack_order_by_trade=True,
+    )
+
+    pm.track(Position.create("1234", 0))
+    # maker position
+    pos_maker = Position.create(
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        100,
+    )
+    pm.track(pos_maker)
+    # taker position
+    pos_taker = Position.create(
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        100,
+    )
+    pm.track(pos_taker)
+
+    # we only need some fake orders s.t. trade messages will be assigned to the correct position manager
+    order_maker = create_limit_order(
+        0.99,
+        10,
+        "95786924372760057572092804419385993470890190892343223404877167501659835222533",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        order_id="0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
+        signature="signature",
+    )
+    order_taker = create_limit_order(
+        0.99,
+        10,
+        "25742247876332768458781360292043764039507900813404980298479194684402595556451",
+        SIDE.SELL,
+        0.01,
+        False,
+        CHAIN_ID.POLYGON,
+        private_key,
+        None,
+        SIGNATURE_TYPE.EOA,
+        order_id="0xe9f3d896fba10ed3600000000000000000000000000000000000000000000000",
+        signature="signature",
+    )
+    om.track(order_maker, False)
+    om.track(order_taker, False)
+
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(2)
+
+    assert order_taker.status is INSERT_STATUS.DEFINED
+    assert order_taker.status is INSERT_STATUS.DEFINED
+    assert len(om.token_ids) == 2
+    assert len(callback_clean.cleaned_orders) == 0
+
+    # update afterward: simulate delayed REST
+    order_maker.status = INSERT_STATUS.MATCHED
+    order_taker.status = INSERT_STATUS.MATCHED
+
+    trade_info_maker_sell_matched = msgspec.structs.replace(
+        trade_info_maker_sell_matched, status=TRADE_STATUS.CONFIRMED
+    )
+    trade_info_taker_sell_matched = msgspec.structs.replace(
+        trade_info_taker_sell_matched, status=TRADE_STATUS.CONFIRMED
+    )
+
+    stream.on_msg(trade_info_maker_sell_matched)
+    stream.on_msg(trade_info_taker_sell_matched)
+    time.sleep(0.2)
+
+    assert len(om.token_ids) == 2
+    assert len(callback_clean.cleaned_orders) == 0
+    assert callback_clean.cleaned_positions == []
+    assert (
+        pm.get_by_id(
+            "25742247876332768458781360292043764039507900813404980298479194684402595556451"
+        ).size_total
+        == 95
+    )
+    assert (
+        pm.get_by_id(
+            "95786924372760057572092804419385993470890190892343223404877167501659835222533"
+        ).size_total
+        == 95
+    )
+    assert pm.get_by_id("1234").size_total == 0
+    assert pm.balance_total == 106
+    assert len(pm.asset_ids) == 4
 
 
 def test_raise_untrack_trade_status_wrong_init(streamer):

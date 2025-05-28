@@ -161,6 +161,12 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/05/28
+- Add argument `untrack_order_by_trade` to `UserStream` to automatically untrack/clean orders in `OrderManager` 
+by `TradeWSInfo` (websocket message) if `Order.status` match `untrack_insert_status` (though this still might fail
+for taker orders (only) if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
+- Fix bug in `UserStream` where positions in default `PositionManagers` where not automatically untracked based 
+on `untrack_trade_status`
 #### 2025/05/25
 - Simpler re-implementation of `MarketIdTriplet` and `MarketIdQuintet`
 #### 2025/05/24

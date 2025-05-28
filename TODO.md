@@ -56,6 +56,7 @@ _(backward-incompatible changes, changes in signatures)_
 _(backward-compatible changes, no changes in signatures)_
 - [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
+- [ ] __`untrack_order_by_trade` in `UserStream` might fail for taker orders (only) in case of `CONFIRMED` status of `TradeWSInfo`-message was missed__
 - [ ] __replace np.ndarray with NDArray for better type annotations__
 - [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
 - [ ] __Rewrite `MarketStream`__: 
