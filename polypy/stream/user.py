@@ -1,5 +1,4 @@
 import copy
-import itertools
 import threading
 import time
 import traceback
@@ -78,9 +77,16 @@ def _split_market_assets(
     if isinstance(market_triplets, list):
         market_ids = {mas[0] for mas in market_triplets}
         asset_ids = {asset_id for mas in market_triplets for asset_id in mas[1:]}
-    else:
+    elif isinstance(market_triplets, (tuple, MarketIdTriplet)) and isinstance(
+        market_triplets[0], str
+    ):
         market_ids = {market_triplets[0]}
         asset_ids = {market_triplets[1], market_triplets[2]}
+    else:
+        raise SubscriptionException(
+            f"`market_triplets` must either be MarketTriplet or list[MarketTriplet]. "
+            f"Got: {type(market_triplets)}"
+        )
 
     if not market_ids:
         raise SubscriptionException("No markets (condition_id) to subscribe to.")
@@ -130,18 +136,44 @@ def _assert_unique_order_mngs(
         )
 
 
-def _assert_token_ids_order_mngs(
-    tuple_manager: list[TupleManager], asset_ids: set[str]
-) -> None:
-    token_ids = set(
-        itertools.chain.from_iterable(
-            tm[0].token_ids for tm in tuple_manager if tm[0] is not None
-        )
-    )
-
-    if not token_ids.issubset(asset_ids):
+def _assert_market_ids_order_mngs(
+    tuple_manager: list[TupleManager],
+    market_triplets: MarketTriplet | list[MarketIdTriplet],
+    market_ids: set[str],
+):
+    id_dict = {}
+    if isinstance(market_triplets, (tuple, MarketIdTriplet)) and isinstance(
+        market_triplets[0], str
+    ):
+        id_dict[market_triplets[1]] = market_triplets[0]
+        id_dict[market_triplets[2]] = market_triplets[0]
+    elif isinstance(market_triplets, list):
+        for m in market_triplets:
+            id_dict[m[1]] = m[0]
+            id_dict[m[2]] = m[0]
+    else:
         raise SubscriptionException(
-            "Not all token_ids of all Order Managers are contained in `market_assets`."
+            f"`market_triplets` must either be MarketTriplet or list[MarketTriplet]. "
+            f"Got: {type(market_triplets)}"
+        )
+
+    try:
+        om_market_ids = set(
+            id_dict[token_id]
+            for tm in tuple_manager
+            if tm[0] is not None
+            for token_id in tm[0].token_ids
+        )
+    except KeyError as e:
+        raise SubscriptionException(
+            f"`token_id` of Order Manager not contained in `market_triplets`: {e}"
+        ) from e
+
+    # this in theory should never raise, but sanity check
+    if not om_market_ids.issubset(market_ids):
+        raise SubscriptionException(
+            f"Not all markets of all Order Managers contained in `market_triplets`: "
+            f"{om_market_ids - market_ids}"
         )
 
 
@@ -307,7 +339,7 @@ class UserStream(AbstractStreamer):
         _check_max_subscriptions(market_ids, max_subscriptions)
         _assert_api_key_order_mng(tuple_manager, api_key)
         _assert_unique_order_mngs(tuple_manager)
-        _assert_token_ids_order_mngs(tuple_manager, asset_ids)
+        _assert_market_ids_order_mngs(tuple_manager, market_triplets, market_ids)
         # we do not check position manager asset_ids (=token_ids), because a single position manager
         #   can be coupled with multiple order managers
 
