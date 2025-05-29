@@ -93,6 +93,20 @@ As of the time of writing this documentation, following limits apply:
 > Above limits might or might not be outdated. Users are advised to confirm limits beforehand. Unfortunately, there is
 > no official documentation, but only Discord conversations regarding rate limits - take it with a grain of salt!
 
+## Main Components
+`polypy` implements the following main components, which will be explained in this guide:
+1) `plp.OrderBook`: an order book object
+2) `plp.OrderManager`: manages order creation, submission, storing and updating
+3) `plp.PositionManager`: manages position creation, storing and updating. A position describes the number of shares 
+owned (and additional, your bankroll in USDC is a position as well)
+4) `plp.MarketStream`: keeps order book up to date
+5) `plp.UserStream`: keeps order manager and position manager up to date
+6) convenience functions: `plp.calculate_marketable_price`, `plp.is_marketable_amount`, `plp.compute_expiration_timestamp`, `plp.dec`, etc.
+7) REST calls: `plp.get_market`, `plp.get_ballance`, `plp.get_positions`, `plp.are_orders_scoring`, etc.
+
+Besides creating and managing orders and positions via an order manager and position manager, `polypy` offers the possibility, 
+to do so in a more functional way with corresponding functions (see later in this guide).
+
 ## Central Limit Order Book (CLOB)
 ### What is a CLOB?
 Polymarket provides a L2 (central) limit order book (aka. 'CLOB').
@@ -394,9 +408,9 @@ _TakingAmount_ directly, as everything is handled automatically by `polypy` unde
 Nonetheless, it is good to be familiar with these terms.
 
 ### Order Implementation
-`polpy`s standard order implementation class is located under `polypy.order.base.Order`.
+`polypy`s standard order implementation class is located under `polypy.order.base.Order`.
 Users can (if they really want to...) implement their own order implementation by following `polypy.order.commom.OrderProtocol`, 
-which defines a standard interface such that the implementation can be used trough out all `polpy` functions and methods.
+which defines a standard interface such that the implementation can be used trough out all `polypy` functions and methods.
     
 It is highly recommended, __not__ to initiate or manipulate `polypy.order.base.Order` directly (which is why it is not 
 directly importable from package namespace), but instead either use a factory (see [Creating Orders](#creating-orders)), 
@@ -443,11 +457,11 @@ An order object has the following __read-and-write__ attributes:
 
 Whilst `strategy_id` and `aux_id` are fields that can be used and manipulated freely by the user, and which are not used 
 anywhere else in `polypy`, it is highly recommended __NOT__ to manipulate `status` and `size_matched` directly, but 
-instead to use an `plp.OrderManager` and assign it to `plp.MarketStream` (at \_\_init__). This way, `status` 
+instead to use an `plp.OrderManager` and assign it to `plp.UserStream` (at \_\_init__). This way, `status` 
 and `size_matched` will be automatically updated with the newest messages from a websocket connection to Polymarket.
 
 #### Order Side: `plp.SIDE`
-For buy orders, specify `plp.SIDE.BUY`, and for sell orders `plp.SIDE.SELL` (enum)-
+For buy orders, specify `plp.SIDE.BUY`, and for sell orders `plp.SIDE.SELL` (enum).
 
 #### Order Status: `plp.INSERT_STATUS`
 An order is in one of the following insert stati at any given time (roughly in order of the life cycle of an order):
@@ -459,14 +473,16 @@ matched size, it is still counted as `LIVE` until fully matched. Note: market or
 - `plp.INSERT_STATUS.UNMATCHED`: placement not successful, order has not been matched and is __NOT__ `LIVE`
 - `plp.INSERT_STATUS.CANCELED`: order was canceled
 
-__Note: `CANCELED` and `DEFINED` are insert stati defined by `polypy` and are not official Polymarket stati. Though, they make 
-handling the 'order life cycle' a lot easier, which is why they are actively implemented and meant for active use in `polypy`.__
+_Note: `CANCELED` and `DEFINED` are insert stati defined by `polypy` and are not official Polymarket stati. Though, they 
+make handling the 'order life cycle' a lot easier, which is why they are actively implemented and meant for active use by 
+the user in `polypy`._
 
 #### Order TiF: `plp.TIME_IN_FORCE`
 The following TiF-variants exist on Polymarket (implemented as enum):
 - `plp.TIME_IN_FORCE.GTC`: Good-till-Cancel
 - `plp.TIME_IN_FORCE.GTD`: Good-till-Day
 - `plp.TIME_IN_FORCE.FOK`: Fill-or-Kill
+
 For more details, please refer to [Time-in-Force](#time-in-force)
 
 #### Order signature type: `plp.SIGNATURE_TYPE` 
@@ -500,20 +516,20 @@ For checking, how much an order has already filled, please refer to `size_matche
 Note, if order is a [Market Order](#limit-order-vs-market-order), `price` is either _tick size_ or _1 - tick size_ (lowest 
 or highest possible price) depending on the order side (buy or sell). Also, `size` is statically pre-computed as $size = \frac{amount}{price}$.  
 Because a market order gets as many shares as possible for a given amount, there might be the case that `size_matched < size` 
-at the time the market order is filled. This is not a bug, but a result of the definition of a market order. Therefore,
-`price`, `size`, `size_matched` and `size_open` do not make really sense for market orders.
+at the time the market order is filled. This is not a bug, but a result of how a market order is defined. Therefore,
+`price`, `size`, and `size_open` do not make really sense for market orders (though, they will be populated even for market orders).
 
-Vice versa, `amount` is meaningless for a [Limit Order](#limit-order-vs-market-order). Imagine, that a limit order is 
+Vice versa, `amount` is meaningless for a [Limit Order](#limit-order-vs-market-order). Imagine, a limit order is 
 filled with multiple counterparty orders at different price levels. Then, the _realized_ `amount` would differ from the 
 statically pre-computed $amount = size * price$.  
 
-| attribute      | Market Order | Limit Order |
-|----------------|--------------|-------------|
-| `price`        | meaningless  | in use      |
-| `size`         | meaningless  | in use      |
-| `size_matched` | meaningless  | in use      |
-| `size_open`    | meaningless  | in use      |
-| `amount`       | in use       | meaningless |
+| attribute      | Market Order                         | Limit Order              |
+|----------------|--------------------------------------|--------------------------|
+| `price`        | meaningless (min or max valid price) | can be used              |
+| `size`         | meaningless (absolutely)             | can be used              |
+| `size_matched` | info only                            | can be used              |
+| `size_open`    | meaningless (absolutely)             | can be used              |
+| `amount`       | can be used                          | meaningless (absolutely) |
 
 #### Notes on Multithreading and Multiprocessing
 The standard `polypy` order object does not implement locks/mutex. If you want to use it in a _multithreading_ context, 
@@ -523,6 +539,7 @@ Note, that the standard order object implementation does not use shared memory, 
 _multiprocessing_ (updates on an order object in one _process_ will not be reflected in the same order in other _processes_).
 
 ### Creating Orders
+
 ### Computing Expiration Timestamp
 (expiration: compute_expiration_timestamp)
 ### Order Manager
@@ -548,6 +565,9 @@ In __millis__ unit:
 - `timestamp` in `market` websocket message: timestamp of order book generation (aka when order book changed). This timestamp is generated and returned by Polymarket.
 If an [order book](#clob-in-polypy-polypyorderbook) is assigned to a [market stream](#market-stream), then this will be handled automatically.
 - `Order.defined_at`: timestamp at which the order object was initialized. This is only kept for reference and is not further used in `polypy`, not sent to Polymarket.
+
+## Datetime
+todo: timezone-awareness (e.g., return values from Polymarket are timezone-aware i.e. get_markets(), vs. input datetime? (where, which functions and methods?))
 
 ## Streams
 ### Market Stream
