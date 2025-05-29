@@ -650,28 +650,30 @@ class UserStream(AbstractStreamer):
             self.callback_untrack([untracked_order], [])
 
     def _untrack_position(
-        self, status: TRADE_STATUS, asset_id: str, pos_mngs_idx: set[int]
+        self, status: TRADE_STATUS, asset_id: str, pos_mngs_id: int
     ) -> None:
         if not self.untrack_trade_status:
             return
 
-        if not pos_mngs_idx:
-            return
+        # we actually know that position manager is guaranteed not to be None
+        # if self.tuple_mngs[pos_mngs_id][1] is None:
+        #     return
 
         if status not in self.untrack_trade_status:
             return
 
-        untracked_positions = [
-            self.tuple_mngs[tm_idx][1].untrack(asset_id)
-            for tm_idx in pos_mngs_idx
-            if (frozen_pos := self.tuple_mngs[tm_idx][1].get_by_id(asset_id))
-            is not None
-            and frozen_pos.empty
-        ]  # only untrack empty positions
-        untracked_positions = [pos for pos in untracked_positions if pos is not None]
+        if (
+            frozen_position := self.tuple_mngs[pos_mngs_id][1].get_by_id(asset_id)
+        ) is None:
+            return
+
+        if not frozen_position.empty:
+            return
+
+        untracked_positions = self.tuple_mngs[pos_mngs_id][1].untrack(asset_id)
 
         if self.callback_untrack is not None and untracked_positions:
-            self.callback_untrack([], untracked_positions)
+            self.callback_untrack([], [untracked_positions])
 
     def _trade_message(self, msg: TradeWSInfo) -> int:
         trade_order_info = self._filter_orders_trade_info(msg)
@@ -705,14 +707,16 @@ class UserStream(AbstractStreamer):
                         allow_create=True,
                     )  # will raise exception if transact fails
 
+                self._untrack_position(msg.status, trade_order.asset_id, tm_idx)
+
+                # evict order only after position has been processed since we need the order to
+                #   infer the correct position manager
                 self._untrack_order_trade_terminal(
                     msg.status, trade_order.order_id, tm_idx
                 )
 
             # should ideally be either 1 or 0
             nb_updates.append(len(tpl_mngs_idx))
-
-            self._untrack_position(msg.status, trade_order.asset_id, tpl_mngs_idx)
 
         min_updates, max_update = min(nb_updates), max(nb_updates)
         # ideally, both should be 1
@@ -732,6 +736,7 @@ class UserStream(AbstractStreamer):
             for tm_idx in self._default_pos_mngs_idx:
                 # we know, that none of the position managers in _default_pos_mngs_idx is None,
                 #   so we do not need to check again
+                # noinspection DuplicatedCode
                 numeric_type = self._numeric_type_pos_mng[tm_idx]
                 price = numeric_type(trade_order.price)
                 self.tuple_mngs[tm_idx][1].transact(
@@ -743,12 +748,11 @@ class UserStream(AbstractStreamer):
                     trade_status=msg.status,
                     allow_create=True,
                 )
-            # if we evict a trade, we know, that there is no order manager assigned,
-            # so we do not need to untrack orders
-            # we only untrack from position manager
-            self._untrack_position(
-                msg.status, trade_order.asset_id, self._default_pos_mngs_idx
-            )
+
+                # if we evict a trade, we know, that there is no order manager assigned,
+                # so we do not need to untrack orders
+                # we only untrack from position manager
+                self._untrack_position(msg.status, trade_order.asset_id, tm_idx)
 
     def _order_message(self, msg: OrderWSInfo) -> int:
         tpl_mngs_idx = self._filter_tuple_mngs(msg.id)
