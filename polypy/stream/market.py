@@ -171,9 +171,10 @@ class MarketStream:
         self.threads: list[threading.Thread] = []
 
     def _run_single_socket(self) -> None:
+        reconnecting = False
         while not self._stop_token:
             try:
-                self._socket_loop()
+                reconnecting = self._socket_loop(reconnecting)
             except Exception as e:
                 self._register_exception(e)
                 raise e
@@ -204,9 +205,14 @@ class MarketStream:
         if self.callback_exception:
             self.callback_exception(exc, self)
 
-    def _socket_loop(self) -> None:
+    def _socket_loop(self, reconnecting: bool) -> bool:
         with connect(self.url) as ws:
             ws.send(msgspec.json.encode(self._ws_params))
+
+            if reconnecting:
+                warnings.warn(
+                    f"{datetime.datetime.now()}: Re-connected {self._ws_params['assets_ids']}."
+                )
 
             while not self._stop_token:
                 try:
@@ -220,7 +226,7 @@ class MarketStream:
                         f"Traceback: {e.__class__.__name__}({e})."
                         f"Full Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}"
                     )
-                    break
+                    return True
 
                 self._process_raw_message(raw_messages)
 
