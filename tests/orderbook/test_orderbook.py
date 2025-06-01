@@ -1332,6 +1332,12 @@ def test_coerce_inbound_idx():
     assert list(n_idx) == [0, 1, 2, 3]
     assert list(n_sizes) == [11, 1, 1, 11]
 
+    idx = np.array([-1, 0, 1, 2, 3, 4])
+    sizes = np.array([10.1, 1, 1, 1, 1, 10.2])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
+    assert list(n_idx) == [0, 1, 2, 3]
+    assert list(n_sizes) == [11.1, 1, 1, 11.2]
+
     idx = np.array([-1, 0, 1, -2, 3, 4])
     sizes = np.array([10, 1, 1, 1, 1, 10])
     n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 4)
@@ -1357,11 +1363,23 @@ def test_coerce_inbound_idx():
     assert list(n_idx) == [0, 1, 2, 3, 4]
     assert list(n_sizes) == [11, 1, 1, 1, 10]
 
+    idx = np.array([-1, 0, 1, 2, 3, 4])
+    sizes = np.array([10.1, 1.1, 1, 1, 1.2, 10.2])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 2, 3, 4]
+    assert list(n_sizes) == [11.2, 1, 1, 1.2, 10.2]
+
     idx = np.array([-1, 0, 1, -2, 3, 4])
     sizes = np.array([10, 1, 1, 1, 1, 10])
     n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
     assert list(n_idx) == [0, 1, 3, 4]
     assert list(n_sizes) == [12, 1, 1, 10]
+
+    idx = np.array([-1, 0, 1, -2, 3, 4])
+    sizes = np.array([10.1, 1, 1.1, 1.1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 3, 4]
+    assert list(n_sizes) == [12.2, 1.1, 1, 10]
 
     # case: max side
     idx = np.array([6, 0, 1, 2, 3, 7])
@@ -1375,6 +1393,12 @@ def test_coerce_inbound_idx():
     n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
     assert list(n_idx) == [0, 1, 3, 4, 6]
     assert list(n_sizes) == [1, 1, 1, 10, 11]
+
+    idx = np.array([8, 0, 1, 7, 3, 4])
+    sizes = np.array([10.1, 1, 1, 1.1, 1, 10])
+    n_idx, n_sizes = _coerce_inbound_idx(idx, sizes, 7)
+    assert list(n_idx) == [0, 1, 3, 4, 6]
+    assert list(n_sizes) == [1, 1, 1, 10, 11.2]
 
 
 def test_coerce_inbound_msg():
