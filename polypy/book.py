@@ -281,7 +281,7 @@ class OrderBook:
 
     @property
     def asks(self) -> tuple[NDArray, ArrayCoercible]:
-        return self._ask_quote_levels, self._ask_quantities
+        return self._ask_quote_levels, self._ask_quantities[:]
 
     @property
     def bid_sizes(self) -> ArrayCoercible:
