@@ -46,9 +46,10 @@ class AbstractStreamer(ABC):
         self.exc: list[Exception] = []
 
     def _run(self) -> None:
+        reconnecting = False
         while not self._stop_token.is_set():
             try:
-                self._loop()
+                reconnecting = self._loop(reconnecting)
             except Exception as e:
                 self.register_exception(e)
 
@@ -78,9 +79,14 @@ class AbstractStreamer(ABC):
 
         raise exc
 
-    def _loop(self) -> None:
+    def _loop(self, reconnecting: bool) -> bool:
         with connect(self.url) as self.ws:
             self.ws.send(msgspec.json.encode(self.subscribe_params))
+
+            if reconnecting:
+                warnings.warn(
+                    f"{datetime.datetime.now()}: Re-connected {self.subscribe_params}."
+                )
 
             while not self._stop_token.is_set():
                 try:
@@ -93,14 +99,14 @@ class AbstractStreamer(ABC):
                 except ConnectionClosed as e:
                     if self._stop_token.is_set():
                         # no need to emit warning, because we stopped the websocket
-                        return
+                        return True
 
                     warnings.warn(
                         f"{datetime.datetime.now()} | Re-connecting subscription: {self.subscribe_params}. "
                         f"Traceback: {e.__class__.__name__}({e})."
                         f"Full Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}"
                     )
-                    return
+                    return True
 
     def _handle_msg(self, bytes_msg: bytes) -> None:
         # somehow, received JSON dict is wrapped in a list
