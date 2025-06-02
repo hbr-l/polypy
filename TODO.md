@@ -43,6 +43,9 @@ if trade was split into multiple separate transactions -> debatable: use `callba
 
 ## Refactoring
 _(backward-incompatible changes, changes in signatures)_
+- [ ] __replace `_get_or_create_position` with `get_by_id` in `rpc_proc.py` and remove `_get_or_create_position` from `PositionManagerProtocol`__
+- [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
+- [ ] __replace np.ndarray with NDArray for better type annotations__
 - [ ] __Standardize naming of `asset_id` vs `token_id`, `market_id` vs `condition_id`__
 - [ ] __More specialized exception classes (esp. in OrderManager, PositionManager, UserStream) of `PolyPyException`__
 - [ ] Specialized msgspec.Struct instead of dicts for get_markets_gamma_model and get_events_gamma_model to resolve tight coupling in 
@@ -62,8 +65,6 @@ but this might mess with specific `PositionProtocol` implementation (resolved: l
   or even better by manually filtering for orders with order.status=MATCHED and 
   order.created_order < now-threshold (which also works for maker orders or partial taker orders !) - though this rarely should be the case because 
   this will only be necessary if `CONFIRMED` was missed)
-- [ ] __replace np.ndarray with NDArray for better type annotations__
-- [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
 - [ ] __Rewrite `MarketStream`__: 
   - [ ] use AbstractStreamer
   - [ ] if specified, merge complement asset_id (invert before) into order book as well
