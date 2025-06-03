@@ -166,6 +166,8 @@ Development
   - Change `zeros_factory` to `zeros_factory_bid` and `zeros_factory_ask`
   - Fix minor bug in `from_dict` regarding tick size inference
   - Add `strict_type_check` argument to control checking routine w.r.t. of dtypes
+  - Change from attrs data class to normal class implementation
+  - Implement `TickSizeProtocol` and `tick_size_factory` s.t. tick size behavior can be controlled more easily (i.e. in case of shared memory for multiprocessing use cases)
 #### 2025/05/28
 - Add argument `untrack_order_by_trade_terminal` to `UserStream` to automatically untrack/clean orders in `OrderManager` by `TradeWSInfo` (websocket message) if `Order.status` in `TERMINAL_INSERT_STATI` and `TradeWSInfo.status` in `TERMINAL_TRADE_STATI` (though this will fail if `CONFIRMED` status of `TradeWSInfo`-message in websocket was missed)
 - Add argument `cover_mode` to `UserStream` controlling the behavior when checking if all `token_id` of `OrderManager`s are contained in `market_triplets` (which, i.e. might not be the case if an `OrderManager` is assigned to multiple `UserStream`s)

@@ -15,7 +15,6 @@ from typing import (
     get_args,
 )
 
-import attrs
 import numpy as np
 from msgspec import json as msgspec_json
 from numpy.typing import NDArray
@@ -29,7 +28,7 @@ if TYPE_CHECKING:
     from polypy.order.common import SIDE
 
 
-def _validate_base10(_, __, x: float) -> None:
+def _validate_base10(x: float) -> None:
     exponent = np.log10(x)
     if exponent != int(exponent):
         raise OrderBookException(
@@ -37,28 +36,17 @@ def _validate_base10(_, __, x: float) -> None:
         )
 
 
-def _validate_tick_size(inst: "OrderBook", _, val: Any) -> None:
-    _validate_base10(_, _, val)
-    if val not in inst.allowed_tick_sizes:
+def _validate_tick_size(val: Any, allowed_tick_sizes: set[float]) -> None:
+    _validate_base10(val)
+    if val not in allowed_tick_sizes:
         raise OrderBookException(
-            f"`tick_size`={inst.tick_size} not in `allowed_tick_sizes`={inst.allowed_tick_sizes}."
+            f"`tick_size`={val} not in `allowed_tick_sizes`={allowed_tick_sizes}."
         )
 
 
-# noinspection PyProtectedMember
-def _on_setattr_tick_size(inst: "OrderBook", _, val: Any) -> NumericAlias:
-    if isinstance(val, inst._dtype_item):
-        return val
-
-    try:
-        return inst._dtype_item(str(val))
-    except ValueError:
-        return round_half_even(inst._dtype_item(val), inst._min_tick_digits)
-
-
-def _validate_allowed_tick_size(_, __, x: set[float]) -> None:
+def _validate_allowed_tick_size(x: set[float] | tuple[float]) -> None:
     for x_i in x:
-        _validate_base10(_, __, x_i)
+        _validate_base10(x_i)
 
 
 def _zeroing_array(x: ArrayCoercible) -> ArrayCoercible:
@@ -151,9 +139,47 @@ def _coerce_inbound_idx(
     return level_idx, sizes
 
 
-@attrs.define
+class TickSizeProtocol(Protocol):
+    # noinspection PyUnusedLocal
+    def __init__(
+        self, x: Any, dtype: type, allowed_tick_sizes: set[float] | tuple[float, ...]
+    ) -> None:
+        ...
+
+    def get(self) -> Any:
+        ...
+
+    def set(self, x: Any) -> None:
+        ...
+
+
+class TickSizeFactory(Protocol):
+    def __call__(
+        self, x: Any, dtype: type, allowed_tick_sizes: set[float] | tuple[float, ...]
+    ) -> TickSizeProtocol:
+        ...
+
+
+class TickSize:
+    def __init__(
+        self, x: Any, dtype: type, allowed_tick_sizes: set[float] | tuple[float, ...]
+    ) -> None:
+        self.dtype = dtype
+        self.allowed_tick_sizes = _conv_set_float(allowed_tick_sizes)
+
+        self.x = None
+        self.set(x)
+
+    def get(self) -> Any:
+        return self.x
+
+    def set(self, x: Any) -> None:
+        _validate_tick_size(x, self.allowed_tick_sizes)
+        self.x = self.dtype(str(x))
+
+
 class OrderBook:
-    """Order Book attrs data class.
+    """Order Book class.
 
     Notes
     -----
@@ -178,53 +204,51 @@ class OrderBook:
     # todo implement __getstate__ and __setstate__ (pickling during multiprocessing)
     # todo TickSizeProtocol
 
-    token_id: str
-    tick_size: NumericAlias = attrs.field(
-        validator=_validate_tick_size,
-        on_setattr=[attrs.setters.validate, _on_setattr_tick_size],
-    )
-    """Use get_tick_size(...) (REST) or MarketInfo.minimum_tick_size."""
+    def __init__(
+        self,
+        token_id: str,
+        tick_size: NumericAlias,
+        zeros_factory_bid: type[ZerosProtocol] | ZerosFactoryFunc = np.zeros,
+        zeros_factory_ask: type[ZerosProtocol] | ZerosFactoryFunc | None = None,
+        tick_size_factory: type[TickSizeProtocol] | TickSizeFactory | None = TickSize,
+        allowed_tick_sizes: tuple[float] | set[float] = (0.01, 0.001),
+        coerce_inbound_prices: bool = False,
+        strict_type_check: bool = True,
+    ) -> None:
+        """
 
-    zeros_factory_bid: type[ZerosProtocol] | ZerosFactoryFunc = attrs.field(
-        default=np.zeros, on_setattr=attrs.setters.frozen
-    )  # dtype only affects size arrays, but not price arrays
-    """For decimal type use `polypy.typing.zeros_dec` as factory."""
-    zeros_factory_ask: type[ZerosProtocol] | ZerosFactoryFunc | None = attrs.field(
-        default=None, on_setattr=attrs.setters.frozen
-    )
-    """Uses `zeros_factory_bid` if None"""
+        Parameters
+        ----------
+        token_id
+        tick_size: NumericAlias,
+            Use get_tick_size(...) (REST) or MarketInfo.minimum_tick_size.
+        zeros_factory_bid: type[ZerosProtocol] | ZerosFactoryFunc,
+            For decimal type use `polypy.typing.zeros_dec` as factory.
+        zeros_factory_ask: type[ZerosProtocol] | ZerosFactoryFunc | None,
+            If None, then `zeros_factory_bid` will be used.
+            For decimal type use `polypy.typing.zeros_dec` as factory.
+        tick_size_factory: type[TickSizeProtocol] | TickSizeFactory | None, default = TickSize
+            Container for storing tick size.
+        allowed_tick_sizes
+        coerce_inbound_prices
+        strict_type_check
+        """
+        self.token_id = token_id
+        self.coerce_inbound_prices = coerce_inbound_prices
+        self.strict_type_check = strict_type_check
 
-    allowed_tick_sizes: tuple[float] = attrs.field(
-        default=(0.01, 0.001),
-        converter=_conv_set_float,
-        validator=_validate_allowed_tick_size,
-        on_setattr=attrs.setters.frozen,
-    )
+        allowed_tick_sizes = _conv_set_float(allowed_tick_sizes)
+        _validate_allowed_tick_size(allowed_tick_sizes)
+        self._allowed_tick_sizes = allowed_tick_sizes
 
-    coerce_inbound_prices: bool = attrs.field(default=False, converter=bool)
-    strict_type_check: bool = attrs.field(default=True, converter=bool)
-    """When `set_bids` or `set_asks` dtypes must match underlying dtype if True. Else, no check
-    is performed, and the underlying container from `zeros_factory_bid` must take responsibility 
-    for dtype conversion."""
-
-    _bid_quantities: ZerosProtocol = attrs.field(init=False)
-    _ask_quantities: ZerosProtocol = attrs.field(init=False)
-    _inv_min_tick_size: int = attrs.field(init=False)
-    _min_tick_digits: int = attrs.field(init=False)
-    _dtype_quantities: UnionType = attrs.field(init=False)
-    _dtype_item: type = attrs.field(init=False)
-
-    _bid_quote_levels: NDArray = attrs.field(init=False)
-    _ask_quote_levels: NDArray = attrs.field(init=False)
-
-    def __attrs_post_init__(self):
-        self._inv_min_tick_size = int(1 / min(self.allowed_tick_sizes))
+        self._inv_min_tick_size = int(1 / min(self._allowed_tick_sizes))
         self._min_tick_digits = int(math.log10(self._inv_min_tick_size))
 
         len_quantities = self._inv_min_tick_size + 1
-        self._bid_quantities = _zeroing_array(self.zeros_factory_bid(len_quantities))
-        zeros_factory_ask = self.zeros_factory_ask or self.zeros_factory_bid
-        self._ask_quantities = _zeroing_array(zeros_factory_ask(len_quantities))
+        self._bid_quantities = _zeroing_array(zeros_factory_bid(len_quantities))
+        self._ask_quantities = _zeroing_array(
+            (zeros_factory_ask or zeros_factory_bid)(len_quantities)
+        )
 
         self._dtype_item = type(np.array([self._bid_quantities[0]]).item(0))
         # delegate heavy lifting of type inference to numpy
@@ -239,8 +263,21 @@ class OrderBook:
             0, 1, len_quantities, self._min_tick_digits, self._dtype_item
         )
 
-        # force casting via on_setattr
-        self.tick_size = self.tick_size
+        self._tick_size = tick_size_factory(
+            tick_size, self._dtype_item, self._allowed_tick_sizes
+        )
+
+    @property
+    def tick_size(self) -> NumericAlias:
+        return self._tick_size.get()
+
+    @tick_size.setter
+    def tick_size(self, val: NumericAlias) -> None:
+        self._tick_size.set(val)
+
+    @property
+    def allowed_tick_sizes(self) -> set[float]:
+        return self._allowed_tick_sizes
 
     @classmethod
     def from_dict(

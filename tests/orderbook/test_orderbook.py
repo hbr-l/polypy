@@ -4,11 +4,11 @@ import json
 import math
 import pathlib
 from decimal import Decimal
+from fractions import Fraction
 
 import numpy as np
 import pytest
 import responses
-from attrs.exceptions import FrozenAttributeError
 from py_clob_client.clob_types import OrderSummary
 from py_clob_client.utilities import parse_raw_orderbook_summary
 
@@ -199,16 +199,17 @@ def test_orderbook_array_factory():
 
 def test_orderbook_array_factory_raise_set():
     def factory(x: int, *_):
-        return np.array([0] * x, dtype=int)
+        return np.array([Fraction(0)] * x, dtype=object)
 
     orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=factory)
 
-    assert np.issubdtype(orderbook.dtype, np.integer)
+    assert orderbook.dtype is Fraction
 
-    orderbook.set_bids([0.1], [10])
+    orderbook.set_bids([0.1], [Fraction(10)])
 
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError) as rec:
         orderbook.set_bids([0.1], [0.5])
+    assert "(Expected:)<class 'fractions.Fraction'>!=<class 'float'>" in str(rec)
 
 
 def test_orderbook_tick_size():
@@ -488,14 +489,12 @@ def test_orderbook_reset_raise_empty(unified_book_yes):
     assert ask_quants.tolist() == orderbook.asks[1].tolist()
 
 
+# noinspection PyPropertyAccess
 def test_orderbook_frozen_attributes(unified_book_yes):
     orderbook = OrderBook("test_token", 0.001)
 
-    with pytest.raises(FrozenAttributeError):
+    with pytest.raises(AttributeError):
         orderbook.allowed_tick_sizes = {0.1, 0.00001}
-
-    with pytest.raises(FrozenAttributeError):
-        orderbook.zeros_factory_bid = np.zeros
 
 
 # noinspection DuplicatedCode
