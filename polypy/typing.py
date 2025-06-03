@@ -68,7 +68,7 @@ class ZerosProtocol(ArrayInterface):
 
 class ZerosFactoryFunc(Protocol):
     def __call__(
-        self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype]
+        self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype] = None
     ) -> ZerosProtocol | np.ndarray:
         ...
 

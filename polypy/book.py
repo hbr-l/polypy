@@ -176,8 +176,7 @@ class OrderBook:
     """
 
     # todo implement __getstate__ and __setstate__ (pickling during multiprocessing)
-    # todo change tick_size and allowed_tick_size to Decimal or str? -> not necessary, np.log10 works well with
-    #   base 10 numbers even when float
+    # todo TickSizeProtocol
 
     token_id: str
     tick_size: NumericAlias = attrs.field(
@@ -186,10 +185,15 @@ class OrderBook:
     )
     """Use get_tick_size(...) (REST) or MarketInfo.minimum_tick_size."""
 
-    zeros_factory: type[ZerosProtocol] | ZerosFactoryFunc = attrs.field(
+    zeros_factory_bid: type[ZerosProtocol] | ZerosFactoryFunc = attrs.field(
         default=np.zeros, on_setattr=attrs.setters.frozen
     )  # dtype only affects size arrays, but not price arrays
     """For decimal type use `polypy.typing.zeros_dec` as factory."""
+    zeros_factory_ask: type[ZerosProtocol] | ZerosFactoryFunc | None = attrs.field(
+        default=None, on_setattr=attrs.setters.frozen
+    )
+    """Uses `zeros_factory_bid` if None"""
+
     allowed_tick_sizes: tuple[float] = attrs.field(
         default=(0.01, 0.001),
         converter=_conv_set_float,
@@ -198,9 +202,11 @@ class OrderBook:
     )
 
     coerce_inbound_prices: bool = attrs.field(default=False, converter=bool)
+    strict_type_check: bool = attrs.field(default=True, converter=bool)
+    """When `set_bids` or `set_asks` dtypes must match underlying dtype if True. Else, no check
+    is performed, and the underlying container from `zeros_factory_bid` must take responsibility 
+    for dtype conversion."""
 
-    # todo implement storing sizes as integers instead of floats or Decimals
-    #   -> nope, rather implement ScaleInt as custom type class and use this in 'zeros_factory'
     _bid_quantities: ZerosProtocol = attrs.field(init=False)
     _ask_quantities: ZerosProtocol = attrs.field(init=False)
     _inv_min_tick_size: int = attrs.field(init=False)
@@ -216,8 +222,9 @@ class OrderBook:
         self._min_tick_digits = int(math.log10(self._inv_min_tick_size))
 
         len_quantities = self._inv_min_tick_size + 1
-        self._bid_quantities = _zeroing_array(self.zeros_factory(len_quantities))
-        self._ask_quantities = _zeroing_array(self.zeros_factory(len_quantities))
+        self._bid_quantities = _zeroing_array(self.zeros_factory_bid(len_quantities))
+        zeros_factory_ask = self.zeros_factory_ask or self.zeros_factory_bid
+        self._ask_quantities = _zeroing_array(zeros_factory_ask(len_quantities))
 
         self._dtype_item = type(np.array([self._bid_quantities[0]]).item(0))
         # delegate heavy lifting of type inference to numpy
@@ -239,18 +246,31 @@ class OrderBook:
     def from_dict(
         cls,
         book_msg_dict: dict[str, Any],
-        zeros_factory: ZerosProtocol | ZerosFactoryFunc = np.zeros,
+        zeros_factory_bid: ZerosProtocol | ZerosFactoryFunc = np.zeros,
+        zeros_factory_ask: ZerosProtocol | ZerosFactoryFunc = None,
+        coerce_inbound_prices: bool = False,
         allowed_tick_sizes: tuple[float] = (0.01, 0.001),
     ) -> Self:
         # in case bids is empty, we might consider
-        min_price = min(
-            Decimal(book_msg_dict["bids"][0]["price"]),
-            Decimal(book_msg_dict["asks"][-1]["price"]),
+        min_exponent = min(
+            [
+                Decimal(i["price"]).as_tuple().exponent
+                for i in book_msg_dict["bids"][:12]
+            ]
+            + [
+                Decimal(i["price"]).as_tuple().exponent
+                for i in book_msg_dict["asks"][:12]
+            ],
         )
-        tick_size = 10 ** min_price.as_tuple().exponent
+        tick_size = 10**min_exponent
 
         order_book = cls(
-            book_msg_dict["asset_id"], tick_size, zeros_factory, allowed_tick_sizes
+            book_msg_dict["asset_id"],
+            tick_size,
+            zeros_factory_bid=zeros_factory_bid,
+            zeros_factory_ask=zeros_factory_ask,
+            allowed_tick_sizes=allowed_tick_sizes,
+            coerce_inbound_prices=coerce_inbound_prices,
         )
 
         return _reset_event_type_book(book_msg_dict, order_book, order_book.dtype)
@@ -352,6 +372,9 @@ class OrderBook:
         prices: list[NumericAlias] | ArrayCoercible,
         sizes: list[NumericAlias] | ArrayCoercible,
     ) -> None:
+        if not self.strict_type_check:
+            return
+
         if len(prices) != len(sizes) or len(sizes) == 0:
             raise IndexError(
                 f"Arguments not allowed (len(prices)==len(sizes)!= 0). "

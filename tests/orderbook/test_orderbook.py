@@ -166,7 +166,7 @@ def test_orderbook_array_factory():
     def factory(x: int, *_):
         return np.array([0] * x, dtype=float)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=factory)
 
     bid_p = [0.10, 0.09, 0.08, 0.05]
     bid_s = [10, 9, 8, 500]
@@ -201,7 +201,7 @@ def test_orderbook_array_factory_raise_set():
     def factory(x: int, *_):
         return np.array([0] * x, dtype=int)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=factory)
 
     assert np.issubdtype(orderbook.dtype, np.integer)
 
@@ -495,7 +495,7 @@ def test_orderbook_frozen_attributes(unified_book_yes):
         orderbook.allowed_tick_sizes = {0.1, 0.00001}
 
     with pytest.raises(FrozenAttributeError):
-        orderbook.zeros_factory = np.zeros
+        orderbook.zeros_factory_bid = np.zeros
 
 
 # noinspection DuplicatedCode
@@ -503,7 +503,7 @@ def test_orderbook_set_decimal():
     def arr_factory(x: int, *_):
         return np.array([Decimal(0)] * x, dtype=object)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=arr_factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=arr_factory)
 
     assert orderbook.dtype is Decimal
 
@@ -546,7 +546,7 @@ def test_tick_size_decimal():
     def arr_factory(x: int, *_):
         return np.array([Decimal(0)] * x, dtype=object)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=arr_factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=arr_factory)
 
     orderbook.tick_size = 0.001
     assert orderbook.tick_size == Decimal("0.001")
@@ -560,7 +560,7 @@ def test_orderbook_reset_decimal():
     def arr_factory(x: int, *_):
         return np.array([Decimal(0)] * x, dtype=object)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=arr_factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=arr_factory)
 
     assert orderbook.dtype is Decimal
 
@@ -611,7 +611,7 @@ def test_orderbook_set_decimal_raise_type():
     def arr_factory(x: int, *_):
         return np.array([Decimal(0)] * x, dtype=object)
 
-    orderbook = OrderBook("test_token_id", 0.01, zeros_factory=arr_factory)
+    orderbook = OrderBook("test_token_id", 0.01, zeros_factory_bid=arr_factory)
     orderbook.set_bids([0.5], [Decimal(200)])
 
     with pytest.raises(TypeError):
@@ -1406,7 +1406,7 @@ def test_coerce_inbound_msg():
         "103709219220485385381402953404611086294052546893918388630950161985342301458022",
         0.001,
         coerce_inbound_prices=True,
-        zeros_factory=zeros_dec,
+        zeros_factory_bid=zeros_dec,
     )
 
     msg = {
