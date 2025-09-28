@@ -6,25 +6,27 @@ import pathlib
 from decimal import Decimal
 from fractions import Fraction
 
+import msgspec
 import numpy as np
 import pytest
 import responses
 from py_clob_client.clob_types import OrderSummary
 from py_clob_client.utilities import parse_raw_orderbook_summary
 
-# noinspection PyProtectedMember
-from polypy.book import (
-    HASH_STATUS,
-    OrderBook,
-    _coerce_inbound_idx,
-    _quotes_event_type_price_change,
-    _valid_message_asset_id,
-    guess_check_orderbook_hash,
+from polypy.book import message_to_orderbook
+from polypy.book.hashing import guess_check_orderbook_hash
+from polypy.book.order_book import OrderBook, _coerce_inbound_idx
+from polypy.book.parsing import (
+    _quotes_from_price_change_event,
+    dict_to_market_event_struct,
     merge_quotes_to_order_summaries,
-    message_to_orderbook,
     split_order_summaries_to_quotes,
 )
 from polypy.exceptions import EventTypeException, OrderBookException
+from polypy.order.common import SIDE
+from polypy.structs import BookEvent
+from polypy.structs import OrderSummary as OrderSummaryStruct
+from polypy.structs import PriceChangeEvent, PriceChangeSummary, TickSizeEvent
 from polypy.typing import zeros_dec
 
 test_pth = pathlib.Path(__file__).parent
@@ -38,31 +40,35 @@ def unified_book_yes(json_book_to_arrays):
 @pytest.fixture
 def book_t0_ws_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return json.loads(f.readlines()[1])
+        return msgspec.convert(json.loads(f.readlines()[1]), BookEvent, strict=False)
 
 
 @pytest.fixture
 def price_change_t1_ws_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return json.loads(f.readlines()[4])
+        return msgspec.convert(
+            json.loads(f.readlines()[4]), PriceChangeEvent, strict=False
+        )
 
 
 @pytest.fixture
 def book_t1_rest_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return json.loads(f.readlines()[5])
+        return msgspec.convert(json.loads(f.readlines()[5]), BookEvent, strict=False)
 
 
 @pytest.fixture
 def price_change_t2_ws_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return json.loads(f.readlines()[8])
+        return msgspec.convert(
+            json.loads(f.readlines()[8]), PriceChangeEvent, strict=False
+        )
 
 
 @pytest.fixture
 def book_t2_rest_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return json.loads(f.readlines()[9])
+        return msgspec.convert(json.loads(f.readlines()[9]), BookEvent, strict=False)
 
 
 # noinspection PyUnresolvedReferences,DuplicatedCode
@@ -238,7 +244,7 @@ def test_orderbook_raise_tick_size_allowed():
 
 @responses.activate
 def test_orderbook_sync(book_t0_ws_msg_hashed):
-    book = OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
+    book = OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
     endpoint = "https://test_endpoint.com"
 
     assert book.tick_size == 0.01
@@ -249,10 +255,12 @@ def test_orderbook_sync(book_t0_ws_msg_hashed):
     rest_data = {"minimum_tick_size": 0.001}
     responses.get(f"{endpoint}/tick-size?token_id={book.token_id}", json=rest_data)
     book_data = copy.deepcopy(book_t0_ws_msg_hashed)
-    del book_data["event_type"]
-    responses.get(f"{endpoint}/book?token_id={book.token_id}", json=book_data)
+    responses.get(
+        f"{endpoint}/book?token_id={book.token_id}",
+        json=msgspec.to_builtins(book_data),
+    )
 
-    book.sync(endpoint)
+    book.sync(endpoint, True)
     assert book.tick_size == 0.001
     assert np.sum(book.ask_prices) > 0
     assert np.sum(book.bid_prices) > 0
@@ -494,7 +502,7 @@ def test_orderbook_frozen_attributes(unified_book_yes):
     orderbook = OrderBook("test_token", 0.001)
 
     with pytest.raises(AttributeError):
-        orderbook.allowed_tick_sizes = {0.1, 0.00001}
+        orderbook.min_tick_size = 0.00001
 
 
 # noinspection DuplicatedCode
@@ -624,34 +632,34 @@ def test_orderbook_set_decimal_raise_type():
 def test_orderbook_book_hash(
     book_t0_ws_msg_hashed, book_t1_rest_msg_hashed, book_t2_rest_msg_hashed
 ):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
     orderbook = OrderBook(asset_id, 0.01)
 
-    orderbook, hash_status = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
-    assert hash_status is HASH_STATUS.VALID
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    assert book_t0_ws_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
     # test updating
-    orderbook, hash_status = message_to_orderbook(
+    orderbook = message_to_orderbook(
         book_t1_rest_msg_hashed, orderbook, event_type="book"
     )
-    assert hash_status is HASH_STATUS.VALID
+    assert book_t1_rest_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t1_rest_msg_hashed["timestamp"])
-        == book_t1_rest_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t1_rest_msg_hashed.timestamp)
+        == book_t1_rest_msg_hashed.hash
     )
 
-    orderbook, hash_status = message_to_orderbook(
+    orderbook = message_to_orderbook(
         book_t2_rest_msg_hashed, orderbook, event_type="book"
     )
-    assert hash_status is HASH_STATUS.VALID
+    assert book_t2_rest_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t2_rest_msg_hashed["timestamp"])
-        == book_t2_rest_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t2_rest_msg_hashed.timestamp)
+        == book_t2_rest_msg_hashed.hash
     )
 
 
@@ -663,52 +671,57 @@ def test_orderbook_price_change_hash(
     price_change_t2_ws_msg_hashed,
     book_t2_rest_msg_hashed,
 ):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
     orderbook = OrderBook(asset_id, 0.01)
 
     # check hash against initial book message
-    orderbook, hash_status = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
-    assert hash_status is HASH_STATUS.VALID
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    assert book_t0_ws_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
     # check hash after updating first price change
-    orderbook, hash_status = message_to_orderbook(
-        price_change_t1_ws_msg_hashed, orderbook
-    )
+    orderbook = message_to_orderbook(price_change_t1_ws_msg_hashed, orderbook)
     _, _, hash_t1 = guess_check_orderbook_hash(
-        price_change_t1_ws_msg_hashed["hash"],
+        price_change_t1_ws_msg_hashed.price_changes[0].hash,
         orderbook,
         market_id,
-        [int(price_change_t1_ws_msg_hashed["timestamp"]) - i for i in range(15)],
+        [int(price_change_t1_ws_msg_hashed.timestamp) - i for i in range(15)],
     )
-    assert hash_status is HASH_STATUS.UNKNOWN
-    assert price_change_t1_ws_msg_hashed["hash"] == book_t1_rest_msg_hashed["hash"]
-    assert hash_t1 == price_change_t1_ws_msg_hashed["hash"]
+    assert price_change_t1_ws_msg_hashed.event_type == "price_change"
+    assert (
+        price_change_t1_ws_msg_hashed.price_changes[0].hash
+        == book_t1_rest_msg_hashed.hash
+    )
+    assert hash_t1 == price_change_t1_ws_msg_hashed.price_changes[0].hash
 
     # check hash after updating second price change
-    orderbook, hash_status = message_to_orderbook(
-        price_change_t2_ws_msg_hashed, orderbook
-    )
+    orderbook = message_to_orderbook(price_change_t2_ws_msg_hashed, orderbook)
     _, _, hash_t2 = guess_check_orderbook_hash(
-        price_change_t2_ws_msg_hashed["hash"],
+        price_change_t2_ws_msg_hashed.price_changes[0].hash,
         orderbook,
         market_id,
-        [int(price_change_t2_ws_msg_hashed["timestamp"]) - i for i in range(15)],
+        [int(price_change_t2_ws_msg_hashed.timestamp) - i for i in range(15)],
     )
-    assert hash_status is HASH_STATUS.UNKNOWN
-    assert price_change_t2_ws_msg_hashed["hash"] == book_t2_rest_msg_hashed["hash"]
-    assert price_change_t2_ws_msg_hashed["hash"] != book_t1_rest_msg_hashed["hash"]
-    assert hash_t2 == price_change_t2_ws_msg_hashed["hash"]
+    assert price_change_t2_ws_msg_hashed.event_type == "price_change"
+    assert (
+        price_change_t2_ws_msg_hashed.price_changes[0].hash
+        == book_t2_rest_msg_hashed.hash
+    )
+    assert (
+        price_change_t2_ws_msg_hashed.price_changes[0].hash
+        != book_t1_rest_msg_hashed.hash
+    )
+    assert hash_t2 == price_change_t2_ws_msg_hashed.price_changes[0].hash
 
 
 def test_orderbook_marketable_amount_buy(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     price, amount = orderbook.marketable_price("BUY", 135.26)
     assert math.isclose(price, 0.544)
@@ -720,9 +733,9 @@ def test_orderbook_marketable_amount_buy(book_t0_ws_msg_hashed):
 
 
 def test_orderbook_marketable_amount_sell(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     price, amount = orderbook.marketable_price("SELL", 1917.82)
     assert math.isclose(price, 0.53)
@@ -734,9 +747,9 @@ def test_orderbook_marketable_amount_sell(book_t0_ws_msg_hashed):
 
 
 def test_orderbook_marketable_amount_raises_unknown_side(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     with pytest.raises(OrderBookException) as e:
         # noinspection PyTypeChecker
@@ -748,9 +761,9 @@ def test_orderbook_marketable_amount_raises_unknown_side(book_t0_ws_msg_hashed):
 def test_orderbook_marketable_amount_raises_unknown_max_liquidity(
     book_t0_ws_msg_hashed,
 ):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     with pytest.raises(OrderBookException) as e:
         orderbook.marketable_price("BUY", 1e9)
@@ -763,12 +776,12 @@ def test_orderbook_from_dict(book_t0_ws_msg_hashed):
         book_t0_ws_msg_hashed,
     )
 
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
-    timestamp = book_t0_ws_msg_hashed["timestamp"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
+    timestamp = book_t0_ws_msg_hashed.timestamp
 
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     assert book.hash(market_id, timestamp) == orderbook.hash(market_id, timestamp)
     assert list(book.bid_prices) == list(orderbook.bid_prices)
@@ -777,30 +790,30 @@ def test_orderbook_from_dict(book_t0_ws_msg_hashed):
 
 
 def test_orderbook_midpoint_price(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     orderbook = OrderBook(asset_id, 0.001)
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     assert orderbook.midpoint_price == 0.5365
 
 
 # noinspection DuplicatedCode
 def test_guess_orderbook_hash_int_timestamps(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
-    timestamp = int(book_t0_ws_msg_hashed["timestamp"])
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
+    timestamp = int(book_t0_ws_msg_hashed.timestamp)
     orderbook = OrderBook(asset_id, 0.01)
 
     # check hash against initial book message
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
     assert (
         guess_check_orderbook_hash(
-            book_t0_ws_msg_hashed["hash"],
+            book_t0_ws_msg_hashed.hash,
             orderbook,
             market_id,
             [timestamp - i for i in range(15)],
@@ -811,21 +824,21 @@ def test_guess_orderbook_hash_int_timestamps(book_t0_ws_msg_hashed):
 
 # noinspection DuplicatedCode
 def test_guess_orderbook_hash_str_timestamps(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
-    timestamp = int(book_t0_ws_msg_hashed["timestamp"])
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
+    timestamp = int(book_t0_ws_msg_hashed.timestamp)
     orderbook = OrderBook(asset_id, 0.01)
 
     # check hash against initial book message
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
     assert (
         guess_check_orderbook_hash(
-            book_t0_ws_msg_hashed["hash"],
+            book_t0_ws_msg_hashed.hash,
             orderbook,
             market_id,
             [str(timestamp - i) for i in range(15)],
@@ -835,58 +848,62 @@ def test_guess_orderbook_hash_str_timestamps(book_t0_ws_msg_hashed):
 
 
 def test_guess_orderbook_hash_false(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
-    market_id = book_t0_ws_msg_hashed["market"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
+    market_id = book_t0_ws_msg_hashed.market
     orderbook = OrderBook(asset_id, 0.01)
 
     # check hash against initial book message
-    orderbook, _ = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
+    orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
     assert (
         guess_check_orderbook_hash(
-            book_t0_ws_msg_hashed["hash"], orderbook, market_id, [0, 1, 2, 3, 4, 5, 6]
+            book_t0_ws_msg_hashed.hash, orderbook, market_id, [0, 1, 2, 3, 4, 5, 6]
         )[0]
         is False
     )
 
 
 def test_orderbook_to_dict(book_t1_rest_msg_hashed):
-    client_orderbook = parse_raw_orderbook_summary(book_t1_rest_msg_hashed)
+    msg = msgspec.to_builtins(book_t1_rest_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
+    client_orderbook = parse_raw_orderbook_summary(msg)
 
-    orderbook, _ = message_to_orderbook(
+    orderbook = message_to_orderbook(
         book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed["asset_id"], 0.01),
+        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
         event_type="book",
     )
 
     client_dict = client_orderbook.__dict__
     book_dict = orderbook.to_dict(
-        book_t1_rest_msg_hashed["market"],
-        book_t1_rest_msg_hashed["timestamp"],
-        book_t1_rest_msg_hashed["hash"],
+        book_t1_rest_msg_hashed.market,
+        book_t1_rest_msg_hashed.timestamp,
+        book_t1_rest_msg_hashed.hash,
     )
 
     assert client_dict == book_dict
 
 
 def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
-    client_orderbook = parse_raw_orderbook_summary(book_t1_rest_msg_hashed)
+    msg = msgspec.to_builtins(book_t1_rest_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
+    client_orderbook = parse_raw_orderbook_summary(msg)
 
-    orderbook, _ = message_to_orderbook(
+    orderbook = message_to_orderbook(
         book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed["asset_id"], 0.01),
+        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
         event_type="book",
     )
 
     client_dict = client_orderbook.__dict__
     book_dict = orderbook.to_dict(
-        book_t1_rest_msg_hashed["market"],
-        int(book_t1_rest_msg_hashed["timestamp"]),
-        book_t1_rest_msg_hashed["hash"],
+        book_t1_rest_msg_hashed.market,
+        int(book_t1_rest_msg_hashed.timestamp),
+        book_t1_rest_msg_hashed.hash,
     )
 
     assert client_dict == book_dict
@@ -895,15 +912,51 @@ def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
 # noinspection DuplicatedCode
 def test_parse_ws_event_type_price_change_float():
     msg = {
-        "changes": [
-            {"price": "0.1", "side": "SELL", "size": "10"},
-            {"price": "0.11", "side": "SELL", "size": "6.69"},
-            {"price": "0.5", "side": "BUY", "size": "200101090.45"},
-            {"price": "0.67", "side": "BUY", "size": "10.0"},
-        ]
+        "price_changes": [
+            {
+                "asset_id": "123",
+                "price": "0.1",
+                "side": "SELL",
+                "size": "10",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.11",
+                "side": "SELL",
+                "size": "6.69",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.5",
+                "side": "BUY",
+                "size": "200101090.45",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.67",
+                "side": "BUY",
+                "size": "10.0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+        ],
+        "market": "123",
+        "timestamp": 1_000,
     }
-    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_event_type_price_change(
-        msg, float
+    msg = dict_to_market_event_struct(msg, "price_change")
+
+    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
+        msg, "123", float
     )
 
     assert bid_prices == [0.5, 0.67]
@@ -915,15 +968,51 @@ def test_parse_ws_event_type_price_change_float():
 # noinspection DuplicatedCode
 def test_parse_ws_event_type_price_change_decimal():
     msg = {
-        "changes": [
-            {"price": "0.1", "side": "SELL", "size": "10"},
-            {"price": "0.11", "side": "SELL", "size": "6.69"},
-            {"price": "0.5", "side": "BUY", "size": "200101090.45"},
-            {"price": "0.67", "side": "BUY", "size": "10.0"},
-        ]
+        "price_changes": [
+            {
+                "asset_id": "123",
+                "price": "0.1",
+                "side": "SELL",
+                "size": "10",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.11",
+                "side": "SELL",
+                "size": "6.69",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.5",
+                "side": "BUY",
+                "size": "200101090.45",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.67",
+                "side": "BUY",
+                "size": "10.0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+        ],
+        "market": "123",
+        "timestamp": 1_000,
     }
-    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_event_type_price_change(
-        msg, Decimal
+    msg = dict_to_market_event_struct(msg, "price_change")
+
+    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
+        msg, "123", Decimal
     )
 
     assert bid_prices == [Decimal(str(i)) for i in [0.5, 0.67]]
@@ -934,13 +1023,33 @@ def test_parse_ws_event_type_price_change_decimal():
 
 def test_parse_ws_event_type_price_change_float_empty_asks():
     msg = {
-        "changes": [
-            {"price": "0.5", "side": "BUY", "size": "200101090.45"},
-            {"price": "0.67", "side": "BUY", "size": "10.0"},
-        ]
+        "price_changes": [
+            {
+                "asset_id": "123",
+                "price": "0.5",
+                "side": "BUY",
+                "size": "200101090.45",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.67",
+                "side": "BUY",
+                "size": "10.0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+        ],
+        "market": "123",
+        "timestamp": 1_000,
     }
-    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_event_type_price_change(
-        msg, Decimal
+    msg = dict_to_market_event_struct(msg, "price_change")
+
+    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
+        msg, "123", Decimal
     )
 
     assert bid_prices == [Decimal(str(i)) for i in [0.5, 0.67]]
@@ -952,15 +1061,51 @@ def test_parse_ws_event_type_price_change_float_empty_asks():
 # noinspection DuplicatedCode
 def test_parse_ws_event_type_price_change_float_zeroing_asks():
     msg = {
-        "changes": [
-            {"price": "0.1", "side": "SELL", "size": "0"},
-            {"price": "0.11", "side": "SELL", "size": "0"},
-            {"price": "0.5", "side": "BUY", "size": "200101090.45"},
-            {"price": "0.67", "side": "BUY", "size": "10.0"},
-        ]
+        "price_changes": [
+            {
+                "asset_id": "123",
+                "price": "0.1",
+                "side": "SELL",
+                "size": "0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.11",
+                "side": "SELL",
+                "size": "0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.5",
+                "side": "BUY",
+                "size": "200101090.45",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+            {
+                "asset_id": "123",
+                "price": "0.67",
+                "side": "BUY",
+                "size": "10.0",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+            },
+        ],
+        "market": "123",
+        "timestamp": 1_000,
     }
-    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_event_type_price_change(
-        msg, float
+    msg = dict_to_market_event_struct(msg, "price_change")
+
+    bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
+        msg, "123", float
     )
 
     assert bid_prices == [0.5, 0.67]
@@ -971,26 +1116,62 @@ def test_parse_ws_event_type_price_change_float_zeroing_asks():
 
 def test_parse_ws_event_type_price_change_raise_side():
     msg = {
-        "changes": [
-            {"price": "0.1", "side": "SELL", "size": "10"},
-            {"price": "0.11", "side": "SELL", "size": "6.69"},
-            {"price": "0.5", "side": "SOME", "size": "200101090.45"},
-            {"price": "0.67", "side": "BUY", "size": "10.0"},
-        ]
+        "price_changes": [
+            {
+                "asset_id": "123",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+                "price": "0.1",
+                "side": "SELL",
+                "size": "10",
+            },
+            {
+                "asset_id": "123",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+                "price": "0.11",
+                "side": "SELL",
+                "size": "6.69",
+            },
+            {
+                "asset_id": "123",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+                "price": "0.5",
+                "side": "SELL",
+                "size": "200101090.45",
+            },
+            {
+                "asset_id": "123",
+                "hash": "",
+                "best_bid": "0.0",
+                "best_ask": "0.0",
+                "price": "0.67",
+                "side": "BUY",
+                "size": "10.0",
+            },
+        ],
+        "market": "123",
+        "timestamp": 1_000,
     }
+    msg = dict_to_market_event_struct(msg, "price_change")
+    msg.price_changes[2].side = "SOME"
 
     with pytest.raises(ValueError):
-        _quotes_event_type_price_change(msg, float)
+        _quotes_from_price_change_event(msg, "123", float)
 
 
 def test_message_to_orderbook_empty_asks_book_msg(book_t0_ws_msg_hashed):
-    book = OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
+    book = OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
 
-    book_t0_ws_msg_hashed["asks"] = []
+    book_t0_ws_msg_hashed.asks = []
 
-    book, hash_status = message_to_orderbook(book_t0_ws_msg_hashed, book)
+    book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
-    assert hash_status is HASH_STATUS.VALID
+    assert book_t0_ws_msg_hashed.event_type == "book"
     assert np.sum(book.asks[1]) == 0
     assert np.sum(book.bids[1]) > 0
 
@@ -999,22 +1180,22 @@ def test_message_to_orderbook_empty_asks_book_msg(book_t0_ws_msg_hashed):
 def test_message_to_orderbook_empty_asks_price_change_msg(
     book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
 ):
-    book = OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
-    book, hash_status = message_to_orderbook(book_t0_ws_msg_hashed, book)
+    book = OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
+    book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
-    assert hash_status is HASH_STATUS.VALID
+    assert book_t0_ws_msg_hashed.event_type == "book"
     assert np.sum(book.asks[1]) > 0
     assert np.sum(book.bids[1]) > 0
 
     bid_vol = np.sum(book.bids[1])
     ask_vol = np.sum(book.asks[1])
 
-    price_change_t1_ws_msg_hashed["changes"] = [
-        d for d in price_change_t1_ws_msg_hashed["changes"] if d["side"] == "BUY"
+    price_change_t1_ws_msg_hashed.price_changes = [
+        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "BUY"
     ]
-    book, hash_status = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
+    book = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
 
-    assert hash_status is HASH_STATUS.UNKNOWN
+    assert price_change_t1_ws_msg_hashed.event_type == "price_change"
     assert np.sum(book.asks[1]) == ask_vol
     assert np.sum(book.bids[1]) != bid_vol
     assert np.sum(book.asks[1]) > 0
@@ -1025,26 +1206,35 @@ def test_message_to_orderbook_empty_asks_price_change_msg(
 def test_message_to_orderbook_zeroing_asks_price_change_msg(
     book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
 ):
-    book = OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
-    book, hash_status = message_to_orderbook(book_t0_ws_msg_hashed, book)
+    book = OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
+    book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
-    assert hash_status is HASH_STATUS.VALID
+    assert book_t0_ws_msg_hashed.event_type == "book"
     assert np.sum(book.asks[1]) > 0
     assert np.sum(book.bids[1]) > 0
 
     bid_vol = np.sum(book.bids[1])
 
     buy_changes = [
-        d for d in price_change_t1_ws_msg_hashed["changes"] if d["side"] == "BUY"
+        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "BUY"
     ]
     ask_changes = [
-        {"price": str(i), "side": "SELL", "size": "0"} for i in book.ask_prices
+        PriceChangeSummary(
+            "72936048731589292555781174533757608024096898681344338816447372274344589246891",
+            str(i),
+            "0",
+            SIDE.SELL,
+            "",
+            "0.0",
+            "0.0",
+        )
+        for i in book.ask_prices
     ]
-    price_change_t1_ws_msg_hashed["changes"] = buy_changes + ask_changes
+    price_change_t1_ws_msg_hashed.price_changes = buy_changes + ask_changes
 
-    book, hash_status = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
+    book = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
 
-    assert hash_status is HASH_STATUS.UNKNOWN
+    assert price_change_t1_ws_msg_hashed.event_type == "price_change"
     assert np.sum(book.asks[1]) == 0
     assert np.sum(book.bids[1]) != bid_vol
     assert np.sum(book.bids[1]) > 0
@@ -1053,59 +1243,71 @@ def test_message_to_orderbook_zeroing_asks_price_change_msg(
 def test_message_to_orderbook_raise_event_type_exists(book_t0_ws_msg_hashed):
     # ws response with event_type specified: fail
     # ws response without event_type: success
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as e1:
         message_to_orderbook(
             book_t0_ws_msg_hashed,
-            OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01),
-            event_type="book",
+            OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01),
+            event_type="price_change",
         )
+    assert "already exists" in str(e1)
+
+    msg = msgspec.to_builtins(book_t0_ws_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
+    msg["event_type"] = "book"
+    with pytest.raises(ValueError) as e2:
+        message_to_orderbook(
+            book_t0_ws_msg_hashed,
+            OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01),
+            event_type="price_change",
+        )
+    assert "already exists" in str(e2)
 
     message_to_orderbook(
-        book_t0_ws_msg_hashed, OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
+        book_t0_ws_msg_hashed, OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
     )
 
 
 def test_message_to_orderbook_raise_specify_event_type(book_t1_rest_msg_hashed):
     # rest response without event_type: fail
     # rest response with event_type specified: success
+    msg = msgspec.to_builtins(book_t1_rest_msg_hashed)
+    del msg["event_type"]
+    msg["timestamp"] = str(msg["timestamp"])
+
     with pytest.raises(KeyError) as e:
         message_to_orderbook(
-            book_t1_rest_msg_hashed,
-            OrderBook(book_t1_rest_msg_hashed["asset_id"], 0.01),
+            msg,
+            OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
         )
-
-        assert "REST" in str(e)
+    assert "missing" in str(e)
 
     message_to_orderbook(
         book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed["asset_id"], 0.01),
+        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
         event_type="book",
     )
 
 
 def test_message_to_orderbook_raise_unknown_event_type(book_t0_ws_msg_hashed):
-    book = OrderBook(book_t0_ws_msg_hashed["asset_id"], 0.01)
-    book, _ = message_to_orderbook(book_t0_ws_msg_hashed, book)
+    book = OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
+    book = message_to_orderbook(book_t0_ws_msg_hashed, book)
+
     assert (
-        book.hash(book_t0_ws_msg_hashed["market"], book_t0_ws_msg_hashed["timestamp"])
-        == book_t0_ws_msg_hashed["hash"]
+        book.hash(book_t0_ws_msg_hashed.market, book_t0_ws_msg_hashed.timestamp)
+        == book_t0_ws_msg_hashed.hash
     )
 
-    book_t0_ws_msg_hashed["event_type"] = "some"
+    msg = msgspec.to_builtins(book_t0_ws_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
+    msg["event_type"] = "some"
 
     with pytest.raises(EventTypeException):
-        message_to_orderbook(book_t0_ws_msg_hashed, book)
+        message_to_orderbook(msg, book)
 
 
-def test_message_to_orderbook_raise_silent_valid_asset_id(book_t0_ws_msg_hashed):
-    book, _ = message_to_orderbook(
-        book_t0_ws_msg_hashed,
-        OrderBook("test_token_id", 0.01),
-        mode="silent",
-    )
-
-    assert np.sum(book.bids[1]) == 0
-    assert np.sum(book.asks[1]) == 0
+def test_message_to_orderbook_raise_asset_id(book_t0_ws_msg_hashed):
+    with pytest.raises(OrderBookException):
+        message_to_orderbook(book_t0_ws_msg_hashed, OrderBook("test_token_id", 0.01))
 
 
 def test_message_to_orderbook_tick_size_change():
@@ -1119,10 +1321,11 @@ def test_message_to_orderbook_tick_size_change():
         "new_tick_size": "0.001",
         "timestamp": "100000000",
     }
+    msg = msgspec.convert(msg, TickSizeEvent, strict=False)
 
-    book, hash_status = message_to_orderbook(msg, book)
+    book = message_to_orderbook(msg, book)
 
-    assert hash_status is HASH_STATUS.UNCHANGED
+    assert msg.event_type == "tick_size_change"
     assert book.tick_size == 0.001
 
 
@@ -1198,6 +1401,7 @@ def test_split_order_summaries_to_quotes_dict_float():
         {"price": "0.75", "size": "75.5"},
         {"price": "0.2", "size": "20"},
     ]
+    x = msgspec.convert(x, list[OrderSummaryStruct])
 
     p, s = split_order_summaries_to_quotes(x, float)
 
@@ -1215,6 +1419,7 @@ def test_split_order_summaries_to_quotes_dict_decimal():
         {"price": "0.75", "size": "75.5"},
         {"price": "0.2", "size": "20"},
     ]
+    x = msgspec.convert(x, list[OrderSummaryStruct])
 
     p, s = split_order_summaries_to_quotes(x, Decimal)
 
@@ -1231,6 +1436,7 @@ def test_split_order_summaries_to_quotes_dict_float_maintain_order():
         {"price": "0.75", "size": "75.5"},
         {"price": "0.2", "size": "20"},
     ][::-1]
+    x = msgspec.convert(x, list[OrderSummaryStruct])
 
     p, s = split_order_summaries_to_quotes(x, float)
 
@@ -1298,22 +1504,19 @@ def test_split_order_summaries_to_quotes_raise_type():
 
 
 def test_valid_message_id(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed["asset_id"]
+    asset_id = book_t0_ws_msg_hashed.asset_id
     book = OrderBook(asset_id, 0.01)
 
     # test True case
-    assert _valid_message_asset_id(book_t0_ws_msg_hashed, book) is True
+    message_to_orderbook(book_t0_ws_msg_hashed, book)
 
     # test False case
-    book_t0_ws_msg_hashed["asset_id"] = "test"
-
-    with pytest.warns():
-        _valid_message_asset_id(book_t0_ws_msg_hashed, book, "warn")
+    msg = msgspec.structs.replace(book_t0_ws_msg_hashed, asset_id="test")
+    assert msg.asset_id == "test"
+    assert book_t0_ws_msg_hashed.asset_id != "test"
 
     with pytest.raises(OrderBookException):
-        _valid_message_asset_id(book_t0_ws_msg_hashed, book, "except")
-
-    assert _valid_message_asset_id(book_t0_ws_msg_hashed, book, "silent") is False
+        message_to_orderbook(msg, book)
 
 
 def test_coerce_inbound_idx():
@@ -1438,8 +1641,9 @@ def test_coerce_inbound_msg():
         ],
         "event_type": "book",
     }
+    msg = msgspec.convert(msg, BookEvent, strict=False)
 
-    book, _ = message_to_orderbook(msg, book)
+    book = message_to_orderbook(msg, book)
 
     assert book.ask_size(1) == 500
     assert book.ask_size(Decimal("0.999")) == Decimal("13072.46")
@@ -1475,13 +1679,13 @@ def test_visualize_orderbook(unified_book_yes):
         np.log(np.cumsum(bidsq)),
         color="green",
         alpha=0.5,
-        width=min(orderbook.allowed_tick_sizes),
+        width=orderbook.min_tick_size,
     )
     plt.bar(
         asksp,
         np.log(np.cumsum(asksq)),
         color="red",
         alpha=0.5,
-        width=min(orderbook.allowed_tick_sizes),
+        width=orderbook.min_tick_size,
     )
     plt.show()
