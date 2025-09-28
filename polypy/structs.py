@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal
+from typing import Literal, Union
 
 import msgspec
 
@@ -198,3 +198,90 @@ class RelayerResponse(msgspec.Struct, forbid_unknown_fields=True):
         "STATE_CONFIRMED",
         "STATE_FAILED",
     ]
+
+
+class OrderSummary(msgspec.Struct, forbid_unknown_fields=True):
+    price: str
+    size: str
+
+
+class PriceChangeSummary(msgspec.Struct, forbid_unknown_fields=True):
+    asset_id: str
+    price: str
+    size: str
+    side: SIDE
+    hash: str
+    best_bid: str
+    best_ask: str
+
+
+class BookEvent(
+    msgspec.Struct,
+    forbid_unknown_fields=True,
+    tag_field="event_type",
+    tag="book",
+):
+    market: str
+    asset_id: str
+    timestamp: int
+    hash: str
+    bids: list[OrderSummary]
+    asks: list[OrderSummary]
+
+    @property
+    def event_type(self) -> str:
+        return "book"
+
+
+class PriceChangeEvent(
+    msgspec.Struct,
+    forbid_unknown_fields=True,
+    tag_field="event_type",
+    tag="price_change",
+):
+    market: str
+    price_changes: list[PriceChangeSummary]
+    timestamp: int
+
+    @property
+    def event_type(self) -> str:
+        return "price_change"
+
+
+class TickSizeEvent(
+    msgspec.Struct,
+    forbid_unknown_fields=True,
+    tag_field="event_type",
+    tag="tick_size_change",
+):
+    market: str
+    asset_id: str
+    old_tick_size: str
+    new_tick_size: str
+    timestamp: int
+
+    @property
+    def event_type(self) -> str:
+        return "tick_size_change"
+
+
+class LastTradePriceEvent(
+    msgspec.Struct,
+    forbid_unknown_fields=True,
+    tag_field="event_type",
+    tag="last_trade_price",
+):
+    market: str
+    asset_id: str
+    fee_rate_bps: str
+    price: str
+    side: SIDE
+    size: str
+    timestamp: int
+
+    @property
+    def event_type(self) -> str:
+        return "last_trade_price"
+
+
+MarketEvent = Union[BookEvent, PriceChangeEvent, TickSizeEvent, LastTradePriceEvent]
