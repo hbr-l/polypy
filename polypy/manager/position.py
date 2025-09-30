@@ -19,7 +19,7 @@ import msgspec.json
 from hexbytes import HexBytes
 from web3.types import TxReceipt
 
-from polypy.book import OrderBook
+from polypy.book.order_book import OrderBookProtocol
 from polypy.constants import ENDPOINT, N_DIGITS_SIZE, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
@@ -169,7 +169,7 @@ class PositionManagerProtocol(Protocol):
 
     def total(
         self,
-        midpoints: dict[str, NumericAlias | OrderBook | None] | None,
+        midpoints: dict[str, NumericAlias | OrderBookProtocol | None] | None,
         tick_size: float | None,
     ) -> NumericAlias:
         # noinspection GrazieInspection
@@ -177,7 +177,7 @@ class PositionManagerProtocol(Protocol):
 
         Parameters
         ----------
-        midpoints: dict[str, NumericAlias | OrderBook | None] | None
+        midpoints: dict[str, NumericAlias | OrderBookProtocol | None] | None
             key: asset_id, value: NumericAlias (supplied midpoint), order book or None (REST call)
         tick_size: float | None
             if float: same tick_size for all assets
@@ -703,7 +703,7 @@ class PositionManager(PositionManagerProtocol):
         return midpoints
 
     def _parse_midpoints(
-        self, midpoints: dict[str, NumericAlias | OrderBook | None] | None
+        self, midpoints: dict[str, NumericAlias | OrderBookProtocol | None] | None
     ) -> dict[str, NumericAlias]:
         if midpoints is None:
             midpoints = {}
@@ -734,7 +734,7 @@ class PositionManager(PositionManagerProtocol):
 
     def total(
         self,
-        midpoints: dict[str, NumericAlias | OrderBook | None] | None,
+        midpoints: dict[str, NumericAlias | OrderBookProtocol | None] | None,
         tick_size: float | None,
     ) -> NumericAlias:
         with self.lock:
