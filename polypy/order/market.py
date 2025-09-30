@@ -18,7 +18,7 @@ from polypy.signing import SIGNATURE_TYPE, polymarket_domain
 from polypy.typing import NumericAlias, infer_numeric_type
 
 if TYPE_CHECKING:
-    from polypy.book import OrderBook
+    from polypy.book.order_book import OrderBookProtocol
 
 
 def market_order_taker_maker_amount(
@@ -92,7 +92,7 @@ def terminal_price(side: SIDE, tick_size: NumericAlias) -> NumericAlias:
 
 
 def is_marketable_amount(
-    book: "OrderBook",
+    book: "OrderBookProtocol",
     side: SIDE,
     amount: NumericAlias,
 ) -> bool:
@@ -117,7 +117,7 @@ def create_market_order(
     private_key: PrivateKey | str | PrivateKeyType,
     maker: str | None,
     signature_type: SIGNATURE_TYPE,
-    book: "OrderBook | None" = None,
+    book: "OrderBookProtocol | None" = None,
     max_size: NumericAlias | None = None,
     salt: int | None = None,
     order_id: str | None = None,
@@ -149,7 +149,7 @@ def create_market_order(
     private_key
     chain_id
     neg_risk
-    book: OrderBook | None,
+    book: "OrderBookProtocol" | None,
         if defined, checks the oder book if enough liquidity is available in the order book to fill the order
     max_size: NumericAlias | None,
         only required if SIDE.SELL
@@ -251,7 +251,7 @@ class MarketOrderFactory(Protocol):
         private_key: PrivateKey | str | PrivateKeyType,
         maker: str | None,
         signature_type: SIGNATURE_TYPE,
-        book: "OrderBook",
+        book: "OrderBookProtocol",
         max_size: NumericAlias | None,
         *args,
         **kwargs,
