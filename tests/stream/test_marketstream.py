@@ -4,6 +4,7 @@ import pathlib
 import threading
 import time
 import warnings
+from decimal import Decimal
 from typing import Any
 
 import msgspec
@@ -13,7 +14,13 @@ import responses
 from websockets.exceptions import ConnectionClosedError
 from websockets.sync.client import connect
 
-from polypy.book import OrderBook, guess_check_orderbook_hash, message_to_orderbook
+from polypy.book import (
+    OrderBook,
+    SharedOrderBook,
+    guess_check_orderbook_hash,
+    message_to_orderbook,
+)
+from polypy.book.order_book import OrderBookProtocol
 from polypy.exceptions import OrderBookException, StreamException
 from polypy.stream.market import STATUS_ORDERBOOK, CheckHashParams, MarketStream
 
@@ -235,13 +242,13 @@ def test_order_book_test_server_messages_txt():
 
 def assert_market_streamer_state(
     streamer: MarketStream,
-    book: OrderBook,
+    book: OrderBookProtocol,
     market_id: str,
     expected_book_status: int,
     expected_ltp_price: str,
     expected_ltp_size: str,
     expected_ltp_side: str,
-    expected_tick_size: float,
+    expected_tick_size: float | Decimal,
     expected_target_hash: str | None,
     expected_timestamp: str | int | float,
     expected_count: int,
@@ -289,9 +296,7 @@ def get_data_timestamp(x) -> int:
 
 
 # noinspection DuplicatedCode
-def test_marketstream_delay_partial_drop_skip_no_request(
-    mock_server_click_on, setup_streamer
-):
+def test_marketstream_partial_skip_no_request(mock_server_click_on, setup_streamer):
     click_on, asset_id, data = mock_server_click_on(
         data_pth=test_pth / "data/test_server_messages.txt"
     )
@@ -301,10 +306,10 @@ def test_marketstream_delay_partial_drop_skip_no_request(
 
     # order of clicks:
     # 1. send - book
-    # 2. delay - price_change
-    # 3. delay- price_change
-    # 4. partial drop - price_change
-    # 5. partial drop - price_change
+    # 2. price_change
+    # 3. price_change
+    # 4. price_change
+    # 5. price_change
     # 6. send - last_trade_price
     # 7. skip - price_change
     # 8. send - price_change  (this triggers false hash)
@@ -340,7 +345,7 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             0,
         )
 
-        click_on.delay_send({1: 0.1}, 0.5)  # 2. delay - price_change
+        click_on.send()  # 2. price_change
         assert_market_streamer_state(
             streamer,
             book,
@@ -355,7 +360,7 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             1,
         )
 
-        click_on.delay_send({1: 0.1}, 0.5)  # 3. delay- price_change
+        click_on.send()  # 3. price_change
         assert_market_streamer_state(
             streamer,
             book,
@@ -850,11 +855,11 @@ def test_marketstream_callback_message(
         None,
         callback_msg=callback_thread_id_storage,
     )
-    # force other thread to take over via DELAY
+
     click_on.send()
-    click_on.delay_send({0: 0.1})
     click_on.send()
-    click_on.delay_send({0: 0.1})
+    click_on.send()
+    click_on.send()
     click_on.send(0.5)
 
     time.sleep(0.2)
@@ -1030,7 +1035,7 @@ def test_marketstream_multi_book(mock_server_click_on):
             0,
         )
 
-        click_on.delay_send({1: 0.1}, 0.5)  # 3. delay - price_change - book1
+        click_on.send()  # 3. price_change - book1
         assert_market_streamer_state(
             streamer,
             book1,
@@ -1045,7 +1050,7 @@ def test_marketstream_multi_book(mock_server_click_on):
             1,
         )
 
-        click_on.delay_send({1: 0.1}, 0.2)  # 4. delay- price_change - book1
+        click_on.send()  # 4. price_change - book1
         assert_market_streamer_state(
             streamer,
             book1,
@@ -1060,7 +1065,7 @@ def test_marketstream_multi_book(mock_server_click_on):
             2,
         )
 
-        click_on.delay_send({1: 0.1}, 0.2)  # 5. delay - price_change - book2
+        click_on.send()  # 5. price_change - book2
         assert_market_streamer_state(
             streamer,
             book2,
@@ -1075,7 +1080,7 @@ def test_marketstream_multi_book(mock_server_click_on):
             1,
         )
 
-        click_on.delay_send({1: 0.1}, 0.2)  # 6. delay- price_change - book2
+        click_on.send()  # 6. price_change - book2
         assert_market_streamer_state(
             streamer,
             book2,
@@ -1106,8 +1111,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             0,
         )
 
-        # 8. partial drop - price_change -> should trigger hash check - book1
-        click_on.delay_send({0: 0.1, 2: 0.1})
+        # 8. price_change -> should trigger hash check - book1
+        click_on.send()
         time.sleep(0.2)
         assert_market_streamer_state(
             streamer,
@@ -1237,11 +1242,10 @@ def test_marketstream_reconnect(
         callback_msg=callback_thread_id_storage,
     )
 
-    # force other thread to take over via DELAY
     click_on.send()
-    click_on.delay_send({0: 0.1}, 0.5)
     click_on.send()
-    click_on.delay_send({0: 0.1}, 0.5)
+    click_on.send()
+    click_on.send()
 
     time.sleep(0.5)
 
@@ -1262,11 +1266,10 @@ def test_marketstream_reconnect(
     # clean cache
     callback_thread_id_storage.val = set()
 
-    # force other thread to take over via DELAY
     click_on.send()
-    click_on.delay_send({0: 0.1}, 0.5)
     click_on.send()
-    click_on.delay_send({0: 0.1}, 0.5)
+    click_on.send()
+    click_on.send()
 
     # on streamer side, we continue to use the same thread for re-connection
     #   (just opening new websocket from within the same thread) -> 1 thread
@@ -1301,24 +1304,36 @@ def test_marketstream_reconnect(
     )
 
 
-def test_marketstream_nb_sockets_and_buffer_protection(
-    mock_server_click_on, setup_streamer, callback_thread_id_storage
+def test_marketstream_shared_orderbook(
+    mock_server_click_on, callback_thread_id_storage
 ):
+    book = SharedOrderBook(
+        "72936048731589292555781174533757608024096898681344338816447372274344589246891",
+        0.001,
+        True,
+    )
+    streamer = MarketStream(
+        "ws://localhost:8002/",
+        book,
+        check_hash_params=None,
+        rest_endpoint=None,
+        ws_channel="",
+        ping_time=None,
+        callback_msg=callback_thread_id_storage,
+    )
+    streamer.start()
+    time.sleep(2)
+
     click_on, asset_id, data = mock_server_click_on(
         data_pth=test_pth / "data/test_server_messages.txt"
     )
-    streamer, book = setup_streamer(
-        asset_id,
-        None,
-        None,
-        None,
-        callback_msg=callback_thread_id_storage,
-    )
 
-    click_on.delay_send({0: 0.3, 1: 0.2, 2: 0.1}, 0.4)  # nb 3 receives immediately
-    click_on.delay_send({0: 0.1, 1: 0.2, 3: 0.3}, 0.4)  # nb 2 receives immediately
-    click_on.delay_send({0: 0.1, 2: 0.3, 3: 0.2}, 0.4)  # nb 1 receives immediately
-    click_on.delay_send({1: 0.1, 2: 0.1, 3: 0.1}, 0.4)  # nb 0 receives immediately
+    assert asset_id == book.token_id
+
+    click_on.send()
+    click_on.send()
+    click_on.send()
+    click_on.send()
 
     assert len(callback_thread_id_storage.val) == 1
     assert (
@@ -1336,8 +1351,10 @@ def test_marketstream_nb_sockets_and_buffer_protection(
         "",
         "",
         "",
-        0.001,
+        Decimal("0.001"),
         get_data_hash(data[click_on.counter]),
         get_data_timestamp(data[click_on.counter]),
         0,
     )
+
+    book.cleanup()
