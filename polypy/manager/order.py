@@ -7,7 +7,7 @@ from typing import Any, KeysView, Literal, Protocol, Self, TypeAlias
 from eth_account.types import PrivateKeyType
 from eth_keys.datatypes import PrivateKey
 
-from polypy.book import OrderBook
+from polypy.book.order_book import OrderBookProtocol
 from polypy.constants import CHAIN_ID, ENDPOINT
 from polypy.exceptions import (
     ManagerInvalidException,
@@ -190,7 +190,7 @@ class OrderManagerProtocol(Protocol):
         token_id: str,
         side: SIDE,
         tick_size: float | NumericAlias | None,
-        book: OrderBook | None,
+        book: OrderBookProtocol | None,
         max_size: NumericAlias | None,
         neg_risk: bool | None = None,
         **kwargs,
@@ -710,7 +710,7 @@ class OrderManager(OrderManagerProtocol):
         token_id: str,
         side: SIDE,
         tick_size: float | NumericAlias | None,
-        book: OrderBook | None,
+        book: OrderBookProtocol | None,
         max_size: NumericAlias | None,
         neg_risk: bool | None = None,
         **kwargs,
@@ -724,7 +724,7 @@ class OrderManager(OrderManagerProtocol):
         side: SIDE,
         tick_size: float | NumericAlias | None,
             if None, tries to infer tick_size by `book`. If book is also None, then calls REST.
-        book: OrderBook | None,
+        book: OrderBookProtocol | None,
             if not None, will check marketable amount.
         max_size: NumericAlias | None,
         neg_risk: bool | None = None,
