@@ -364,16 +364,16 @@ def mock_server_click_on():
                     action = click_on.action
 
                     if action == CLICK_ACTION.SEND:
-                        conn.send(json.dumps([item]))
+                        conn.send(json.dumps(item))
                     elif action == CLICK_ACTION.SKIP:
                         pass
                     elif action == CLICK_ACTION.DELAY:
                         if conn_idx in click_on.delay_params:
                             time.sleep(click_on.delay_params[conn_idx])
-                        conn.send(json.dumps([item]))
+                        conn.send(json.dumps(item))
                     elif action == CLICK_ACTION.PARTIAL_DROP:
                         if conn_idx not in click_on.drop_idx:
-                            conn.send(json.dumps([item]))
+                            conn.send(json.dumps(item))
                     elif action == CLICK_ACTION.DISCONNECT:
                         connections.remove(conn)
                         click_on.remove_conn(conn)
@@ -422,7 +422,7 @@ def mock_server_click_on():
         click_on.thread = thread
         thread.start()
 
-        return click_on, data[0]["asset_id"], data
+        return click_on, data[0][0]["asset_id"], data
 
     yield closure
     click_on.stop(True, 2)
