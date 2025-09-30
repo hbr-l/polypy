@@ -22,7 +22,7 @@ from polypy.book.tick import SharedTickSize, TickSize, TickSizeFactory, TickSize
 from polypy.constants import ENDPOINT, N_DIGITS_SIZE
 from polypy.exceptions import OrderBookException
 from polypy.ipc.lock import SharedProcRLock
-from polypy.ipc.shm import FinalizedSharedMemory, SharedZerosDec
+from polypy.ipc.shm import FinalizedSharedMemory, SharedDecimalArray
 from polypy.order.common import SIDE
 from polypy.rest.api import get_book_summaries, get_tick_size
 from polypy.rounding import round_half_even
@@ -722,19 +722,19 @@ class SharedOrderBook:
         _min_tick_digits = int(math.log10(self._inv_min_tick))
 
         # FIXME: check N_DIGITS_SIZE ?
-        self._bid_q = SharedZerosDec(
+        self._bid_q = SharedDecimalArray(
             _len_q, shm_bid_q, create=create, n_decimals=N_DIGITS_SIZE
         )  # quantity
-        self._ask_q = SharedZerosDec(
+        self._ask_q = SharedDecimalArray(
             _len_q, shm_ask_q, create=create, n_decimals=N_DIGITS_SIZE
         )
 
         self.lock = SharedProcRLock(shm_lock, create)  # todo reader-write lock instead
 
-        self._bid_p = SharedZerosDec(
+        self._bid_p = SharedDecimalArray(
             _len_q, shm_bid_p, create=create, n_decimals=_min_tick_digits
         )  # price
-        self._ask_p = SharedZerosDec(
+        self._ask_p = SharedDecimalArray(
             _len_q, shm_ask_p, create=create, n_decimals=_min_tick_digits
         )
         if create:
@@ -1002,11 +1002,9 @@ class SharedOrderBook:
     def bids_summary(self) -> list[dict[str, str]]:
         with self.lock:
             bid_q_int = self._bid_q._arr
-            bid_s = bid_q_int[bid_q_int != 0].astype(np.float64) / self._bid_q._scale
+            bid_s = bid_q_int[bid_q_int != 0].astype(np.float64) / self._bid_q.scale
 
-            bid_p = (
-                self._bid_p._arr[np.nonzero(bid_q_int[::-1])[0]] / self._bid_p._scale
-            )
+            bid_p = self._bid_p._arr[np.nonzero(bid_q_int[::-1])[0]] / self._bid_p.scale
 
             return [
                 dict(price=_number_to_str(p), size=_number_to_str(s))
@@ -1017,9 +1015,9 @@ class SharedOrderBook:
     def asks_summary(self) -> list[dict[str, str]]:
         with self.lock:
             ask_q_int = self._ask_q._arr
-            ask_s = ask_q_int[ask_q_int != 0].astype(np.float64) / self._ask_q._scale
+            ask_s = ask_q_int[ask_q_int != 0].astype(np.float64) / self._ask_q.scale
 
-            ask_p = self._ask_p._arr[np.nonzero(ask_q_int)[0]] / self._ask_p._scale
+            ask_p = self._ask_p._arr[np.nonzero(ask_q_int)[0]] / self._ask_p.scale
 
             return [
                 dict(price=_number_to_str(p), size=_number_to_str(s))
