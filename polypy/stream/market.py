@@ -1,25 +1,26 @@
 import datetime
 import socket
-import threading
-import traceback
 import warnings
 from collections import namedtuple
 from enum import IntEnum
+from functools import lru_cache
 from typing import Any, Callable, Literal, Self
 
-import msgspec
 import numpy as np
-from websockets import ConnectionClosed
-from websockets.sync.client import connect
 
-from polypy import PolyPyException
 from polypy.book.hashing import guess_check_orderbook_hash
 from polypy.book.order_book import OrderBookProtocol
 from polypy.book.parsing import message_to_orderbook
 from polypy.constants import ENDPOINT
-from polypy.exceptions import EventTypeException, OrderBookException, StreamException
+from polypy.exceptions import (
+    EventTypeException,
+    OrderBookException,
+    PolyPyException,
+    StreamException,
+)
+from polypy.ipc.shm import SharedArray
 from polypy.rest.api import get_book_summaries
-from polypy.stream.common import CHANNEL
+from polypy.stream.common import CHANNEL, MessageStreamer
 from polypy.structs import LastTradePriceEvent, MarketEvent, PriceChangeEvent
 from polypy.typing import ZerosFactoryFunc, ZerosProtocol
 
@@ -36,11 +37,9 @@ class STATUS_ORDERBOOK(IntEnum):
     VERIFIED = 1
 
 
-# FIXME use base streamer NEXT
 # todo decouple in OrderBookStream message type from procedure
-# todo stream complement token and merge msgs
 # todo factor out BookHashChecker
-class MarketStream:
+class MarketStream(MessageStreamer):
     def __init__(
         self,
         ws_endpoint: ENDPOINT | str,
@@ -49,10 +48,13 @@ class MarketStream:
         rest_endpoint: ENDPOINT | str | None,
         ws_channel: CHANNEL | str = CHANNEL.MARKET,
         ping_time: float | None = 5,
-        zeros_factory: type[ZerosProtocol] | ZerosFactoryFunc = np.zeros,
-        callback_msg: Callable[[dict[str, Any], Self], None] | None = None,
-        callback_exception: Callable[[Exception, Self], None] | None = None,
+        status_arr_factory: type[ZerosProtocol] | ZerosFactoryFunc = np.zeros,
+        last_traded_arr_factory: type[ZerosProtocol] | ZerosFactoryFunc = np.zeros,
+        callback_msg: Callable[[Self, dict[str, Any]], None] | None = None,
+        callback_exc: Callable[[Self, Exception], None] | None = None,
         sock: socket.socket | None = None,
+        max_size: int | None = 2**20,
+        max_queue: int | None | tuple[int | None, int | None] = 16,
     ):
         """
 
@@ -66,14 +68,25 @@ class MarketStream:
             if None, no REST request to fetch order book in case order book hash cannot be confirmed
         ws_channel
         ping_time
-        zeros_factory: type[ZerosProtocol] | ZerosFactoryFunc
+        status_arr_factory: type[ZerosProtocol] | ZerosFactoryFunc
             zeros-array factory (either constructor or factory function)
-            with kwargs dtype=np.dtype("U128") and dtype=int
+            with dtype=int, used to store status per each order book
+            (same ordering along dim=0 as `books`).
+            If using shared memory (multiprocessing), use SharedArray.factory(...) with `fill_value=0`, and
+            use `status_orderbook_shared(...)` to read back if `MarketStream` is defined in child process
+            (use shm_name).
+        last_traded_arr_factory: type[ZerosProtocol] | ZerosFactoryFunc
+            zeros-array factory (either constructor or factory function)
+            with kwargs dtype=np.dtype("U80"), used to store last traded price per each order book
+            (same ordering along dim=0 as `books`).
+            If using shared memory (multiprocessing), use SharedArray.factory(...) with `fill_value=""`, and
+            use `last_traded_price_shared(...)` to read back if `MarketStream` is defined in child process
+            (use shm_name).
         callback_msg: Callable[[str | bytes, Self], None] | None
             callback, takes message (JSON parsed dict) and self as input and has no output.
             This callback is only invoked on messages that are processed to change the order book
             or last traded price, and which are not filtered out (i.e., unknown event_type, etc.)
-        callback_exception: Callable[[Exception, Self], None] | None
+        callback_exc: Callable[[Exception, Self], None] | None
             callback, takes exception and self as input and has no output. Only invoked if any exception happens.
             Can be used for, e.g. observer pattern.
         sock: socket.socket | None, default=None
@@ -82,7 +95,7 @@ class MarketStream:
         Notes
         -----
         If used in separate process:
-            - zeros_factory: instantiate/ return sharedMemory array for dtype=np.dtype("U128") and dtype=int
+            - zeros_factory: instantiate/ return sharedMemory array for dtype=np.dtype("U80") and dtype=int
             - books: OrderBookProtocol must implement sharedMemory array as
               quantity buffers (see argument `zeros_factory` of OrderBookProtocol)
 
@@ -104,30 +117,21 @@ class MarketStream:
         if ws_endpoint[-1] != "/":
             ws_endpoint = f"{ws_endpoint}/"
 
-        self.url = f"{ws_endpoint}{ws_channel}"
         self.endpoint = rest_endpoint
-        self.ping_time = ping_time
-        self.zeros_factory = zeros_factory
-        self.callback_msg = callback_msg
-        self.callback_exception = callback_exception
-        self.sock = sock
+        self.status_arr_factory = status_arr_factory
+        self.last_traded_arr_factory = last_traded_arr_factory
 
         self.book_dict: dict[str, OrderBookProtocol] = {
             book.token_id: book for book in books
         }
         self._book_idx = {book.token_id: i for i, book in enumerate(books)}
 
-        # will be initialized at _setup()
+        # will be initialized at pre_start()
         self.counter_dict: dict[str, int] | None = None
-        self.thread: threading.Thread | None = None
-        self._stop_token: bool = False
-        # enable custom zeros array instead of dicts, e.g. shared memory implementation
-        self.last_traded_price_arr: ZerosProtocol | None = None
-        self.status_arr: ZerosProtocol | None = None
         # we use an array instead of a dict[book_id, LastTradePriceEvent] or dict[book_id, STATUS_ORDERBOOK]
         #   s.t. shared memory can be used for multiprocessing if necessary
-
-        self._reset()
+        self.last_traded_price_arr: ZerosProtocol | None = None
+        self.status_arr: ZerosProtocol | None = None
 
         if check_hash_params is not None:
             self.nth_price_change = check_hash_params[0]
@@ -136,128 +140,70 @@ class MarketStream:
             self.max_emission_delay = None
             self.nth_price_change = None
 
-        self._ws_params = {
+        params = {
             "auth": {},
             "markets": [],
             "assets_ids": list(self.book_dict.keys()),
             "type": "market",
         }
 
-    def _reset(self):
+        def _closure_callback_exc(_, exc: Exception) -> None:
+            # we cannot propagate exceptions from child thread to parent thread,
+            #   but at least we can invalidate status_orderbook, which at least
+            #   has the chance to be noticed from parent thread
+            self.status_arr[:] = -2
+            for k in self.counter_dict.keys():
+                self.counter_dict[k] += 1
+            callback_exc(self, exc)
+
+        super().__init__(
+            f"{ws_endpoint}{ws_channel}",
+            params,
+            ping_time,
+            callback_msg,
+            _closure_callback_exc,
+            list[MarketEvent],
+            False,
+            sock,
+            max_size,
+            max_queue,
+        )
+
+    def pre_start(self) -> None:
         self.counter_dict = {book.token_id: 0 for book in self.book_dict.values()}
 
         # not implemented as dicts: enable sharedMemory if necessary
-        self.last_traded_price_arr = self.zeros_factory(
+        self.last_traded_price_arr = self.last_traded_arr_factory(
             (len(self._book_idx), 6), dtype=np.dtype("U80")
         )
         self.last_traded_price_arr[:] = ""  # just to be sure...
-        self.status_arr = self.zeros_factory(len(self._book_idx), dtype=int)
+        self.status_arr = self.status_arr_factory(len(self._book_idx), dtype=int)
 
-        self.thread: threading.Thread | None = None
+    def post_stop(self) -> None:
+        return
 
-    def _run_socket(self) -> None:
-        reconnecting = False
-        while not self._stop_token:
-            try:
-                reconnecting = self._socket_loop(reconnecting)
-            except Exception as e:
-                self._register_exception(e)
-                raise e
+    def on_msg(self, msg: MarketEvent) -> None:
+        if msg.event_type == "last_trade_price":
+            self._update_last_traded_price(msg)
+        elif msg.event_type == "tick_size_change" or msg.event_type == "book":
+            self._update_book(msg)
+        elif msg.event_type == "price_change":
+            asset_ids = set(price_change.asset_id for price_change in msg.price_changes)
 
-    def _register_exception(self, exc: Exception) -> None:
-        if self._stop_token:
-            # if we exit anyway, then no need to bother with exception
-            warnings.warn(
-                f"{datetime.datetime.now()}: Exception in {self.__class__.__name__} suppressed, "
-                f"since exception has not happened until .stop() has been called. "
-                f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}."
-            )
-            return
-
-        # we cannot propagate exceptions from child thread to parent thread,
-        #   but at least we can invalidate status_orderbook, which at least
-        #   has the chance to be noticed from parent thread
-        self.status_arr[:] = -2
-        for k in self.counter_dict.keys():
-            self.counter_dict[k] += 1
-
-        warnings.warn(
-            f"{datetime.datetime.now()}: Exception in {self.__class__.__name__}. "
-            f"All status_orderbook set to -2. Traceback: {exc.__class__.__name__}({exc})."
-            f"Full Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}."
-        )
-
-        if self.callback_exception:
-            self.callback_exception(exc, self)
-
-    def _socket_loop(self, reconnecting: bool) -> bool:
-        with connect(self.url, sock=self.sock) as ws:
-            ws.send(msgspec.json.encode(self._ws_params))
-
-            if reconnecting:
-                warnings.warn(
-                    f"{datetime.datetime.now()}: Re-connected {self._ws_params['assets_ids']}."
-                )
-
-            while not self._stop_token:
-                try:
-                    raw_messages = ws.recv(self.ping_time, decode=False)
-                except TimeoutError:
-                    ws.ping("PING")
+            has_updated = False
+            for asset_id in asset_ids:
+                if asset_id not in self.book_dict:
                     continue
-                except ConnectionClosed as e:
-                    warnings.warn(
-                        f"{datetime.datetime.now()}: Re-connecting {self._ws_params['assets_ids']}. "
-                        f"Traceback: {e.__class__.__name__}({e})."
-                        f"Full Traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}"
-                    )
-                    return True
 
-                self._process_raw_message(raw_messages)
+                self._update_book(msg, asset_id)
+                has_updated = True
 
-    def _process_raw_message(self, raw_messages: str | bytes) -> None:
-        # add and check hash to buffer
-        # update book
-        # record last_traded_price
-        # check hash if necessary
-        #   REST request new book if hash does not conform
-
-        try:
-            raw_messages = msgspec.json.decode(
-                raw_messages, type=list[MarketEvent], strict=False
-            )
-        except msgspec.ValidationError as e:
-            raise EventTypeException(f"Cannot decode event_type. Original: {e}") from e
-
-        for msg in raw_messages:
-            msg: MarketEvent
-
-            if msg.event_type == "last_trade_price":
-                self._update_last_traded_price(msg)
-            elif msg.event_type == "tick_size_change" or msg.event_type == "book":
-                self._update_book(msg)
-            elif msg.event_type == "price_change":
-                asset_ids = set(
-                    price_change.asset_id for price_change in msg.price_changes
+            if not has_updated:
+                raise StreamException(
+                    f"No books with matching asset_ids found. Message: {msg}."
                 )
-
-                has_updated = False
-                for asset_id in asset_ids:
-                    if asset_id not in self.book_dict:
-                        continue
-
-                    self._update_book(msg, asset_id)
-                    has_updated = True
-
-                if not has_updated:
-                    raise StreamException(
-                        f"No books with matching asset_ids found. Message: {msg}."
-                    )
-            else:
-                raise EventTypeException(f"Unknown event_type: {msg.event_type}")
-
-            if self.callback_msg:
-                self.callback_msg(msgspec.structs.asdict(msg), self)
+        else:
+            raise EventTypeException(f"Unknown event_type: {msg.event_type}")
 
     def _update_book(self, msg: MarketEvent, asset_id: str | None = None) -> None:
         if asset_id is None:
@@ -405,17 +351,40 @@ class MarketStream:
 
         return status
 
-    def start(self) -> None:
-        self._stop_token = False
-        self._reset()
 
-        self.thread = threading.Thread(target=self._run_socket)
-        self.thread.start()
+@lru_cache
+def _book_idx(token_id: str, books: list[OrderBookProtocol]) -> int:
+    book_ids = [book.token_id for book in books]
+    return book_ids.index(token_id)
 
-    def stop(self, join: bool, timeout: float | None = None) -> None:
-        self._stop_token = True
 
-        if join:
-            self.thread.join(timeout)
+def status_orderbook_shared(
+    token_id: str, books: list[OrderBookProtocol], shared_array: SharedArray | str
+) -> STATUS_ORDERBOOK:
+    idx = _book_idx(token_id, books)
 
-        self._reset()
+    if isinstance(shared_array, str):
+        shared_array = SharedArray(len(books), shared_array, False, int, 0)
+
+    return STATUS_ORDERBOOK(shared_array[idx])
+
+
+def last_traded_price_shared(
+    token_id: str, books: list[OrderBookProtocol], shared_array: SharedArray | str
+) -> LastTradePriceEvent:
+    idx = _book_idx(token_id, books)
+
+    if isinstance(shared_array, str):
+        shared_array = SharedArray(
+            (len(books), 6), shared_array, False, np.dtype("U80"), ""
+        )
+
+    return LastTradePriceEvent(
+        market=shared_array[idx, 5],
+        asset_id=token_id,
+        fee_rate_bps=shared_array[idx, 4],
+        price=shared_array[idx, 0],
+        side=shared_array[idx, 1],
+        size=shared_array[idx, 2],
+        timestamp=shared_array[idx, 3],
+    )
