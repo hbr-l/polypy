@@ -59,6 +59,7 @@ _(backward-incompatible changes, changes in signatures)_
 _(backward-compatible changes, no changes in signatures)_
 - [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
+- [ ] __test `ShareLock` and `SharedRLock` on Posix__
 - [ ] __`untrack_order_by_trade_terminal` in `UserStream` might fail in case of `CONFIRMED` status of `TradeWSInfo`-message was missed__
   (documentation: to be on the safe side, untrack/clean orders manually from `OrderManager` by `order.id` of return value when using
   `OrderManager.limit_order`, `OrderManager.market_order` or `OrderManager.post_order` if and only if (!) full taker order, 
