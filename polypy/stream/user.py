@@ -1,5 +1,6 @@
 import copy
 import itertools
+import socket
 import threading
 import time
 import traceback
@@ -24,7 +25,7 @@ from polypy.order.common import (
     OrderProtocol,
 )
 from polypy.position import PositionProtocol
-from polypy.stream.common import CHANNEL, AbstractStreamer
+from polypy.stream.common import CHANNEL, MessageStreamer
 from polypy.structs import MakerOrder, OrderWSInfo, TradeWSInfo
 from polypy.trade import TERMINAL_TRADE_STATI, TRADE_STATUS, TRADER_SIDE
 from polypy.typing import infer_numeric_type
@@ -292,7 +293,7 @@ _TradeOrderInfo = namedtuple(
 # todo doc: untrack_trade_status should comply with settlement status of position (i.e. CMSPosition: MATCHED is not efficient -> use TERMINAL_TRADE_STATI as safe arg)
 # todo doc: multiple default position manager use case: pm A only tracks one wallet (this user stream) whilst second pm tracks this wallet and an other wallet (other user stream) at once
 # todo doc: untrack_order_by_trade_terminal -> this will fail if "CONFIRMED" is missed
-class UserStream(AbstractStreamer):
+class UserStream(MessageStreamer):
     def __init__(
         self,
         ws_endpoint: ENDPOINT | str,
@@ -317,6 +318,7 @@ class UserStream(AbstractStreamer):
         | None = None,
         ws_channel: CHANNEL | str = CHANNEL.USER,
         max_subscriptions: int = 500,
+        sock: socket.socket | None = None,
     ) -> None:
         market_ids, asset_ids = _split_market_assets(market_triplets)
 
@@ -406,6 +408,7 @@ class UserStream(AbstractStreamer):
             callback_exc=_callback_invalidate_exc,
             msgspec_type=list[Union[TradeWSInfo, OrderWSInfo]],
             msgspec_strict=False,
+            sock=sock,
         )
 
     @property
@@ -619,7 +622,7 @@ class UserStream(AbstractStreamer):
         #       remainder is matched, which then is case 1)
         #   3) (partial) taker order with no resting remainder:
         #       this can either be FOK (fully filled) or FAK (partially filled),
-        #       in this case no (!) OrderWSInfo, we have two sub-cases:
+        #       in this case no (!) OrderWSInfo, we have two subcases:
         #           a) REST response arrives before TradeWSInfo: order is updated
         #               and untracked (if applicable), we are all good
         #           b) REST response arrives after TradeWSInfo:
