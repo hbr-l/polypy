@@ -5,7 +5,7 @@ from typing import Any, Protocol, TypeVar
 from _decimal import Decimal
 
 from polypy.exceptions import OrderBookException
-from polypy.ipc.shm import SharedZerosDec
+from polypy.ipc.shm import SharedDecimalArray
 from polypy.typing import NumericAlias
 
 
@@ -106,12 +106,17 @@ class SharedTickSize:
 
             _validate_base10(min_tick_size)
 
-            self.tick_size = SharedZerosDec(2, shm_name, True)
+            self.tick_size = SharedDecimalArray(
+                2, shm_name, True, int(-math.log10(min_tick_size))
+            )
 
-            self.tick_size[1] = min_tick_size
+            self.tick_size[1] = 1  # store absolute scale in underlying raw buffer
             self.set(tick_size)
         else:
-            self.tick_size = SharedZerosDec(2, shm_name, False)
+            self.tick_size = SharedDecimalArray(
+                2, shm_name, False, 1
+            )  # n_decimal will be overwritten via .scale
+            self.tick_size.scale = self.tick_size.array[1]  # read raw buffer
 
             if tick_size is not None or min_tick_size is not None:
                 warnings.warn(
@@ -125,14 +130,17 @@ class SharedTickSize:
 
     @property
     def min_tick_size(self) -> float:
-        return float(self.tick_size[1])
+        return 1 / self.tick_size.scale
 
     def get(self) -> Decimal:
         return self.tick_size[0]
 
     def set(self, tick_size: NumericAlias | str) -> None:
-        tick_size = Decimal(str(tick_size))
-        _validate_tick_size(tick_size, self.tick_size[1])
+        if not isinstance(tick_size, NumericAlias):
+            tick_size = float(tick_size)
+        # tick_size = Decimal(str(tick_size))  # todo re-check if this approach is better/ safer
+        # _validate_tick_size(tick_size, Decimal(1) / self.tick_size.scale)
+        _validate_tick_size(tick_size, 1 / self.tick_size.scale)
         self.tick_size[0] = tick_size
 
     def cleanup(self) -> None:
