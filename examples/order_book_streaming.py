@@ -3,6 +3,7 @@ Live plot of order book using OrderBook and MarketStream.
 Please enter token ID into prompt.
 Exit via KeyboardInterrupt.
 """
+import time
 
 import numpy as np
 from matplotlib import animation
@@ -16,6 +17,8 @@ def main(token_id: str) -> None:
     stream = plp.MarketStream(plp.ENDPOINT.WS, book, None, plp.ENDPOINT.REST)
     stream.start()
 
+    time.sleep(0.5)
+
     fig, ax = plt.subplots()
     plt.title(f"Order Book: {token_id}")
     bid_chart = ax.bar(
@@ -23,14 +26,14 @@ def main(token_id: str) -> None:
         np.cumsum(book.bids[1]),
         alpha=0.5,
         color="green",
-        width=min(book.allowed_tick_sizes),
+        width=book.min_tick_size,
     )
     ask_chart = ax.bar(
         book.asks[0],
         np.cumsum(book.asks[1]),
         alpha=0.5,
         color="red",
-        width=min(book.allowed_tick_sizes),
+        width=book.min_tick_size,
     )
 
     def animate(*_, **__):
@@ -44,8 +47,10 @@ def main(token_id: str) -> None:
 
         return bid_chart + ask_chart
 
-    anim = animation.FuncAnimation(fig, animate, interval=100, cache_frame_data=False)
+    _ = animation.FuncAnimation(fig, animate, interval=100, cache_frame_data=False)
     plt.show()
+
+    stream.stop(True, 1)
 
 
 if __name__ == "__main__":
