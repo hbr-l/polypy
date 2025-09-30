@@ -9,3 +9,5 @@ eth-utils>=5.1.0
 hexbytes>=1.2.1
 requests>=2.32.3
 web3>=7.7.0
+pywin32>=306; os_name == 'nt'
+posix-ipc>=1.2.0; os_name == 'posix'
