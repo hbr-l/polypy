@@ -8,6 +8,7 @@ from typing import Any, Callable, Literal, Self
 
 import numpy as np
 
+from polypy import BookEvent
 from polypy.book.hashing import guess_check_orderbook_hash
 from polypy.book.order_book import OrderBookProtocol
 from polypy.book.parsing import message_to_orderbook
@@ -162,7 +163,7 @@ class MarketStream(MessageStreamer):
             ping_time,
             callback_msg,
             _closure_callback_exc,
-            list[MarketEvent],
+            MarketEvent | list[BookEvent],
             False,
             sock,
             max_size,
