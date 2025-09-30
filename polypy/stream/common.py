@@ -182,16 +182,24 @@ class MessageStreamer(BaseStreamer):
         self.msgspec_type = msgspec_type
         self.msgspec_strict = msgspec_strict
 
+    def _on_single_msg(self, msg: Any) -> None:
+        self.on_msg(msg)
+
+        if self.callback_msg:
+            self.callback_msg(self, msg)
+
     def on_bytes_msg(self, bytes_msg: bytes) -> None:
-        # somehow, received JSON dict is wrapped in a list
         msgs = msgspec.json.decode(
             bytes_msg, type=self.msgspec_type, strict=self.msgspec_strict
         )
-        for msg in msgs:
-            self.on_msg(msg)
 
-            if self.callback_msg:
-                self.callback_msg(self, msg)
+        # some messages come as bulk in a list, some are separate arrays
+        if not isinstance(msgs, list):
+            self._on_single_msg(msgs)
+            return
+
+        for msg in msgs:
+            self._on_single_msg(msg)
 
     @abstractmethod
     def on_msg(self, msg: dict[Any, Any] | msgspec.Struct) -> None:
