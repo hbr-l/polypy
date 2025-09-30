@@ -3,7 +3,7 @@ from collections.abc import Iterable, Sequence
 from decimal import Decimal
 from multiprocessing import shared_memory
 from multiprocessing.util import Finalize
-from typing import Any
+from typing import Any, Callable, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -63,6 +63,15 @@ class SharedArray:
         if create:
             self._arr[:] = fill_val
 
+    @classmethod
+    def factory(
+        cls, shm_name: str, create: bool, fill_val: Any
+    ) -> Callable[[int | Sequence[int], type | np.dtype | str], Self]:
+        def closure(shape: int | Sequence[int], dtype: type | np.dtype | str):
+            return SharedArray(shape, shm_name, create, dtype, fill_val)
+
+        return closure
+
     def __getstate__(self) -> dict:
         return {
             "shape": self._arr.shape,
@@ -78,15 +87,13 @@ class SharedArray:
         self._dtype = state["dtype"]
         self._arr = np.ndarray(state["shape"], dtype=self._dtype, buffer=self.shm.buf)
 
-    def __getitem__(self, item: AdvancedIndex) -> Decimal | NDArray[Decimal]:
+    def __getitem__(self, item: AdvancedIndex) -> Any | NDArray[Any]:
         return self._arr[item]
 
-    def __setitem__(
-        self, key: AdvancedIndex, value: NumericAlias | Iterable[NumericAlias]
-    ) -> None:
+    def __setitem__(self, key: AdvancedIndex, value: Any | Iterable[Any]) -> None:
         self._arr[key] = value
 
-    def __array__(self) -> NDArray[Decimal]:
+    def __array__(self) -> NDArray[Any]:
         return self[:]
 
     @property
