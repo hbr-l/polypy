@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import socket
 import threading
 import traceback
 import warnings
@@ -20,30 +21,30 @@ class CHANNEL(StrEnum):
 
 
 # todo port to async
-class AbstractStreamer(ABC):
+class BaseStreamer(ABC):
     def __init__(
         self,
         url: str,
         subscribe_params: dict[str:Any],
         ping_time: float | None = 5,
-        callback_msg: Callable[[Self, dict[str, Any]], None] | None = None,
         callback_exc: Callable[[Self, Exception], None] | None = None,
-        msgspec_type: msgspec.Struct | Any | type = Any,
-        msgspec_strict: bool = True,
+        sock: socket.socket | None = None,
+        max_size: int | None = 2**20,
+        max_queue: int | None | tuple[int | None, int | None] = 16,
     ) -> None:
         self.url = url
         self.subscribe_params = subscribe_params
         self.ping_time = ping_time
+        self.max_size = max_size
+        self.max_queue = max_queue
 
         self.callback_exc = callback_exc
-        self.callback_msg = callback_msg
-        self.msgspec_type = msgspec_type
-        self.msgspec_strict = msgspec_strict
 
         self._stop_token = threading.Event()
         self.thread: threading.Thread | None = None
         self.ws: ClientConnection | None = None
         self.exc: list[Exception] = []
+        self.sock = sock
 
     def _run(self) -> None:
         reconnecting = False
@@ -80,7 +81,13 @@ class AbstractStreamer(ABC):
         raise exc
 
     def _loop(self, reconnecting: bool) -> bool:
-        with connect(self.url) as self.ws:
+        with connect(
+            self.url,
+            ping_interval=self.ping_time,
+            sock=self.sock,
+            max_size=self.max_size,
+            max_queue=self.max_queue,
+        ) as self.ws:
             self.ws.send(msgspec.json.encode(self.subscribe_params))
 
             if reconnecting:
@@ -90,11 +97,9 @@ class AbstractStreamer(ABC):
 
             while not self._stop_token.is_set():
                 try:
-                    bytes_msg = self.ws.recv(self.ping_time, decode=False)
-                    self._handle_msg(bytes_msg)
+                    bytes_msg = self.ws.recv(0.5, decode=False)  # todo magic number
+                    self.on_bytes_msg(bytes_msg)
                 except TimeoutError:
-                    with contextlib.suppress(ConnectionClosed, AttributeError):
-                        self.ws.ping("PING")
                     continue
                 except ConnectionClosed as e:
                     if self._stop_token.is_set():
@@ -108,19 +113,8 @@ class AbstractStreamer(ABC):
                     )
                     return True
 
-    def _handle_msg(self, bytes_msg: bytes) -> None:
-        # somehow, received JSON dict is wrapped in a list
-        msgs = msgspec.json.decode(
-            bytes_msg, type=self.msgspec_type, strict=self.msgspec_strict
-        )
-        for msg in msgs:
-            self.on_msg(msg)
-
-            if self.callback_msg:
-                self.callback_msg(self, msg)
-
     @abstractmethod
-    def on_msg(self, msg: dict[Any, Any] | msgspec.Struct) -> None:
+    def on_bytes_msg(self, bytes_msg: bytes) -> None:
         ...
 
     @abstractmethod
@@ -149,7 +143,9 @@ class AbstractStreamer(ABC):
         self.thread = threading.Thread(target=self._run)
         self.thread.start()
 
-    def stop(self, join: bool, timeout: float | None = None) -> None:
+    def stop(
+        self, join: bool, timeout: float | None = None, exc_verbose: bool = True
+    ) -> None:
         self._stop_token.set()
         self.ws.close()
 
@@ -160,5 +156,43 @@ class AbstractStreamer(ABC):
         self.ws = None
         self.post_stop()
 
-        if self.exc:
+        if exc_verbose and self.exc:
             raise ExceptionGroup("StreamerExceptionGroup", self.exc)
+
+
+class MessageStreamer(BaseStreamer):
+    def __init__(
+        self,
+        url: str,
+        subscribe_params: dict[str:Any],
+        ping_time: float | None = 5,
+        callback_msg: Callable[[Self, dict[str, Any]], None] | None = None,
+        callback_exc: Callable[[Self, Exception], None] | None = None,
+        msgspec_type: msgspec.Struct | Any | type = Any,
+        msgspec_strict: bool = True,
+        sock: socket.socket | None = None,
+        max_size: int | None = 2**20,
+        max_queue: int | None | tuple[int | None, int | None] = 16,
+    ) -> None:
+        super().__init__(
+            url, subscribe_params, ping_time, callback_exc, sock, max_size, max_queue
+        )
+
+        self.callback_msg = callback_msg
+        self.msgspec_type = msgspec_type
+        self.msgspec_strict = msgspec_strict
+
+    def on_bytes_msg(self, bytes_msg: bytes) -> None:
+        # somehow, received JSON dict is wrapped in a list
+        msgs = msgspec.json.decode(
+            bytes_msg, type=self.msgspec_type, strict=self.msgspec_strict
+        )
+        for msg in msgs:
+            self.on_msg(msg)
+
+            if self.callback_msg:
+                self.callback_msg(self, msg)
+
+    @abstractmethod
+    def on_msg(self, msg: dict[Any, Any] | msgspec.Struct) -> None:
+        ...
