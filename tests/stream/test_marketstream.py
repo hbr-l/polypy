@@ -1,18 +1,20 @@
 import copy
+import json
 import pathlib
 import threading
 import time
 import warnings
 from typing import Any
 
+import msgspec
 import numpy as np
 import pytest
 import responses
 from websockets.exceptions import ConnectionClosedError
 from websockets.sync.client import connect
 
-from polypy.book import OrderBook, guess_check_orderbook_hash
-from polypy.exceptions import EventTypeException, OrderBookException
+from polypy.book import OrderBook, guess_check_orderbook_hash, message_to_orderbook
+from polypy.exceptions import OrderBookException, StreamException
 from polypy.stream.market import STATUS_ORDERBOOK, CheckHashParams, MarketStream
 
 # cases
@@ -64,11 +66,9 @@ def setup_streamer():
         check_hash_params: CheckHashParams | None,
         endpoint: str | None,
         ping_time: float | None,
-        nb_redundant_skt: int,
         url: str = "ws://localhost:8002/",
         callback_msg=None,
         callback_exception=None,
-        buffer_size=10,
     ):
         book = OrderBook(asset_id, 0.001)
         streamer = MarketStream(
@@ -77,11 +77,9 @@ def setup_streamer():
             check_hash_params=check_hash_params,
             rest_endpoint=endpoint,
             ws_channel="",
-            buffer_size=buffer_size,
             ping_time=ping_time,
-            nb_redundant_skt=nb_redundant_skt,
             callback_msg=callback_msg,
-            callback_exception=callback_exception,
+            callback_exc=callback_exception,
         )
         stream_storage.val = streamer
         streamer.start()
@@ -90,7 +88,7 @@ def setup_streamer():
         return streamer, book
 
     yield closure
-    stream_storage.val.stop(True, 1)
+    stream_storage.val.stop(True, 1, False)
     time.sleep(0.05)
 
 
@@ -100,7 +98,7 @@ def callback_exception_storage():
         def __init__(self):
             self.val = []
 
-        def __call__(self, exc: Exception, *_) -> None:
+        def __call__(self, streamer: MarketStream, exc: Exception) -> None:
             self.val.append(exc)
 
     return ExcStorage()
@@ -112,7 +110,7 @@ def callback_thread_id_storage():
         def __init__(self):
             self.val = set()
 
-        def __call__(self, msg: dict[str, Any], *_) -> None:
+        def __call__(self, streamer: MarketStream, msg: dict[str, Any]) -> None:
             self.val.add(threading.get_ident())
 
     return Storage()
@@ -192,6 +190,49 @@ def test_test_server_delay(mock_server_click_on):
     assert len(resp2) == 1
 
 
+@pytest.mark.skip()
+def test_order_book_test_server_messages_txt():
+    book = OrderBook(
+        "72936048731589292555781174533757608024096898681344338816447372274344589246891",
+        0.01,
+    )
+
+    with open("data/test_server_messages.txt") as f:
+        txt = f.readlines()
+        data = [json.loads(line.replace("'", '"')) for line in txt]
+
+    for d in data:
+        print()
+        print(d)
+
+        if d["event_type"] == "last_trade_price":
+            print("- ", d["event_type"])
+            continue
+
+        book = message_to_orderbook(d, book)
+
+        if d["event_type"] == "book":
+            check_results = guess_check_orderbook_hash(
+                d["hash"],
+                book,
+                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
+                [int(d["timestamp"]) - i for i in range(1500)],
+            )
+            print(check_results)
+            assert check_results[0]
+        elif d["event_type"] == "price_change":
+            check_results = guess_check_orderbook_hash(
+                d["price_changes"][0]["hash"],
+                book,
+                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
+                [int(d["timestamp"]) - i for i in range(1500)],
+            )
+            print(check_results)
+            assert check_results[0]
+        else:
+            print("- ", d["event_type"])
+
+
 def assert_market_streamer_state(
     streamer: MarketStream,
     book: OrderBook,
@@ -206,18 +247,18 @@ def assert_market_streamer_state(
     expected_count: int,
 ):
     assert streamer.status_orderbook(book.token_id) == expected_book_status
-    assert streamer.last_traded_price(book.token_id)["price"] == expected_ltp_price
-    assert streamer.last_traded_price(book.token_id)["size"] == expected_ltp_size
-    assert streamer.last_traded_price(book.token_id)["side"] == expected_ltp_side
-    assert streamer.last_traded_price(book.token_id)["event_type"] == "last_trade_price"
-    assert streamer.last_traded_price(book.token_id)["asset_id"] == book.token_id
+    assert streamer.last_traded_price(book.token_id).price == expected_ltp_price
+    assert streamer.last_traded_price(book.token_id).size == expected_ltp_size
+    assert streamer.last_traded_price(book.token_id).side == expected_ltp_side
+    assert streamer.last_traded_price(book.token_id).event_type == "last_trade_price"
+    assert streamer.last_traded_price(book.token_id).asset_id == book.token_id
     assert book.tick_size == expected_tick_size
     assert streamer.counter_dict[book.token_id] == expected_count
 
     if not expected_ltp_size:
-        assert streamer.last_traded_price(book.token_id)["market"] == ""
+        assert streamer.last_traded_price(book.token_id).market == ""
     else:
-        assert streamer.last_traded_price(book.token_id)["market"] == market_id
+        assert streamer.last_traded_price(book.token_id).market == market_id
 
     if expected_target_hash is not None:
         assert (
@@ -231,6 +272,22 @@ def assert_market_streamer_state(
         )
 
 
+def get_data_hash(x) -> str:
+    try:
+        return x["hash"]
+    except TypeError:
+        return x[0]["hash"]
+    except KeyError:
+        return x["price_changes"][0]["hash"]
+
+
+def get_data_timestamp(x) -> int:
+    try:
+        return x["timestamp"]
+    except TypeError:
+        return x[0]["timestamp"]
+
+
 # noinspection DuplicatedCode
 def test_marketstream_delay_partial_drop_skip_no_request(
     mock_server_click_on, setup_streamer
@@ -238,11 +295,9 @@ def test_marketstream_delay_partial_drop_skip_no_request(
     click_on, asset_id, data = mock_server_click_on(
         data_pth=test_pth / "data/test_server_messages.txt"
     )
-    streamer, book = setup_streamer(
-        asset_id, CheckHashParams(3, 15), None, None, 2, buffer_size=5
-    )
+    streamer, book = setup_streamer(asset_id, CheckHashParams(3, 15), None, None)
 
-    market_id = data[0]["market"]
+    market_id = data[0][0]["market"]
 
     # order of clicks:
     # 1. send - book
@@ -280,8 +335,8 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -295,8 +350,8 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
@@ -310,13 +365,13 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             2,
         )
 
-        # 4. partial drop - price_change + hash check should trigger
-        click_on.drop_send([0])
+        # 4. price_change + hash check should trigger
+        click_on.send()
         assert_market_streamer_state(
             streamer,
             book,
@@ -326,12 +381,12 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
-        click_on.drop_send([0])  # 5. partial drop - price_change
+        click_on.send()  # 5. price_change
         assert_market_streamer_state(
             streamer,
             book,
@@ -341,8 +396,8 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
@@ -358,7 +413,7 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             data[click_on.counter]["side"],
             0.001,
             None,  # last_trade_price has no hash
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
@@ -384,14 +439,14 @@ def test_marketstream_delay_partial_drop_skip_no_request(
         "BUY",
         0.001,
         None,  # we know that hash is invalid at this point
-        data[click_on.counter]["timestamp"],
+        get_data_timestamp(data[click_on.counter]),
         3,  # we artificially increased to 2, click_on.click's next price_change message further increases +1
     ]
     assert_market_streamer_state(*assert_args)
     with pytest.raises(AssertionError):
         # double check hash is invalid
         # we expect an AssertionError
-        assert_args[-3] = data[click_on.counter]["hash"]
+        assert_args[-3] = get_data_hash(data[click_on.counter])
         assert_market_streamer_state(*assert_args)
 
     with warnings.catch_warnings():
@@ -408,8 +463,8 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "25",
             "BUY",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -425,18 +480,18 @@ def test_marketstream_delay_partial_drop_skip_no_request(
             "BUY",
             0.01,
             None,  # tick_size_change has no hash
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
     assert np.sum(book.bids[1]) > 0
     assert np.sum(book.asks[1]) > 0
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == streamer.buffer_size
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
 
@@ -446,11 +501,11 @@ def test_marketstream_fallback_mock_request(mock_server_click_on, setup_streamer
         data_pth=test_pth / "data/test_server_messages.txt"
     )
     streamer, book = setup_streamer(
-        asset_id, CheckHashParams(1, 15), "https://test_endpoint.com", None, 2
+        asset_id, CheckHashParams(1, 15), "https://test_endpoint.com", None
     )
     assert np.sum(book.bids[1]) == np.sum(book.asks[1]) == 0
 
-    market_id = data[0]["market"]
+    market_id = data[0][0]["market"]
 
     # order of clicks:
     # 1. send - book
@@ -481,8 +536,8 @@ def test_marketstream_fallback_mock_request(mock_server_click_on, setup_streamer
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -530,19 +585,19 @@ def test_marketstream_fallback_mock_request(mock_server_click_on, setup_streamer
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
     assert fetched_bids.tolist() == book.bids[1].tolist()
     assert fetched_asks.tolist() == book.asks[1].tolist()
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == 3
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
 
@@ -557,7 +612,6 @@ def test_marketstream_wrong_asset_id_and_callback_exception(
         CheckHashParams(3, 15),
         None,
         None,
-        2,
         callback_exception=callback_exception_storage,
     )
 
@@ -575,16 +629,18 @@ def test_marketstream_wrong_asset_id_and_callback_exception(
     assert len(record.list) > 0
     assert "Exception in" in str(record[0].message)
     assert -2 in list(streamer.status_arr)
-    assert streamer.counter_dict[asset_id] == streamer.nb_redundant_skt
-    assert all(isinstance(exc, KeyError) for exc in callback_exception_storage.val)
+    assert streamer.counter_dict[asset_id] == 1
+    assert all(
+        isinstance(exc, StreamException) for exc in callback_exception_storage.val
+    )
 
     with pytest.raises(OrderBookException):
         streamer.status_orderbook(asset_id)
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
         == 1
     )
 
@@ -600,7 +656,6 @@ def test_marketstream_unknown_event_type_and_callback_exception(
         CheckHashParams(3, 15),
         None,
         None,
-        2,
         callback_exception=callback_exception_storage,
     )
 
@@ -612,7 +667,8 @@ def test_marketstream_unknown_event_type_and_callback_exception(
     assert "Exception in" in str(record[0].message)
     assert -2 in list(streamer.status_arr)
     assert all(
-        isinstance(exc, EventTypeException) for exc in callback_exception_storage.val
+        isinstance(exc, msgspec.ValidationError)
+        for exc in callback_exception_storage.val
     )
 
     with pytest.raises(OrderBookException):
@@ -620,9 +676,10 @@ def test_marketstream_unknown_event_type_and_callback_exception(
 
     # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == 2
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
 
@@ -637,7 +694,6 @@ def test_marketstream_status_orderbook_mode(
         None,
         None,
         None,
-        2,
         callback_exception=callback_exception_storage,
     )
 
@@ -670,7 +726,6 @@ def test_marketstream_rest_denial_and_callback_exception(
         CheckHashParams(1, 15),
         "https://test_endpoint.com",
         None,
-        2,
         callback_exception=callback_exception_storage,
     )
 
@@ -704,11 +759,11 @@ def test_marketstream_rest_denial_and_callback_exception(
     with pytest.raises(OrderBookException):
         streamer.status_orderbook(asset_id)
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == 2
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
 
@@ -729,7 +784,6 @@ def test_marketstream_rest_denial_no_recursion(
         CheckHashParams(1, 15),
         "https://test_endpoint.com",
         None,
-        2,
         callback_exception=callback_exception_storage,
     )
 
@@ -763,19 +817,29 @@ def test_marketstream_rest_denial_no_recursion(
     assert len(callback_exception_storage.val) == 0
     streamer.status_orderbook(asset_id)
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == 3
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
-    assert "1234" in streamer.buffer_dict[asset_id]
+    assert (
+        "72936048731589292555781174533757608024096898681344338816447372274344589246891"
+        in streamer.book_dict
+    )
+    assert (
+        "72936048731589292555781174533757608024096898681344338816447372274344589246891"
+        in streamer._book_idx
+    )
+    assert (
+        "72936048731589292555781174533757608024096898681344338816447372274344589246891"
+        in streamer.counter_dict
+    )
 
 
 def test_marketstream_callback_message(
     mock_server_click_on, setup_streamer, callback_thread_id_storage
 ):
-    nb_skts = 2
     click_on, asset_id, data = mock_server_click_on(
         data_pth=test_pth / "data/test_server_messages.txt"
     )
@@ -784,7 +848,6 @@ def test_marketstream_callback_message(
         None,
         None,
         None,
-        nb_skts,
         callback_msg=callback_thread_id_storage,
     )
     # force other thread to take over via DELAY
@@ -796,7 +859,7 @@ def test_marketstream_callback_message(
 
     time.sleep(0.2)
 
-    assert len(callback_thread_id_storage.val) == nb_skts
+    assert len(callback_thread_id_storage.val) == 1
 
 
 # noinspection DuplicatedCode
@@ -804,11 +867,9 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
     click_on, asset_id, data = mock_server_click_on(
         data_pth=test_pth / "data/test_server_multiple_last_trade_price.txt",
     )
-    streamer, book = setup_streamer(
-        asset_id, CheckHashParams(3, 15), None, None, 2, buffer_size=5
-    )
+    streamer, book = setup_streamer(asset_id, CheckHashParams(3, 15), None, None)
 
-    market_id = data[0]["market"]
+    market_id = data[0][0]["market"]
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -824,8 +885,8 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -840,7 +901,7 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
             "BUY",
             0.001,
             None,  # last_trade_price has no hash
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
         assert "hash" not in data[click_on.counter].keys()
@@ -857,7 +918,7 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
             "BUY",
             0.001,
             None,  # last_trade_price has no hash
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
         assert "hash" not in data[click_on.counter].keys()
@@ -873,7 +934,7 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
             "BUY",
             0.001,
             None,  # last_trade_price has no hash
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
         assert "hash" not in data[click_on.counter].keys()
@@ -888,19 +949,19 @@ def test_marketstream_multi_last_trade_price(mock_server_click_on, setup_streame
             "50",
             "BUY",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
         assert np.sum(book.bids[1]) > 0
         assert np.sum(book.asks[1]) > 0
 
-        # check deque max size not exceeded and only unique hashes
         assert (
-            len(set((streamer.buffer_dict[asset_id])))
-            == len(streamer.buffer_dict[asset_id])
-            == 2
+            len(streamer.book_dict.keys())
+            == len(streamer._book_idx.keys())
+            == len(streamer.counter_dict.keys())
+            == 1
         )
 
 
@@ -927,7 +988,6 @@ def test_marketstream_multi_book(mock_server_click_on):
         rest_endpoint=None,
         ws_channel="",
         ping_time=None,
-        nb_redundant_skt=3,
     )
     streamer.start()
     time.sleep(2)
@@ -950,8 +1010,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -965,8 +1025,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -980,8 +1040,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
@@ -995,8 +1055,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             2,
         )
 
@@ -1010,8 +1070,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             1,
         )
 
@@ -1025,12 +1085,12 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             2,
         )
 
-        click_on.drop_send([0, 2])  # 7. partial drop - book - book2
+        click_on.send()  # 7. book - book2
         book2_counter = click_on.counter
         assert_market_streamer_state(
             streamer,
@@ -1041,13 +1101,14 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
         # 8. partial drop - price_change -> should trigger hash check - book1
-        click_on.drop_send([0, 2], 0.1)
+        click_on.delay_send({0: 0.1, 2: 0.1})
+        time.sleep(0.2)
         assert_market_streamer_state(
             streamer,
             book1,
@@ -1057,8 +1118,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "",
             "",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -1080,7 +1141,7 @@ def test_marketstream_multi_book(mock_server_click_on):
             "BUY",
             0.001,
             None,  # no hash for last_trade_price
-            data[click_on.counter]["timestamp"],
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -1103,14 +1164,14 @@ def test_marketstream_multi_book(mock_server_click_on):
         "BUY",
         0.001,
         None,  # we know that hash is invalid at this point
-        data[click_on.counter]["timestamp"],
+        get_data_timestamp(data[click_on.counter]),
         3,  # we artificially increased to 2, click_on.click's next price_change message further increases +1
     ]
     assert_market_streamer_state(*assert_args)
     with pytest.raises(AssertionError):
         # double check hash is invalid
         # we expect an AssertionError
-        assert_args[-3] = data[click_on.counter]["hash"]
+        assert_args[-3] = get_data_hash(data[click_on.counter])
         assert_market_streamer_state(*assert_args)
 
     # check that nothing has change for book2
@@ -1142,8 +1203,8 @@ def test_marketstream_multi_book(mock_server_click_on):
             "25",
             "BUY",
             0.001,
-            data[click_on.counter]["hash"],
-            data[click_on.counter]["timestamp"],
+            get_data_hash(data[click_on.counter]),
+            get_data_timestamp(data[click_on.counter]),
             0,
         )
 
@@ -1152,16 +1213,11 @@ def test_marketstream_multi_book(mock_server_click_on):
     assert np.sum(book2.bids[1]) > 0
     assert np.sum(book2.asks[1]) > 0
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[book1.token_id])))
-        == len(streamer.buffer_dict[book1.token_id])
-        == 6
-    )
-    assert (
-        len(set((streamer.buffer_dict[book2.token_id])))
-        == len(streamer.buffer_dict[book2.token_id])
-        == 4
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 2
     )
 
     streamer.stop(True, 5)
@@ -1178,21 +1234,19 @@ def test_marketstream_reconnect(
         None,
         None,
         None,
-        2,
         callback_msg=callback_thread_id_storage,
-        buffer_size=2,
     )
 
     # force other thread to take over via DELAY
     click_on.send()
-    click_on.delay_send({0: 0.1})
+    click_on.delay_send({0: 0.1}, 0.5)
     click_on.send()
     click_on.delay_send({0: 0.1}, 0.5)
 
     time.sleep(0.5)
 
-    assert len(callback_thread_id_storage.val) == 2
-    assert len(click_on.click_value.keys()) == 2
+    assert len(callback_thread_id_storage.val) == 1
+    assert len(click_on.click_value.keys()) == 1
 
     callback_thread_id_storage.val = set()
     prev_click_value_keys = set(click_on.click_value.keys())
@@ -1210,40 +1264,40 @@ def test_marketstream_reconnect(
 
     # force other thread to take over via DELAY
     click_on.send()
-    click_on.delay_send({0: 0.1})
+    click_on.delay_send({0: 0.1}, 0.5)
     click_on.send()
     click_on.delay_send({0: 0.1}, 0.5)
 
     # on streamer side, we continue to use the same thread for re-connection
-    #   (just opening new websocket from within the same thread) -> 2 threads
+    #   (just opening new websocket from within the same thread) -> 1 thread
     # however, on the server side, we open a new thread for each new
     #   connection object per client re-connect -> different set of keys
-    assert len(callback_thread_id_storage.val) == 2
+    assert len(callback_thread_id_storage.val) == 1
     assert prev_click_value_keys != set(click_on.click_value.keys())
-    assert len(click_on.click_value.keys()) == 2
+    assert len(click_on.click_value.keys()) == 1
 
     assert_market_streamer_state(
         streamer,
         book,
-        data[0]["market"],
+        data[0][0]["market"],
         0,
         "0.52",
         "25",
         "BUY",
         0.001,
-        data[click_on.counter]["hash"],
-        data[click_on.counter]["timestamp"],
+        get_data_hash(data[click_on.counter]),
+        get_data_timestamp(data[click_on.counter]),
         0,
     )
 
     assert np.sum(book.bids[1]) > 0
     assert np.sum(book.asks[1]) > 0
 
-    # check deque max size not exceeded and only unique hashes
     assert (
-        len(set((streamer.buffer_dict[asset_id])))
-        == len(streamer.buffer_dict[asset_id])
-        == streamer.buffer_size
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
 
@@ -1258,32 +1312,32 @@ def test_marketstream_nb_sockets_and_buffer_protection(
         None,
         None,
         None,
-        4,
         callback_msg=callback_thread_id_storage,
-        buffer_size=20,
     )
 
-    click_on.delay_send({0: 0.3, 1: 0.2, 2: 0.1}, 0.2)  # nb 3 receives immediately
-    click_on.delay_send({0: 0.1, 1: 0.2, 3: 0.3}, 0.2)  # nb 2 receives immediately
-    click_on.delay_send({0: 0.1, 2: 0.3, 3: 0.2}, 0.2)  # nb 1 receives immediately
-    click_on.delay_send({1: 0.1, 2: 0.1, 3: 0.1}, 0.2)  # nb 0 receives immediately
+    click_on.delay_send({0: 0.3, 1: 0.2, 2: 0.1}, 0.4)  # nb 3 receives immediately
+    click_on.delay_send({0: 0.1, 1: 0.2, 3: 0.3}, 0.4)  # nb 2 receives immediately
+    click_on.delay_send({0: 0.1, 2: 0.3, 3: 0.2}, 0.4)  # nb 1 receives immediately
+    click_on.delay_send({1: 0.1, 2: 0.1, 3: 0.1}, 0.4)  # nb 0 receives immediately
 
-    assert len(callback_thread_id_storage.val) == 4
-    assert len(streamer.buffer_dict[book.token_id]) == 4
-    assert len(streamer.buffer_dict[book.token_id]) == len(
-        set(streamer.buffer_dict[book.token_id])
+    assert len(callback_thread_id_storage.val) == 1
+    assert (
+        len(streamer.book_dict.keys())
+        == len(streamer._book_idx.keys())
+        == len(streamer.counter_dict.keys())
+        == 1
     )
 
     assert_market_streamer_state(
         streamer,
         book,
-        data[0]["market"],
+        data[0][0]["market"],
         0,
         "",
         "",
         "",
         0.001,
-        data[click_on.counter]["hash"],
-        data[click_on.counter]["timestamp"],
+        get_data_hash(data[click_on.counter]),
+        get_data_timestamp(data[click_on.counter]),
         0,
     )
