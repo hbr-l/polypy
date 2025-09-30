@@ -32,6 +32,7 @@ from polypy.signing import (
     private_key_checksum_address,
 )
 from polypy.structs import (
+    BookEvent,
     CancelOrdersResponse,
     MarketInfo,
     MarketsResponse,
@@ -499,22 +500,22 @@ def get_neg_risk_markets(
     return events_closed, quintet_groups
 
 
-def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> dict[str, Any]:
+def _get_book_summary(endpoint: str | ENDPOINT, asset_id: str) -> BookEvent:
     resp = _request(f"{endpoint}/book?token_id={asset_id}", "GET", None, None)
-    return msgspec.json.decode(resp.text)
+    return msgspec.json.decode(resp.text, type=BookEvent, strict=False)
 
 
 def get_book_summaries(
     endpoint: str | ENDPOINT, asset_ids: str | list[str]
-) -> dict[str, Any] | dict[str, dict[str, Any]]:
+) -> BookEvent | dict[str, BookEvent]:
     if isinstance(asset_ids, str):
         return _get_book_summary(endpoint, asset_ids)
 
     body = [{"token_id": x} for x in asset_ids]
     resp = _request(url=f"{endpoint}/books", method="POST", headers=None, data=body)
-    resp = msgspec.json.decode(resp.text)
+    resp = msgspec.json.decode(resp.text, type=list[BookEvent], strict=False)
 
-    return {x["asset_id"]: x for x in resp}
+    return {x.asset_id: x for x in resp}
 
 
 def _get_midpoint(
