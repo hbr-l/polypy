@@ -161,6 +161,17 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/06/11
+- Port to new `PriceChangeEvent` message struct ([PolyMarket Market Channel](https://docs.polymarket.com/developers/CLOB/websocket/market-channel-migration-guide))
+- changed `OrderBook.allowed_tick_sizes` to `OrderBook.min_tick_size` (simplify design), as well as it's `__init__` signature
+- use `polypy.structs.BookEvent`, `polypy.structs.PriceChangeEvent`, `polypy.structs.TickSizeEvent` and `polypy.structs.LastTradePriceEvent` for decoding Market stream JSON messages
+- implement `SharedZerosDec` and `SharedProcessLock`
+- implement `SharedOrderBook` (based on `SharedZerosDec` and `SharedProcessLock`)
+- refactor `polypy.book` module into submodules
+- implement shared locks `SharedLock` and `SharedRLock` (sharable across processes), though only tested on Windows
+- fix auto-ping in `UserStream`
+- custom `socket.socket` can be passed to `UserStream` and `MarketStream`
+- __NOTE: only tested on Windows!__
 #### 2025/06/03
 - In `OrderBook`:
   - Change `zeros_factory` to `zeros_factory_bid` and `zeros_factory_ask`
