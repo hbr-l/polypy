@@ -8,7 +8,7 @@ from typing import Any, Callable, Self
 import numpy as np
 from numpy.typing import NDArray
 
-from polypy.typing import AdvancedIndex, NumericAlias
+from polypy.typing import AdvancedIndex, NumericAlias, ZerosProtocol
 
 
 class FinalizedSharedMemory(shared_memory.SharedMemory):
@@ -66,8 +66,10 @@ class SharedArray:
     @classmethod
     def factory(
         cls, shm_name: str, create: bool, fill_val: Any
-    ) -> Callable[[int | Sequence[int], type | np.dtype | str], Self]:
-        def closure(shape: int | Sequence[int], dtype: type | np.dtype | str) -> Self:
+    ) -> Callable[[int | Sequence[int], type | np.dtype | str], Self | ZerosProtocol]:
+        def closure(
+            shape: int | Sequence[int], dtype: type | np.dtype | str
+        ) -> Self | ZerosProtocol:
             return SharedArray(shape, shm_name, create, dtype, fill_val)
 
         return closure
@@ -148,7 +150,7 @@ class SharedDecimalArray(SharedArray):
 
     Notes
     -----
-    This implementation assumes all __setitem__ values are of type Decimal and does no further checks!
+    This implementation assumes all __setitem__ values are of type Decimal and does not do further checking!
     This implementation does not use locks, the user must take care of proper locking!
     """
 
