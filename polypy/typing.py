@@ -50,7 +50,13 @@ class ZerosProtocol(ArrayInterface):
         return ...
 
     # noinspection PyUnusedLocal
-    def __init__(self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype]):
+    def __init__(
+        self,
+        shape: int | tuple[int, ...],
+        dtype: Optional[type | np.dtype] = None,
+        *args,
+        **kwargs
+    ):
         ...
 
     def __getitem__(self, key: AdvancedIndex):
@@ -68,7 +74,7 @@ class ZerosProtocol(ArrayInterface):
 
 class ZerosFactoryFunc(Protocol):
     def __call__(
-        self, shape: int | tuple[int, ...], dtype: Optional[type | np.dtype] = None
+        self, shape: int | Sequence[int], dtype: Optional[type | np.dtype | str] = None
     ) -> ZerosProtocol | np.ndarray:
         ...
 

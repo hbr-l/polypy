@@ -67,7 +67,7 @@ class SharedArray:
     def factory(
         cls, shm_name: str, create: bool, fill_val: Any
     ) -> Callable[[int | Sequence[int], type | np.dtype | str], Self]:
-        def closure(shape: int | Sequence[int], dtype: type | np.dtype | str):
+        def closure(shape: int | Sequence[int], dtype: type | np.dtype | str) -> Self:
             return SharedArray(shape, shm_name, create, dtype, fill_val)
 
         return closure
@@ -93,11 +93,13 @@ class SharedArray:
     def __setitem__(self, key: AdvancedIndex, value: Any | Iterable[Any]) -> None:
         self._arr[key] = value
 
-    def __array__(self) -> NDArray[Any]:
+    def __array__(self, *_, **__) -> NDArray[Any]:
+        """Return array through __getitem__ (self[:])"""
         return self[:]
 
     @property
     def array(self) -> np.ndarray:
+        """Raw array before __getitem__ (self._arr)"""
         return self._arr
 
     @property
