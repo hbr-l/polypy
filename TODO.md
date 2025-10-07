@@ -48,6 +48,7 @@ _(backward-incompatible changes, changes in signatures)_
 - [ ] __replace np.ndarray with NDArray for better type annotations__
 - [ ] __Standardize naming of `asset_id` vs `token_id`, `market_id` vs `condition_id`__
 - [ ] __More specialized exception classes (esp. in OrderManager, PositionManager, UserStream) of `PolyPyException`__
+- [ ] Better substitute for `isinstance(...)` where possible
 - [ ] Specialized msgspec.Struct instead of dicts for get_markets_gamma_model and get_events_gamma_model to resolve tight coupling in 
   - PositionManager._fill_no_orderbook_midpoints(...)
   - rest.api.get_neg_risk_market(...)

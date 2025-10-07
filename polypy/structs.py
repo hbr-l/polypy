@@ -205,6 +205,19 @@ class OrderSummary(msgspec.Struct, forbid_unknown_fields=True):
     size: str
 
 
+class BookSummary(msgspec.Struct, forbid_unknown_fields=True):
+    market: str
+    asset_id: str
+    timestamp: int
+    hash: str
+    bids: list[OrderSummary]
+    asks: list[OrderSummary]
+
+    min_order_size: str
+    tick_size: str
+    neg_risk: bool
+
+
 class PriceChangeSummary(msgspec.Struct, forbid_unknown_fields=True):
     asset_id: str
     price: str

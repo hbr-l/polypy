@@ -161,6 +161,9 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/10/07
+- Implement `BookSummary` struct due to changes in `/book` response format (new fields: `min_order_size`, `tick_size`, 
+`neg_risk`) and simplify parsing
 #### 2025/06/11
 - Port to new `PriceChangeEvent` message struct ([PolyMarket Market Channel](https://docs.polymarket.com/developers/CLOB/websocket/market-channel-migration-guide))
 - changed `OrderBook.allowed_tick_sizes` to `OrderBook.min_tick_size` (simplify design), as well as it's `__init__` signature
