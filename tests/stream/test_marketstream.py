@@ -526,6 +526,9 @@ def test_marketstream_fallback_mock_request(mock_server_click_on, setup_streamer
     # mock request
     rest_data = copy.deepcopy(data[8])
     del rest_data["event_type"]
+    rest_data["min_order_size"] = "0.001"
+    rest_data["neg_risk"] = False
+    rest_data["tick_size"] = "0.001"
     responses.get(f"https://test_endpoint.com/book?token_id={asset_id}", json=rest_data)
 
     with warnings.catch_warnings():
@@ -800,11 +803,11 @@ def test_marketstream_rest_denial_no_recursion(
     # mock request
     rest_data = copy.deepcopy(data[8])
     rest_data["hash"] = "1234"
+    rest_data["min_order_size"] = "0.001"
+    rest_data["neg_risk"] = False
+    rest_data["tick_size"] = "0.01"
     del rest_data["event_type"]
-    responses.get(
-        f"https://test_endpoint.com/book?token_id={asset_id}",
-        json=rest_data,
-    )
+    responses.get(f"https://test_endpoint.com/book?token_id={asset_id}", json=rest_data)
 
     click_on.send()  # 1. send - book
     click_on.skip()  # 2. skip - price_change
