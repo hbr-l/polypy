@@ -212,13 +212,14 @@ def test_orderbook_sync(book_t0_ws_msg_hashed):
     # mock response
     rest_data = {"minimum_tick_size": 0.001}
     responses.get(f"{endpoint}/tick-size?token_id={book.token_id}", json=rest_data)
-    book_data = copy.deepcopy(book_t0_ws_msg_hashed)
-    responses.get(
-        f"{endpoint}/book?token_id={book.token_id}",
-        json=msgspec.to_builtins(book_data),
+    book_data: dict = msgspec.to_builtins(copy.deepcopy(book_t0_ws_msg_hashed))
+    del book_data["event_type"]
+    book_data.update(
+        {"min_order_size": "0.001", "neg_risk": False, "tick_size": "0.001"}
     )
+    responses.get(f"{endpoint}/book?token_id={book.token_id}", json=book_data)
 
-    book.sync(endpoint, True)
+    book.sync(endpoint)
     assert book.tick_size == dec(0.001)
     assert np.sum(book.ask_prices) > 0
     assert np.sum(book.bid_prices) > 0
@@ -562,18 +563,14 @@ def test_orderbook_book_hash(
     )
 
     # test updating
-    orderbook = message_to_orderbook(
-        book_t1_rest_msg_hashed, orderbook, event_type="book"
-    )
+    orderbook = message_to_orderbook(book_t1_rest_msg_hashed, orderbook)
     assert book_t1_rest_msg_hashed.event_type == "book"
     assert (
         orderbook.hash(market_id, book_t1_rest_msg_hashed.timestamp)
         == book_t1_rest_msg_hashed.hash
     )
 
-    orderbook = message_to_orderbook(
-        book_t2_rest_msg_hashed, orderbook, event_type="book"
-    )
+    orderbook = message_to_orderbook(book_t2_rest_msg_hashed, orderbook)
     assert book_t2_rest_msg_hashed.event_type == "book"
     assert (
         orderbook.hash(market_id, book_t2_rest_msg_hashed.timestamp)
@@ -687,6 +684,7 @@ def test_orderbook_marketable_amount_raises_unknown_max_liquidity(
         orderbook.marketable_price("BUY", 1e9)
 
     assert "No marketable price" in str(e)
+    # noinspection PyUnresolvedReferences
     orderbook.cleanup()
 
 
@@ -776,7 +774,6 @@ def test_orderbook_to_dict(book_t1_rest_msg_hashed):
     orderbook = message_to_orderbook(
         book_t1_rest_msg_hashed,
         SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, True),
-        event_type="book",
     )
 
     client_dict = client_orderbook.__dict__
@@ -797,7 +794,6 @@ def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
     orderbook = message_to_orderbook(
         book_t1_rest_msg_hashed,
         SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, True),
-        event_type="book",
     )
 
     client_dict = client_orderbook.__dict__
@@ -809,6 +805,7 @@ def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
 
     assert client_dict == book_dict
 
+    # noinspection PyUnresolvedReferences
     orderbook.cleanup()
 
 
@@ -888,22 +885,28 @@ def test_message_to_orderbook_zeroing_asks_price_change_msg(
     assert np.sum(book.bids[1]) > dec(0)
 
 
-def test_message_to_orderbook_raise_event_type_exists(book_t0_ws_msg_hashed):
-    # ws response with event_type specified: fail
-    # ws response without event_type: success
-    book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
-    with pytest.raises(ValueError) as e1:
-        message_to_orderbook(book_t0_ws_msg_hashed, book, event_type="price_change")
-    assert "already exists" in str(e1)
-    book.cleanup()
-
+def test_message_to_orderbook_raise_wrong_event_type(
+    book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
+):
     msg = msgspec.to_builtins(book_t0_ws_msg_hashed)
     msg["timestamp"] = str(msg["timestamp"])
-    msg["event_type"] = "book"
+    msg["event_type"] = "price_change"
     book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
-    with pytest.raises(ValueError) as e2:
-        message_to_orderbook(book_t0_ws_msg_hashed, book, event_type="price_change")
-    assert "already exists" in str(e2)
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, book)
+    assert "Unknown" in str(e2)
+
+    msg["event_type"] = "tick_size_change"
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, book)
+    assert "Unknown" in str(e2)
+
+    msg = msgspec.to_builtins(price_change_t1_ws_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
+    msg["event_type"] = "book"
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, book)
+    assert "Unknown" in str(e2)
 
     book_new = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, False)
     message_to_orderbook(book_t0_ws_msg_hashed, book_new)
@@ -920,16 +923,12 @@ def test_message_to_orderbook_raise_specify_event_type(book_t1_rest_msg_hashed):
     msg["timestamp"] = str(msg["timestamp"])
 
     book = SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, True)
-    with pytest.raises(KeyError) as e:
+    with pytest.raises(EventTypeException) as e:
         message_to_orderbook(msg, book)
-    assert "missing" in str(e)
+    assert "Unknown" in str(e)
 
     book = SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, False)
-    message_to_orderbook(
-        book_t1_rest_msg_hashed,
-        book,
-        event_type="book",
-    )
+    message_to_orderbook(book_t1_rest_msg_hashed, book)
     book.cleanup()
 
 

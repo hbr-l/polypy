@@ -18,7 +18,7 @@ from polypy.book.hashing import guess_check_orderbook_hash
 from polypy.book.order_book import OrderBook, _coerce_inbound_idx
 from polypy.book.parsing import (
     _quotes_from_price_change_event,
-    dict_to_market_event_struct,
+    dict_to_book_struct,
     merge_quotes_to_order_summaries,
     split_order_summaries_to_quotes,
 )
@@ -254,13 +254,14 @@ def test_orderbook_sync(book_t0_ws_msg_hashed):
     # mock response
     rest_data = {"minimum_tick_size": 0.001}
     responses.get(f"{endpoint}/tick-size?token_id={book.token_id}", json=rest_data)
-    book_data = copy.deepcopy(book_t0_ws_msg_hashed)
-    responses.get(
-        f"{endpoint}/book?token_id={book.token_id}",
-        json=msgspec.to_builtins(book_data),
+    book_data: dict = msgspec.to_builtins(copy.deepcopy(book_t0_ws_msg_hashed))
+    del book_data["event_type"]
+    book_data.update(
+        {"min_order_size": "0.001", "neg_risk": False, "tick_size": "0.001"}
     )
+    responses.get(f"{endpoint}/book?token_id={book.token_id}", json=book_data)
 
-    book.sync(endpoint, True)
+    book.sync(endpoint)
     assert book.tick_size == 0.001
     assert np.sum(book.ask_prices) > 0
     assert np.sum(book.bid_prices) > 0
@@ -644,18 +645,14 @@ def test_orderbook_book_hash(
     )
 
     # test updating
-    orderbook = message_to_orderbook(
-        book_t1_rest_msg_hashed, orderbook, event_type="book"
-    )
+    orderbook = message_to_orderbook(book_t1_rest_msg_hashed, orderbook)
     assert book_t1_rest_msg_hashed.event_type == "book"
     assert (
         orderbook.hash(market_id, book_t1_rest_msg_hashed.timestamp)
         == book_t1_rest_msg_hashed.hash
     )
 
-    orderbook = message_to_orderbook(
-        book_t2_rest_msg_hashed, orderbook, event_type="book"
-    )
+    orderbook = message_to_orderbook(book_t2_rest_msg_hashed, orderbook)
     assert book_t2_rest_msg_hashed.event_type == "book"
     assert (
         orderbook.hash(market_id, book_t2_rest_msg_hashed.timestamp)
@@ -873,9 +870,7 @@ def test_orderbook_to_dict(book_t1_rest_msg_hashed):
     client_orderbook = parse_raw_orderbook_summary(msg)
 
     orderbook = message_to_orderbook(
-        book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
-        event_type="book",
+        book_t1_rest_msg_hashed, OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01)
     )
 
     client_dict = client_orderbook.__dict__
@@ -894,9 +889,7 @@ def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
     client_orderbook = parse_raw_orderbook_summary(msg)
 
     orderbook = message_to_orderbook(
-        book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
-        event_type="book",
+        book_t1_rest_msg_hashed, OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01)
     )
 
     client_dict = client_orderbook.__dict__
@@ -952,8 +945,9 @@ def test_parse_ws_event_type_price_change_float():
         ],
         "market": "123",
         "timestamp": 1_000,
+        "event_type": "price_change",
     }
-    msg = dict_to_market_event_struct(msg, "price_change")
+    msg = dict_to_book_struct(msg)
 
     bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
         msg, "123", float
@@ -1008,8 +1002,9 @@ def test_parse_ws_event_type_price_change_decimal():
         ],
         "market": "123",
         "timestamp": 1_000,
+        "event_type": "price_change",
     }
-    msg = dict_to_market_event_struct(msg, "price_change")
+    msg = dict_to_book_struct(msg)
 
     bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
         msg, "123", Decimal
@@ -1045,8 +1040,9 @@ def test_parse_ws_event_type_price_change_float_empty_asks():
         ],
         "market": "123",
         "timestamp": 1_000,
+        "event_type": "price_change",
     }
-    msg = dict_to_market_event_struct(msg, "price_change")
+    msg = dict_to_book_struct(msg)
 
     bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
         msg, "123", Decimal
@@ -1101,8 +1097,9 @@ def test_parse_ws_event_type_price_change_float_zeroing_asks():
         ],
         "market": "123",
         "timestamp": 1_000,
+        "event_type": "price_change",
     }
-    msg = dict_to_market_event_struct(msg, "price_change")
+    msg = dict_to_book_struct(msg)
 
     bid_prices, bid_sizes, ask_prices, ask_sizes = _quotes_from_price_change_event(
         msg, "123", float
@@ -1156,8 +1153,9 @@ def test_parse_ws_event_type_price_change_raise_side():
         ],
         "market": "123",
         "timestamp": 1_000,
+        "event_type": "price_change",
     }
-    msg = dict_to_market_event_struct(msg, "price_change")
+    msg = dict_to_book_struct(msg)
     msg.price_changes[2].side = "SOME"
 
     with pytest.raises(ValueError):
@@ -1240,27 +1238,27 @@ def test_message_to_orderbook_zeroing_asks_price_change_msg(
     assert np.sum(book.bids[1]) > 0
 
 
-def test_message_to_orderbook_raise_event_type_exists(book_t0_ws_msg_hashed):
-    # ws response with event_type specified: fail
-    # ws response without event_type: success
-    with pytest.raises(ValueError) as e1:
-        message_to_orderbook(
-            book_t0_ws_msg_hashed,
-            OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01),
-            event_type="price_change",
-        )
-    assert "already exists" in str(e1)
-
+def test_message_to_orderbook_raise_wrong_event_type(
+    book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
+):
     msg = msgspec.to_builtins(book_t0_ws_msg_hashed)
     msg["timestamp"] = str(msg["timestamp"])
+    msg["event_type"] = "price_change"
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01))
+    assert "Unknown" in str(e2)
+
+    msg["event_type"] = "tick_size_change"
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01))
+    assert "Unknown" in str(e2)
+
+    msg = msgspec.to_builtins(price_change_t1_ws_msg_hashed)
+    msg["timestamp"] = str(msg["timestamp"])
     msg["event_type"] = "book"
-    with pytest.raises(ValueError) as e2:
-        message_to_orderbook(
-            book_t0_ws_msg_hashed,
-            OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01),
-            event_type="price_change",
-        )
-    assert "already exists" in str(e2)
+    with pytest.raises(EventTypeException) as e2:
+        message_to_orderbook(msg, OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01))
+    assert "Unknown" in str(e2)
 
     message_to_orderbook(
         book_t0_ws_msg_hashed, OrderBook(book_t0_ws_msg_hashed.asset_id, 0.01)
@@ -1274,17 +1272,15 @@ def test_message_to_orderbook_raise_specify_event_type(book_t1_rest_msg_hashed):
     del msg["event_type"]
     msg["timestamp"] = str(msg["timestamp"])
 
-    with pytest.raises(KeyError) as e:
+    with pytest.raises(EventTypeException) as e:
         message_to_orderbook(
             msg,
             OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
         )
-    assert "missing" in str(e)
+    assert "Unknown" in str(e)
 
     message_to_orderbook(
-        book_t1_rest_msg_hashed,
-        OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01),
-        event_type="book",
+        book_t1_rest_msg_hashed, OrderBook(book_t1_rest_msg_hashed.asset_id, 0.01)
     )
 
 
