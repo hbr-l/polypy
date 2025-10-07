@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable
 
 import msgspec
 
@@ -7,6 +7,7 @@ from polypy.exceptions import EventTypeException, OrderBookException
 from polypy.order.common import SIDE
 from polypy.structs import (
     BookEvent,
+    BookSummary,
     MarketEvent,
     OrderSummary,
     PriceChangeEvent,
@@ -66,7 +67,7 @@ def split_order_summaries_to_quotes(
 
 
 def _quotes_from_book_event(
-    msg: BookEvent, dtype_factory: Callable[[str], Any]
+    msg: BookEvent | BookSummary, dtype_factory: Callable[[str], Any]
 ) -> tuple[
     list[NumericAlias], list[NumericAlias], list[NumericAlias], list[NumericAlias]
 ]:
@@ -95,36 +96,26 @@ def _quotes_from_price_change_event(
     return bid_prices, bid_sizes, ask_prices, ask_sizes
 
 
-def dict_to_market_event_struct(
-    msg: dict[str, Any],
-    event_type: Literal["book", "price_change", "tick_size_change"] | None = None,
-) -> MarketEvent:
-    if "event_type" not in msg:
-        if event_type is None:
-            raise KeyError(
-                "`event_type` key missing in `msg`, `event_type` has to be specified."
-            )
-
-        msg["event_type"] = event_type
-
-    elif event_type and event_type != msg["event_type"]:
-        raise ValueError(
-            f"Key 'event_type' already exists in msg. "
-            f"msg['event_type']={msg['event_type']}, event_type={event_type}."
-        )
+def dict_to_book_struct(msg: dict[str, Any]) -> MarketEvent | BookSummary:
+    msg_type = BookSummary
+    if "event_type" in msg:
+        msg_type = MarketEvent
 
     try:
-        return msgspec.convert(msg, type=MarketEvent, strict=False)
+        return msgspec.convert(msg, type=msg_type, strict=False)
     except msgspec.ValidationError as e:
-        raise EventTypeException(f"Unknown event_type: {msg['event_type']}.") from e
+        raise EventTypeException(f"Unknown msg: {msg}.") from e
 
 
 def guess_tick_size(
-    msg: BookEvent | dict,
+    msg: BookEvent | dict | BookSummary,
     n: int = 12,
 ) -> float:
     if isinstance(msg, dict):
-        msg: MarketEvent = dict_to_market_event_struct(msg, "book")
+        msg: MarketEvent | BookSummary = dict_to_book_struct(msg)
+
+    if msg.event_type == "summary":
+        return float(msg.tick_size)
 
     min_exponent = min(
         [Decimal(i.price).as_tuple().exponent for i in msg.bids[:n]]
@@ -134,7 +125,7 @@ def guess_tick_size(
 
 
 def _set_book_event(
-    msg: BookEvent,
+    msg: BookEvent | BookSummary,
     book: "OrderBookProtocol",
     dtype_factory: Callable[[str], Any] | None = None,
 ) -> "OrderBookProtocol":
@@ -156,6 +147,9 @@ def _set_book_event(
         book.reset_asks(ask_prices, ask_sizes)
     else:
         book.null_asks()
+
+    if msg.event_type == "summary":
+        book.tick_size = float(msg.tick_size)
 
     return book
 
@@ -199,32 +193,17 @@ def _set_tick_size_event(
     return book
 
 
-def _parse_market_event_struct(
-    msg: dict[str, Any] | MarketEvent,
-    event_type: Literal["book", "price_change", "tick_size_change"] | None,
-) -> MarketEvent:
-    if isinstance(msg, dict):
-        return dict_to_market_event_struct(msg, event_type)
-    elif event_type and msg.event_type != event_type:
-        raise ValueError(
-            f"Key 'event_type' already exists in msg. "
-            f"msg.event_type={msg.event_type}, event_type={event_type}."
-        )
-
-    return msg
-
-
 def message_to_orderbook(
-    msg: dict[str, Any] | MarketEvent,
+    msg: dict[str, Any] | MarketEvent | BookSummary,
     book: "OrderBookProtocol",
     dtype_factory: Callable[[str], Any] | type | None = None,
-    event_type: Literal["book", "price_change", "tick_size_change"] | None = None,
 ) -> "OrderBookProtocol":
-    msg = _parse_market_event_struct(msg, event_type)
+    if isinstance(msg, dict):
+        msg: BookSummary | MarketEvent = dict_to_book_struct(msg)
 
     dtype_factory = book.dtype if dtype_factory is None else dtype_factory
 
-    if msg.event_type == "book":
+    if msg.event_type == "summary" or msg.event_type == "book":
         return _set_book_event(msg, book, dtype_factory)
 
     if msg.event_type == "price_change":
@@ -233,4 +212,4 @@ def message_to_orderbook(
     if msg.event_type == "tick_size_change":
         return _set_tick_size_event(msg, book)
 
-    raise EventTypeException(f"Unknown event_type: {msg.event_type}.")
+    raise EventTypeException(f"Unknown msg: {msg}.")
