@@ -8,7 +8,6 @@ from typing import Any, Callable, Literal, Self
 
 import numpy as np
 
-from polypy import BookEvent
 from polypy.book.hashing import guess_check_orderbook_hash
 from polypy.book.order_book import OrderBookProtocol
 from polypy.book.parsing import message_to_orderbook
@@ -22,7 +21,13 @@ from polypy.exceptions import (
 from polypy.ipc.shm import SharedArray
 from polypy.rest.api import get_book_summaries
 from polypy.stream.common import CHANNEL, MessageStreamer
-from polypy.structs import LastTradePriceEvent, MarketEvent, PriceChangeEvent
+from polypy.structs import (
+    BookEvent,
+    BookSummary,
+    LastTradePriceEvent,
+    MarketEvent,
+    PriceChangeEvent,
+)
 from polypy.typing import ZerosFactoryFunc, ZerosProtocol
 
 CheckHashParams = namedtuple(
@@ -206,7 +211,9 @@ class MarketStream(MessageStreamer):
         else:
             raise EventTypeException(f"Unknown event_type: {msg.event_type}")
 
-    def _update_book(self, msg: MarketEvent, asset_id: str | None = None) -> None:
+    def _update_book(
+        self, msg: MarketEvent | BookSummary, asset_id: str | None = None
+    ) -> None:
         if asset_id is None:
             asset_id = msg.asset_id
 
@@ -220,7 +227,9 @@ class MarketStream(MessageStreamer):
 
             self._update_book(resp)
 
-    def _check_hash(self, msg: MarketEvent, asset_id: str | None = None) -> bool:
+    def _check_hash(
+        self, msg: MarketEvent | BookSummary, asset_id: str | None = None
+    ) -> bool:
         # sourcery skip: class-extract-method
         if self.nth_price_change is None:
             return True
@@ -229,7 +238,8 @@ class MarketStream(MessageStreamer):
             asset_id = msg.asset_id
         arr_id = self._book_idx[asset_id]
 
-        if msg.event_type == "book":
+        # todo EAFP with try except
+        if isinstance(msg, BookSummary) or msg.event_type == "book":
             # fresh order book, no need to check anything
             self.counter_dict[asset_id] = 0
             self.status_arr[arr_id] = 1
