@@ -13,7 +13,7 @@ from polypy.book.hashing import dict_to_sha1
 from polypy.book.parsing import (
     _number_to_str,
     _set_book_event,
-    dict_to_market_event_struct,
+    dict_to_book_struct,
     guess_tick_size,
     merge_quotes_to_order_summaries,
     message_to_orderbook,
@@ -26,7 +26,7 @@ from polypy.ipc.shm import FinalizedSharedMemory, SharedDecimalArray
 from polypy.order.common import SIDE
 from polypy.rest.api import get_book_summaries, get_tick_size
 from polypy.rounding import round_half_even
-from polypy.structs import BookEvent
+from polypy.structs import BookEvent, BookSummary
 from polypy.typing import ArrayCoercible, NumericAlias, ZerosFactoryFunc, ZerosProtocol
 
 
@@ -41,7 +41,8 @@ class OrderBookProtocol(Protocol):
     def update_tick_size(self, endpoint: str | ENDPOINT) -> NumericAlias:
         ...
 
-    def sync(self, endpoint: str, include_tick_size: bool) -> None:
+    def sync(self, endpoint: str) -> None:
+        """Sync asks, bids and tick size by pulling REST from Polymarket"""
         ...
 
     @property
@@ -361,7 +362,7 @@ class OrderBook:
     @classmethod
     def from_dict(
         cls,
-        book_msg_dict: dict[str, Any] | BookEvent,
+        book_msg_dict: dict[str, Any] | BookEvent | BookSummary,
         zeros_factory_bid: ZerosProtocol | ZerosFactoryFunc = np.zeros,
         zeros_factory_ask: ZerosProtocol | ZerosFactoryFunc = None,
         tick_size_factory: type[TickSizeProtocol] | TickSizeFactory | None = TickSize,
@@ -369,7 +370,7 @@ class OrderBook:
         coerce_inbound_prices: bool = False,
     ) -> Self:
         if isinstance(book_msg_dict, dict):
-            book_msg_dict = dict_to_market_event_struct(book_msg_dict, "book")
+            book_msg_dict = dict_to_book_struct(book_msg_dict)
 
         tick_size = guess_tick_size(book_msg_dict, 12)
 
@@ -390,12 +391,11 @@ class OrderBook:
             self.tick_size = get_tick_size(endpoint, self.token_id)
             return self.tick_size
 
-    def sync(self, endpoint: str, include_tick_size: bool) -> None:
+    def sync(self, endpoint: str) -> None:
         with self.lock:
-            if include_tick_size:
-                self.update_tick_size(endpoint)
             response = get_book_summaries(endpoint, self.token_id)
-            message_to_orderbook(response, self, None, "book")
+            message_to_orderbook(response, self, None)
+            # updates tick_size automatically via message_to_orderbook, because response is BookSummary
 
     @property
     def dtype(self) -> type:
@@ -820,12 +820,11 @@ class SharedOrderBook:
             self._tick_size.set(tick_size)
             return self._tick_size.get()
 
-    def sync(self, endpoint: str, include_tick_size: bool) -> None:
+    def sync(self, endpoint: str) -> None:
         with self.lock:
-            if include_tick_size:
-                self.update_tick_size(endpoint)
             response = get_book_summaries(endpoint, self.token_id)
             message_to_orderbook(response, self, None)
+            # updates tick_size automatically via message_to_orderbook, because response is BookSummary
 
     @property
     def dtype(self) -> type:
