@@ -217,6 +217,10 @@ class BookSummary(msgspec.Struct, forbid_unknown_fields=True):
     tick_size: str
     neg_risk: bool
 
+    @property
+    def event_type(self) -> str:
+        return "summary"
+
 
 class PriceChangeSummary(msgspec.Struct, forbid_unknown_fields=True):
     asset_id: str

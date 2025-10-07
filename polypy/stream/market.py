@@ -238,8 +238,7 @@ class MarketStream(MessageStreamer):
             asset_id = msg.asset_id
         arr_id = self._book_idx[asset_id]
 
-        # todo EAFP with try except
-        if isinstance(msg, BookSummary) or msg.event_type == "book":
+        if msg.event_type == "summary" or msg.event_type == "book":
             # fresh order book, no need to check anything
             self.counter_dict[asset_id] = 0
             self.status_arr[arr_id] = 1
