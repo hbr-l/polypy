@@ -933,7 +933,19 @@ def test_message_to_orderbook_raise_specify_event_type(book_t1_rest_msg_hashed):
 
 
 def test_message_to_orderbook_raise_unknown_event_type(book_t0_ws_msg_hashed):
-    book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
+    # weirdly, we have to define custom shm names to not intefere with other tests...
+    book = SharedOrderBook(
+        book_t0_ws_msg_hashed.asset_id,
+        0.01,
+        True,
+        shm_tick_size="_shm_tick_size_",
+        shm_lock="_shm_lock_",
+        shm_ask_p="_shm_ask_p_",
+        shm_ask_q="_shm_ask_q_",
+        shm_bid_p="_shm_bid_p_",
+        shm_bid_q="_shm_bid_q",
+        shm_args="_shm_args_",
+    )
     book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
     assert (
