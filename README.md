@@ -161,6 +161,18 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/10/17
+- minor bug fixes
+- add `dtype_size` to `get_positions(...)`
+- new fields `side` and `outcome` for `MakerOrder` struct
+- for `MarketStream` and `UserStream` implement `.wait_ready(...)` and `.ready()` to check when streams have connected 
+to server
+- `UserStreams`'s param `market_triplets` accepts empty list now, which subscribes to updates for any market (no 
+filtering)
+- new examples
+- improve performance of:
+  - `typing.zeros_dec` (use np.full)
+  - `OrderBook` (faster initialization)
 #### 2025/10/07
 - Implement `BookSummary` struct due to changes in `/book` response format (new fields: `min_order_size`, `tick_size`, 
 `neg_risk`) and simplify parsing
