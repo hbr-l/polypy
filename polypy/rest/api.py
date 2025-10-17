@@ -1177,7 +1177,7 @@ def _parse_positions_url(
     if limit > 500:
         raise PolyPyException("`limit` must be <= 500.")
 
-    url = f"{endpoint}/positions?=user={user}&sizeThreshold={size_threshold}&limit={limit}&offset={offset}"
+    url = f"{endpoint}/positions?user={user}&sizeThreshold={size_threshold}&limit={limit}&offset={offset}"
 
     if market:
         _, market = _parse_single_to_list(market)
@@ -1204,6 +1204,7 @@ def get_positions(
     limit: int = 500,
     offset: int = 0,
     n_digits_size: int = N_DIGITS_SIZE,
+    dtype_size: type[NumericAlias] | None = None,
 ) -> list[PositionProtocol] | list[dict[str, Any]]:
     if isinstance(endpoint_data, ENDPOINT) and endpoint_data is not ENDPOINT.DATA:
         raise PolyPyException(
@@ -1233,9 +1234,16 @@ def get_positions(
     if position_factory is None:
         return resp
 
+    def _parse_dtype(_x) -> NumericAlias:
+        if dtype_size is None:
+            return _x
+        return dtype_size(_x)
+
     return [
         position_factory(
-            asset_id=r["asset"], size=r["size"], n_digits_size=n_digits_size
+            asset_id=r["asset"],
+            size=_parse_dtype(r["size"]),
+            n_digits_size=n_digits_size,
         )
         for r in resp
     ]
