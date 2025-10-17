@@ -118,6 +118,8 @@ class MakerOrder(
     outcome: Literal["Yes", "No"]
     owner: str
     price: str
+    side: SIDE
+    outcome_index: int
 
 
 class TradeWSInfo(
