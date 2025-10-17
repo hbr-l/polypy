@@ -2,6 +2,7 @@ import math
 import threading
 import warnings
 from contextlib import contextmanager
+from functools import lru_cache
 from types import UnionType
 from typing import Any, Literal, Protocol, Self, Sequence, get_args
 
@@ -186,7 +187,8 @@ def _zeroing_array(x: ArrayCoercible) -> ArrayCoercible:
     return x
 
 
-def _linspace_array(
+@lru_cache(maxsize=2)
+def _cached_linspace_array(
     start: float, stop: float, num: int, nb_digits: int, dtype: type
 ) -> NDArray:
     arr = np.round(np.linspace(start, stop, num), nb_digits)
@@ -195,6 +197,12 @@ def _linspace_array(
         arr = np.array([round_half_even(dtype(x), nb_digits) for x in arr])
 
     return arr
+
+
+def _linspace_array(
+    start: float, stop: float, num: int, nb_digits: int, dtype: type
+) -> NDArray:
+    return np.copy(_cached_linspace_array(start, stop, num, nb_digits, dtype))
 
 
 def _union_type(dtype_arr: type, dtype_item: type) -> UnionType:
