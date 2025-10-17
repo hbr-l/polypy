@@ -90,8 +90,8 @@ def _split_market_assets(
             f"Got: {type(market_triplets)}"
         )
 
-    if not market_ids:
-        raise SubscriptionException("No markets (condition_id) to subscribe to.")
+    # if not market_ids:
+    #     raise SubscriptionException("No markets (condition_id) to subscribe to.")
 
     if None in market_ids:
         raise SubscriptionException("None not allowed in market ids (condition_id).")
@@ -406,7 +406,8 @@ class UserStream(MessageStreamer):
             ping_time=ping_time,
             callback_msg=callback_msg,
             callback_exc=_callback_invalidate_exc,
-            msgspec_type=list[Union[TradeWSInfo, OrderWSInfo]],
+            msgspec_type=list[Union[TradeWSInfo, OrderWSInfo]]
+            | Union[TradeWSInfo, OrderWSInfo],
             msgspec_strict=False,
             sock=sock,
         )
@@ -485,6 +486,9 @@ class UserStream(MessageStreamer):
             return
 
         if self.monitor_assets_thread_s is None or self.monitor_assets_thread_s <= 0:
+            return
+
+        if not self.asset_ids or not self.market_ids:
             return
 
         while not self._stop_token.wait(self.monitor_assets_thread_s):
