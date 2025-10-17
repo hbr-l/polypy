@@ -55,5 +55,5 @@ from polypy.stream import (
     TupleManager,
     UserStream,
 )
-from polypy.trade import TRADE_STATUS, TRADER_SIDE
+from polypy.trade import TERMINAL_TRADE_STATI, TRADE_STATUS, TRADER_SIDE
 from polypy.typing import dec, zeros_dec
