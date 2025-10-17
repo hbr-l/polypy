@@ -2,6 +2,8 @@ import contextlib
 import datetime
 import socket
 import threading
+import time
+import timeit
 import traceback
 import warnings
 from abc import ABC, abstractmethod
@@ -158,6 +160,21 @@ class BaseStreamer(ABC):
 
         if exc_verbose and self.exc:
             raise ExceptionGroup("StreamerExceptionGroup", self.exc)
+
+    def wait_ready(self, timeout: float) -> bool:
+        start_t = timeit.default_timer()
+
+        while (elapsed := timeit.default_timer() - start_t) <= timeout:
+            if self.ws is None:
+                time.sleep(0.01)
+            else:
+                self.ws: ClientConnection
+                break
+
+        return self.ws.ping().wait(max(timeout - elapsed, 0))
+
+    def ready(self) -> bool:
+        return self.wait_ready(0)
 
 
 class MessageStreamer(BaseStreamer):
