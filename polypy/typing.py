@@ -14,7 +14,7 @@ def dec(x: NumericAlias | str) -> Decimal:
 
 
 def zeros_dec(x: int, *_) -> np.ndarray:
-    return np.array([Decimal(0)] * x, dtype=object)
+    return np.full(x, Decimal(0), dtype=object)
 
 
 def is_iter(x: Any) -> bool:
