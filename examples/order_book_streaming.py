@@ -14,7 +14,7 @@ import polypy as plp
 
 def main(token_id: str) -> None:
     book = plp.OrderBook(token_id, plp.get_tick_size(plp.ENDPOINT.REST, token_id))
-    stream = plp.MarketStream(plp.ENDPOINT.WS, book, None, plp.ENDPOINT.REST)
+    stream = plp.MarketStream(plp.ENDPOINT.WS, book, (1, 5_000), plp.ENDPOINT.REST)
     stream.start()
 
     time.sleep(0.5)
