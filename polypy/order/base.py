@@ -32,7 +32,7 @@ def compute_expiration_timestamp(
 ) -> int:
     """Compute expiration timestamp.
 
-    Parses `expire` into a timestamp and adds `security_s` on top (required by Polymarket).
+    Parses `expire` into a timestamp and handles `security_s` threshold (required by Polymarket).
 
     Parameters
     ----------
@@ -52,18 +52,19 @@ def compute_expiration_timestamp(
     if tif is not TIME_IN_FORCE.GTD:
         return 0
 
-    if isinstance(expire, int):
-        return int(datetime.datetime.now().timestamp()) + expire + security_s
-    elif isinstance(expire, datetime.timedelta):
-        return int((datetime.datetime.now() + expire).timestamp()) + security_s
+    if isinstance(expire, datetime.timedelta):
+        expire = expire.total_seconds()
     elif isinstance(expire, datetime.datetime):
-        if expire <= datetime.datetime.now():
-            raise OrderCreationException("Expiration date is in the past.")
-        return int(expire.timestamp()) + security_s
-    else:
+        expire = (expire - datetime.datetime.now()).total_seconds()
+    elif not isinstance(expire, int):
         raise OrderCreationException(
             f"Unknown type for `delta`: {type(expire)}. Input: {expire}."
         )
+
+    if expire < 0:
+        raise OrderCreationException("Expiration date is in the past.")
+
+    return int(datetime.datetime.now().timestamp()) + max(expire, security_s)
 
 
 def check_valid_price(price: NumericAlias, tick_size: NumericAlias) -> None:
