@@ -34,6 +34,10 @@ class TIME_IN_FORCE(StrEnum):
     """Immediate-Or-Cancel, alias for FAK"""
 
 
+TIME_IN_FORCE_MARKET = {TIME_IN_FORCE.FOK, TIME_IN_FORCE.FAK, TIME_IN_FORCE.IOC}
+TIME_IN_FORCE_LIMIT = {TIME_IN_FORCE.GTC, TIME_IN_FORCE.GTD}
+
+
 class SIDE(StrEnum):
     BUY = "BUY"
     SELL = "SELL"

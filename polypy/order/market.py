@@ -7,7 +7,13 @@ from eth_keys.datatypes import PrivateKey
 from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException, PolyPyException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
-from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE, OrderProtocol
+from polypy.order.common import (
+    INSERT_STATUS,
+    SIDE,
+    TIME_IN_FORCE,
+    TIME_IN_FORCE_MARKET,
+    OrderProtocol,
+)
 from polypy.rounding import (
     round_floor,
     round_floor_tenuis_ceil,
@@ -117,6 +123,7 @@ def create_market_order(
     private_key: PrivateKey | str | PrivateKeyType,
     maker: str | None,
     signature_type: SIGNATURE_TYPE,
+    tif: TIME_IN_FORCE = TIME_IN_FORCE.FOK,
     book: "OrderBookProtocol | None" = None,
     max_size: NumericAlias | None = None,
     salt: int | None = None,
@@ -135,7 +142,7 @@ def create_market_order(
     extra_precision_buffer: int = 4,
     price: NumericAlias | None = None,
 ) -> Order:
-    """FOK market order defined via amount (instead of size).
+    """Build market order defined via amount (instead of size).
 
     Parameters
     ----------
@@ -149,6 +156,7 @@ def create_market_order(
     private_key
     chain_id
     neg_risk
+    tif: TIME_IN_FORCE, default=TIME_IN_FORCE.FOK
     book: "OrderBookProtocol" | None,
         if defined, checks the oder book if enough liquidity is available in the order book to fill the order
     max_size: NumericAlias | None,
@@ -184,6 +192,11 @@ def create_market_order(
     min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as tick_size is
     sufficiently small).
     """
+    if not tif in TIME_IN_FORCE_MARKET:
+        raise OrderCreationException(
+            f"Market order: `tif` must be one of {TIME_IN_FORCE_MARKET}. Got tif={tif}."
+        )
+
     domain = polymarket_domain(chain_id, neg_risk)
     numeric_type = infer_numeric_type(amount)
     tick_size, nb_tick_digits = cvt_tick_size(tick_size, numeric_type)
@@ -219,7 +232,7 @@ def create_market_order(
         private_key=private_key,
         domain=domain,
         size_matched=numeric_type(0),
-        tif=TIME_IN_FORCE.FOK,
+        tif=tif,
         salt=salt,
         order_id=order_id,
         signature=signature,
@@ -251,6 +264,7 @@ class MarketOrderFactory(Protocol):
         private_key: PrivateKey | str | PrivateKeyType,
         maker: str | None,
         signature_type: SIGNATURE_TYPE,
+        tif: TIME_IN_FORCE,
         book: "OrderBookProtocol",
         max_size: NumericAlias | None,
         *args,

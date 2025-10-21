@@ -6,7 +6,13 @@ from eth_keys.datatypes import PrivateKey
 from polypy.constants import CHAIN_ID, N_DIGITS_SIZE, ZERO_ADDRESS
 from polypy.exceptions import OrderCreationException
 from polypy.order.base import Order, check_valid_price, cvt_tick_size
-from polypy.order.common import INSERT_STATUS, SIDE, TIME_IN_FORCE, OrderProtocol
+from polypy.order.common import (
+    INSERT_STATUS,
+    SIDE,
+    TIME_IN_FORCE,
+    TIME_IN_FORCE_LIMIT,
+    OrderProtocol,
+)
 from polypy.rounding import (
     round_floor,
     round_floor_tenuis_ceil,
@@ -104,6 +110,11 @@ def create_limit_order(
     min tick_size (i.e. 0.001 or any smaller), and does not affect order creation anymore (as long as tick_size is
     sufficiently small).
     """
+    if not tif in TIME_IN_FORCE_LIMIT:
+        raise OrderCreationException(
+            f"Limit order: `tif` must be one of {TIME_IN_FORCE_LIMIT}. Got tif={tif}."
+        )
+
     domain = polymarket_domain(chain_id, neg_risk)
     numeric_type = infer_numeric_type(price)
     tick_size, nb_tick_digits = cvt_tick_size(tick_size, numeric_type)
