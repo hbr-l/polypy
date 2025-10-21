@@ -14,7 +14,9 @@
       "order_id": "0xc512c86c90ce3b4f657808cb6000000000000000000000000000000000000000",
       "outcome": "Yes",
       "owner": "000000000-0000-0000-0000-000000000000",
-      "price": "0.6"
+      "price": "0.6",
+      "side": "BUY",
+      "outcome_index": 1
     }
   ],
   "market": "0x4cfe8afc969fc85f4aa92ef01e8c82b84f773ea1cdf198d694ef9da1155393eb",
