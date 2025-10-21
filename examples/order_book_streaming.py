@@ -1,7 +1,7 @@
 """
 Live plot of order book using OrderBook and MarketStream.
 Please enter token ID into prompt.
-Exit via KeyboardInterrupt.
+Exit via closing plot.
 """
 import time
 

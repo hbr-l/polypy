@@ -95,7 +95,7 @@ position_manager.buying_power(order_manager)
 
 Documentation
 -------------
-See [documentation](docs/guide.md) and [examples](examples).
+See [documentation](docs/guide.md) (work in progress) and [examples](examples).
 
 Disclaimer
 ----------
@@ -105,9 +105,12 @@ the contents. Therefore, if you wish to apply this software or ideas contained i
 responsibility for your action. All opinions stated in this software should not be taken as financial advice. Neither
 as an investment recommendation. This software is provided "as is", use on your own risk and responsibility.  
   
-PolyPy is licensed under GNU GPLv3.  
-> __USE AT YOUR OWN RISK!__
+> __USE AT YOUR OWN RISK!__  
+> __POLPY IS FOR EDUCATIONAL PURPOSES ONLY__
 
+License
+-------
+PolyPy is licensed under GNU GPLv3, see [LICENSE](LICENSE).
 
 Improved Implementation over `py_clob_client`
 ---------------------------------------------
@@ -211,7 +214,7 @@ filtering)
 #### 2025/05/24
 - Implement `__getstate__` and `__setstate__` for `OrderManager`, `PositionManager` and `RPCSettings`
 #### 2025/05/20
-- `FAK` (alia `IOC`) as additional `TIME_IN_FORCE` option
+- `FAK` (alias `IOC`) as additional `TIME_IN_FORCE` option
 #### 2025/04/29
 - GAMMA API can only retrieve up to 20 items at once (`get_markets_gamma_model`, `get_events_gamma_model`)
 - Implement `__getnewargs__` for `MarketIdQuintet` and `MarketIdTriplet` to make them pickable
