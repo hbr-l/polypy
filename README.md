@@ -161,6 +161,12 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/10/21
+- implement `tif` (`plp.TIME_IN_FORCE`) argument for market orders (FOK or FAK)
+- implement `tif`-checks for market (FOK, FAK) and limit orders (GTC, GTC)
+- changed signature of market order interface due to `tif` implementation
+- fix bug in `compute_expiration_timestamp` (this was due to previously ambiguous Polymarket docs)
+- fix minor bug in monitoring thread of `UserStream`
 #### 2025/10/17
 - minor bug fixes
 - add `dtype_size` to `get_positions(...)`
