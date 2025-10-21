@@ -13,6 +13,7 @@ _(new/add)_
   - redeem:
     - https://github.com/Polymarket/examples/blob/main/examples/safeWallet/redeem.ts
     - https://github.com/Polymarket/conditional-token-examples-py/blob/main/ctf_examples/redeem.py
+- [x] SharedMemory implementation of `polypy.book.OrderBook` (enables MarketStream to run in separate process instead of only thread) -> SharedOrderBook
 - [ ] __Implement function complement_book() in `polypy.book` to invert order book (complementary outcome)__
 - [ ] __Add callback at on_setattr of order.status, which is called everytime INSERT_STATUS changes (more sophisticated order management)__
 - [ ] Implement auto-redeem function (currently not implemented since we need conditionId and tokenId but position managers only hold tokenIds)
@@ -33,8 +34,7 @@ if trade was split into multiple separate transactions -> debatable: use `callba
   - Subscribing and removing of markets
   - Auto-setting `strategy_id`
 - [ ] (Virtual) Stop-Loss orders (separate thread/process to check trigger conditions)
-- [ ] SharedMemory implementation of `polypy.order.base.Order` (enables UserStream to run in separate process instead of only thread)
-- [ ] SharedMemory implementation of `polypy.book.OrderBook` (enables MarketStream to run in separate process instead of only thread) 
+- [ ] SharedMemory implementation of `polypy.order.base.Order` (enables UserStream to run in separate process instead of only thread) 
 - [ ] SharedMemory implementation of OrderManager and PositionManager:
   - [ ] SharedMemory implementation e.g., ManagedDict 
   - [ ] move `lock`/mutex to a _(sharedMem) dict factory_ and make all operations atomic (enable OrderManager and PositionManager across processes instead of only threads)
@@ -60,6 +60,11 @@ _(backward-incompatible changes, changes in signatures)_
 _(backward-compatible changes, no changes in signatures)_
 - [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
+- [ ] __Rewrite `MarketStream`__: 
+  - [x] use AbstractStreamer
+  - [ ] if specified, merge complement asset_id (invert before) into order book as well
+  - [x] factor out _BookHashChecker_ for managing hash checks -> not necessary
+  - [x] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [ ] __test `ShareLock` and `SharedRLock` on Posix__
 - [ ] __`untrack_order_by_trade_terminal` in `UserStream` might fail in case of `CONFIRMED` status of `TradeWSInfo`-message was missed__
   (documentation: to be on the safe side, untrack/clean orders manually from `OrderManager` by `order.id` of return value when using
@@ -67,11 +72,6 @@ but this might mess with specific `PositionProtocol` implementation (resolved: l
   or even better by manually filtering for orders with order.status=MATCHED and 
   order.created_order < now-threshold (which also works for maker orders or partial taker orders !) - though this rarely should be the case because 
   this will only be necessary if `CONFIRMED` was missed)
-- [ ] __Rewrite `MarketStream`__: 
-  - [ ] use AbstractStreamer
-  - [ ] if specified, merge complement asset_id (invert before) into order book as well
-  - [ ] factor out _BookHashChecker_ for managing hash checks
-  - [ ] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [ ] __Port `polypy.stream.common.AbstractStreamer` to async (performance and buffering)__
 - [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
 - [ ] Optimize `_coerce_inbound_idx()` (though not urgent)
