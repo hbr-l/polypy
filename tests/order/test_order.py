@@ -992,7 +992,7 @@ def test_marketable(pth, private_key):
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
-        book,
+        book=book,
     )
     sell_order = create_market_order(
         total_sell_amount * 0.99,
@@ -1004,7 +1004,7 @@ def test_marketable(pth, private_key):
         private_key,
         None,
         SIGNATURE_TYPE.EOA,
-        book,
+        book=book,
         max_size=math.inf,
     )
 
@@ -1061,7 +1061,7 @@ def test_marketable_raise_not_enough_liquidity(pth, private_key):
             private_key,
             None,
             SIGNATURE_TYPE.EOA,
-            book,
+            book=book,
         )
     with pytest.raises(OrderCreationException) as e:
         _ = create_market_order(
@@ -1074,7 +1074,7 @@ def test_marketable_raise_not_enough_liquidity(pth, private_key):
             private_key,
             None,
             SIGNATURE_TYPE.EOA,
-            book,
+            book=book,
             max_size=math.inf,
         )
         assert "max order size" not in str(e)

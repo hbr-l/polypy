@@ -476,6 +476,7 @@ def test_market_order(
         ASSET_ID_YES,
         SIDE.BUY,
         None,
+        TIME_IN_FORCE.FOK,
         None,
         None,
         strategy_id="strat",
@@ -505,6 +506,7 @@ def test_market_order(
             ASSET_ID_YES,
             SIDE.SELL,
             None,
+            TIME_IN_FORCE.FOK,
             None,
             math.inf,
             strategy_id="tactic",
@@ -527,6 +529,7 @@ def test_market_order(
             ASSET_ID_YES,
             SIDE.SELL,
             None,
+            TIME_IN_FORCE.FOK,
             None,
             math.inf,
             neg_risk=None,
@@ -549,7 +552,14 @@ def test_market_order_raise_book(
     book = OrderBook("9876543212", 0.01)
     with pytest.raises(OrderCreationException) as record:
         order_manager.market_order(
-            100, ASSET_ID_YES, SIDE.SELL, None, book, math.inf, neg_risk=None
+            100,
+            ASSET_ID_YES,
+            SIDE.SELL,
+            None,
+            TIME_IN_FORCE.FOK,
+            book,
+            math.inf,
+            neg_risk=None,
         )
     assert "book.token_id" in str(record)
 
@@ -1435,7 +1445,14 @@ def test_market_sell_max_size(order_manager, mock_tick_size, mock_neg_risk):
 
     with pytest.raises(OrderCreationException) as record:
         order_manager.market_order(
-            100, ASSET_ID_YES, SIDE.SELL, None, None, 0.01, neg_risk=None
+            100,
+            ASSET_ID_YES,
+            SIDE.SELL,
+            None,
+            TIME_IN_FORCE.FOK,
+            None,
+            0.01,
+            neg_risk=None,
         )
 
     assert "exceeds" in str(record)
@@ -1619,7 +1636,14 @@ def test_invalidate(sample_order, order_manager):
 
     with pytest.raises(ManagerInvalidException) as record:
         order_manager.market_order(
-            12, ASSET_ID_YES, SIDE.BUY, 0.01, None, math.inf, neg_risk=None
+            12,
+            ASSET_ID_YES,
+            SIDE.BUY,
+            0.01,
+            TIME_IN_FORCE.FOK,
+            None,
+            math.inf,
+            neg_risk=None,
         )
     assert "invalid" in str(record)
     assert list(order_manager.order_ids) == ["2345"]

@@ -73,7 +73,13 @@ def main():
 
     # market buy for 1 USDC
     frozen_order, order_response = order_manager.market_order(
-        Decimal(1), token_id, plp.SIDE.BUY, order_book.tick_size, order_book, None
+        Decimal(1),
+        token_id,
+        plp.SIDE.BUY,
+        order_book.tick_size,
+        plp.TIME_IN_FORCE.FOK,
+        order_book,
+        None,
     )
     print("frozen_order (buy): ", frozen_order)
     print("order_response (buy): ", order_response)

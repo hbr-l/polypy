@@ -190,6 +190,7 @@ class OrderManagerProtocol(Protocol):
         token_id: str,
         side: SIDE,
         tick_size: float | NumericAlias | None,
+        tif: TIME_IN_FORCE,
         book: OrderBookProtocol | None,
         max_size: NumericAlias | None,
         neg_risk: bool | None = None,
@@ -206,6 +207,7 @@ class OrderManagerProtocol(Protocol):
         side
         tick_size: float | NumericAlias | None
             if None: first tries to infer tick_size from `book`, and if no `book` specified, then performs REST call
+        tif: TIME_IN_FORCE
         book
         max_size: NumericAlias | None
             only necessary if side=SIDE.SELL. Maximal number of shares to sell (should not be greater than current
@@ -710,6 +712,7 @@ class OrderManager(OrderManagerProtocol):
         token_id: str,
         side: SIDE,
         tick_size: float | NumericAlias | None,
+        tif: TIME_IN_FORCE,
         book: OrderBookProtocol | None,
         max_size: NumericAlias | None,
         neg_risk: bool | None = None,
@@ -724,6 +727,7 @@ class OrderManager(OrderManagerProtocol):
         side: SIDE,
         tick_size: float | NumericAlias | None,
             if None, tries to infer tick_size by `book`. If book is also None, then calls REST.
+        tif: TIME_IN_FORCE,
         book: OrderBookProtocol | None,
             if not None, will check marketable amount.
         max_size: NumericAlias | None,
@@ -753,6 +757,7 @@ class OrderManager(OrderManagerProtocol):
             private_key=self.private_key,
             maker=self.maker_funder,
             signature_type=self.signature_type,
+            tif=tif,
             book=book,
             max_size=max_size,
             **kwargs,
