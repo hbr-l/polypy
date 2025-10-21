@@ -414,7 +414,7 @@ class UserStream(MessageStreamer):
 
     @property
     def market_ids(self) -> list[str]:
-        return self.subscribe_params.markets
+        return list(self._market_ids)
 
     @property
     def asset_ids(self) -> list[str]:
@@ -488,7 +488,7 @@ class UserStream(MessageStreamer):
         if self.monitor_assets_thread_s is None or self.monitor_assets_thread_s <= 0:
             return
 
-        if not self.asset_ids or not self.market_ids:
+        if not self._market_ids:
             return
 
         while not self._stop_token.wait(self.monitor_assets_thread_s):

@@ -1891,15 +1891,16 @@ def test_raise_no_market_id(
             passphrase,
         )
 
-    with pytest.raises(StreamException):
-        UserStream(
-            "ws://localhost:8002/",
-            (order_manager, position_manager),
-            [],
-            api_key,
-            secret,
-            passphrase,
-        )
+    # that is actually allowed now:
+    # with pytest.raises(StreamException):
+    #     UserStream(
+    #         "ws://localhost:8002/",
+    #         (order_manager, position_manager),
+    #         [],
+    #         api_key,
+    #         secret,
+    #         passphrase,
+    #     )
 
 
 def test_raise_non_unique_order_manager(
