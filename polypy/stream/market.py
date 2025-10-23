@@ -243,10 +243,13 @@ class MarketStream(MessageStreamer):
             self.counter_dict[asset_id] = 0
             self.status_arr[arr_id] = 1
             return True
-
-        if msg.event_type == "tick_size_change" or msg.event_type == "last_trade_price":
+        elif (
+            msg.event_type == "tick_size_change" or msg.event_type == "last_trade_price"
+        ):
             # this is tick_size_change
             return True
+        elif msg.event_type != "price_change":
+            raise EventTypeException(f"Unknown event_type: {msg.event_type}.")
 
         self.counter_dict[asset_id] += 1
         self.status_arr[arr_id] = 0
@@ -261,8 +264,22 @@ class MarketStream(MessageStreamer):
 
     def _guess_hash(self, asset_id: str, book_id: int, msg: PriceChangeEvent) -> bool:
         timestamps = [int(msg.timestamp) - i for i in range(self.max_emission_delay)]
+        # todo optimize PriceChangeEvent in general...
+        for price_change in msg.price_changes:
+            if price_change.asset_id == asset_id:
+                msg_hash = price_change.hash
+                break
+        else:
+            raise StreamException(f"Cannot find hash for assetid={asset_id} in {msg}")
+
         if guess_check_orderbook_hash(
-            msg.price_changes[-1].hash, self.book_dict[asset_id], msg.market, timestamps
+            msg_hash,
+            self.book_dict[asset_id],
+            timestamps,
+            msg.market,
+            None,
+            None,
+            False,
         )[0]:
             # good to go, reset counter
             self.counter_dict[asset_id] = 0
@@ -362,8 +379,13 @@ class MarketStream(MessageStreamer):
         return status
 
 
-@lru_cache
+@lru_cache(maxsize=128)
 def _book_idx(token_id: str, books: list[OrderBookProtocol]) -> int:
+    if len(token_id) > 80:
+        raise PolyPyException(
+            "Internal exception: len(token_id) > 80. Array dtype `U80` not sufficient."
+        )
+
     book_ids = [book.token_id for book in books]
     return book_ids.index(token_id)
 

@@ -6,6 +6,7 @@ from functools import lru_cache
 from types import UnionType
 from typing import Any, Literal, Protocol, Self, Sequence, get_args
 
+import msgspec
 import numpy as np
 from _decimal import Decimal
 from numpy.typing import NDArray
@@ -23,17 +24,21 @@ from polypy.book.tick import SharedTickSize, TickSize, TickSizeFactory, TickSize
 from polypy.constants import ENDPOINT, N_DIGITS_SIZE
 from polypy.exceptions import OrderBookException
 from polypy.ipc.lock import SharedProcRLock
-from polypy.ipc.shm import FinalizedSharedMemory, SharedDecimalArray
+from polypy.ipc.shm import SharedArray, SharedDecimalArray
 from polypy.order.common import SIDE
 from polypy.rest.api import get_book_summaries, get_tick_size
 from polypy.rounding import round_half_even
-from polypy.structs import BookEvent, BookSummary
+from polypy.structs import BookEvent, BookSummary, MarketEvent, MarketInfo
 from polypy.typing import ArrayCoercible, NumericAlias, ZerosFactoryFunc, ZerosProtocol
 
 
 class OrderBookProtocol(Protocol):
     token_id: str
     tick_size: NumericAlias
+
+    market_id: str | None
+    min_order_size: int | None
+    neg_risk: bool | None
 
     @property
     def min_tick_size(self) -> float:
@@ -43,7 +48,12 @@ class OrderBookProtocol(Protocol):
         ...
 
     def sync(self, endpoint: str) -> None:
-        """Sync asks, bids and tick size by pulling REST from Polymarket"""
+        """Sync asks, bids, tick size, min order size and neg risk by pulling REST from Polymarket"""
+        ...
+
+    def sync_by_response(self, response: BookSummary | MarketEvent | dict) -> None:
+        """Sync asks, bids, tick size (and if BookSummary: min order size and neg risk)
+        by response of either websocket message or REST call."""
         ...
 
     @property
@@ -144,13 +154,21 @@ class OrderBookProtocol(Protocol):
 
     def to_dict(
         self,
-        market_id: str | None,
-        timestamp: int | float | str | None,
-        hash_str: str | None,
+        timestamp: int | float | str,
+        hash_str: str,
+        market_id: str,
+        min_order_size: str | int,
+        neg_risk: bool,
     ) -> dict[str, str]:
         ...
 
-    def hash(self, market_id: str, timestamp: int | float | str) -> str:
+    def hash(
+        self,
+        timestamp: int | float | str,
+        market_id: str | None,
+        min_order_size: str | int | None,
+        neg_risk: bool | None,
+    ) -> str:
         ...
 
     def marketable_price(
@@ -290,6 +308,12 @@ class OrderBook:
     Returned prices:
         - returned 'prices' have same dtype as sizes and are rounded according to min_tick_size.
           Though, internally prices are stored as positions in an array, so de-facto no loss of precision.
+
+    Hashing:
+        - `market_id`, `min_order_size` and `neg_risk` are required for hashing the order book
+        - those attributes are auto-updated if order book is passed to a `MarketStream`,
+           or `OrderBook.sync()` or `OrderBook.sync_by_response()` (only BookSummary) called
+        - if no hashing required, those attributes can remain None
     """
 
     def __init__(
@@ -302,12 +326,16 @@ class OrderBook:
         min_tick_size: float = 0.001,
         coerce_inbound_prices: bool = False,
         strict_type_check: bool = True,
+        market_id: str | None = None,
+        min_order_size: int | None = None,
+        neg_risk: bool | None = None,
     ) -> None:
         """
 
         Parameters
         ----------
-        token_id
+        token_id: str
+            token/asset id.
         tick_size: NumericAlias,
             Use get_tick_size(...) (REST) or MarketInfo.minimum_tick_size.
         zeros_factory_bid: type[ZerosProtocol] | ZerosFactoryFunc,
@@ -320,8 +348,34 @@ class OrderBook:
         min_tick_size: float, default = 0.001
             minimum allowed tick size in USDC terms.
             Will be passed to `tick_size_factory`
-        coerce_inbound_prices
-        strict_type_check
+        market_id: str | None, default=None
+            Set `OrderBook.market_id`. This is only required for hashing the order book and can be set None else.
+            `OrderBook.market_id` will be auto-updated if the order book is updated by `MarketStream` or by
+            `OrderBook.sync()` or by `OrderBook.sync_by_response()` (only BookSummary).
+            Note: If set to None and order book is passed to `MarketStream`, first hash check will cause
+            one additional REST call which auto-updates this attribute (first hash check will fail and
+            fall back to REST to auto-update)
+        min_order_size: str | None, default=None
+            Set `OrderBook.min_order_size`. This is only required for hashing the order book and can be set None else.
+            `OrderBook.min_order_size` will be auto-updated if the order book is updated by `MarketStream` or by
+            `OrderBook.sync()` or by `OrderBook.sync_by_response()` (only BookSummary).
+            Note: If set to None and order book is passed to `MarketStream`, first hash check will cause
+            one additional REST call which auto-updates this attribute (first hash check will fail and
+            fall back to REST to auto-update)
+        neg_risk: str | None, default=None
+            Set `OrderBook.neg_risk`. This is only required for hashing the order book and can be set None else.
+            `OrderBook.neg_risk` will be auto-updated if the order book is updated by `MarketStream` or by
+            `OrderBook.sync()` or by `OrderBook.sync_by_response()` (only BookSummary).
+            Note: If set to None and order book is passed to `MarketStream`, first hash check will cause
+            one additional REST call which auto-updates this attribute (first hash check will fail and
+            fall back to REST to auto-update)
+        coerce_inbound_prices: bool, default=False
+            Sometimes Polymarket contains bids and asks outside [0, 1].
+            If set to True, prices will be clipped to [0, 1] automatically (slight computational overhead).
+            If set to False, prices outside [0, 1] received by Polymarket will raise an exception.
+        strict_type_check: bool, default=True
+            If set to True, checks dtype compatibility when calling `OrderBook.set_bids`, `OrderBook.set_asks`,
+            `OrderBook.reset_bids`, and `OrderBook.reset_asks` (slight computational overhead).
         """
         self.token_id = token_id
         self.coerce_inbound_prices = coerce_inbound_prices
@@ -353,6 +407,10 @@ class OrderBook:
 
         self.lock = threading.RLock()  # todo use read-write lock instead
 
+        self.market_id = market_id
+        self.min_order_size = min_order_size
+        self.neg_risk = neg_risk
+
     @property
     def tick_size(self) -> NumericAlias:
         with self.lock:
@@ -366,6 +424,26 @@ class OrderBook:
     @property
     def min_tick_size(self) -> float:
         return self._tick_size.min_tick_size
+
+    @classmethod
+    def fetch(
+        cls,
+        endpoint_rest: str | ENDPOINT,
+        token_id: str,
+        zeros_factory_bid: ZerosProtocol | ZerosFactoryFunc = np.zeros,
+        zeros_factory_ask: ZerosProtocol | ZerosFactoryFunc = None,
+        tick_size_factory: type[TickSizeProtocol] | TickSizeFactory | None = TickSize,
+        min_tick_size: float = 0.001,
+        coerce_inbound_prices: bool = False,
+    ) -> Self:
+        return cls.from_dict(
+            get_book_summaries(endpoint_rest, token_id),
+            zeros_factory_bid=zeros_factory_bid,
+            zeros_factory_ask=zeros_factory_ask,
+            tick_size_factory=tick_size_factory,
+            min_tick_size=min_tick_size,
+            coerce_inbound_prices=coerce_inbound_prices,
+        )
 
     @classmethod
     def from_dict(
@@ -394,6 +472,31 @@ class OrderBook:
 
         return _set_book_event(book_msg_dict, order_book, order_book.dtype)
 
+    @classmethod
+    def from_market_info(
+        cls,
+        market_info: MarketInfo,
+        token_idx: int,
+        zeros_factory_bid: ZerosProtocol | ZerosFactoryFunc = np.zeros,
+        zeros_factory_ask: ZerosProtocol | ZerosFactoryFunc = None,
+        tick_size_factory: type[TickSizeProtocol] | TickSizeFactory | None = TickSize,
+        min_tick_size: float = 0.001,
+        coerce_inbound_prices: bool = False,
+    ) -> Self:
+        """Order book from MarketInfo - book will be empty!"""
+        return cls(
+            market_info.tokens[token_idx].token_id,
+            tick_size=market_info.minimum_tick_size,
+            zeros_factory_bid=zeros_factory_bid,
+            zeros_factory_ask=zeros_factory_ask,
+            tick_size_factory=tick_size_factory,
+            min_tick_size=min_tick_size,
+            coerce_inbound_prices=coerce_inbound_prices,
+            market_id=market_info.condition_id,
+            min_order_size=int(market_info.minimum_order_size),
+            neg_risk=market_info.neg_risk,
+        )
+
     def update_tick_size(self, endpoint: str) -> NumericAlias:
         with self.lock:
             self.tick_size = get_tick_size(endpoint, self.token_id)
@@ -404,6 +507,10 @@ class OrderBook:
             response = get_book_summaries(endpoint, self.token_id)
             message_to_orderbook(response, self, None)
             # updates tick_size automatically via message_to_orderbook, because response is BookSummary
+
+    def sync_by_response(self, response: BookSummary | MarketEvent | dict) -> None:
+        with self.lock:
+            message_to_orderbook(response, self, None)
 
     @property
     def dtype(self) -> type:
@@ -645,11 +752,14 @@ class OrderBook:
             ask_prices, ask_sizes = self.ask_prices, self.ask_sizes
         return merge_quotes_to_order_summaries(ask_prices, ask_sizes, True, dict)
 
+    # noinspection DuplicatedCode
     def to_dict(
         self,
-        market_id: str | None,
-        timestamp: int | float | str | None,
-        hash_str: str | None,
+        timestamp: int | float | str,
+        hash_str: str,
+        market_id: str,
+        min_order_size: str | int,
+        neg_risk: bool,
     ) -> dict[str, str]:
         if isinstance(timestamp, (int, float)):
             timestamp = f"{timestamp:.0f}"
@@ -662,10 +772,36 @@ class OrderBook:
                 "hash": hash_str,
                 "bids": self.bids_summary,
                 "asks": self.asks_summary,
+                "min_order_size": str(min_order_size),
+                "tick_size": str(self.tick_size),
+                "neg_risk": neg_risk,
             }
 
-    def hash(self, market_id: str, timestamp: int | float | str) -> str:
-        return dict_to_sha1(self.to_dict(market_id, timestamp, ""))
+    # noinspection DuplicatedCode
+    def hash(
+        self,
+        timestamp: int | float | str,
+        market_id: str | None,
+        min_order_size: str | int | None,
+        neg_risk: bool | None,
+    ) -> str:
+        market_id = market_id if market_id is not None else self.market_id
+        min_order_size = (
+            min_order_size if min_order_size is not None else self.min_order_size
+        )
+        neg_risk = neg_risk if neg_risk is not None else self.neg_risk
+
+        if market_id is None or min_order_size is None or neg_risk is None:
+            raise OrderBookException(
+                "`market_id` or `self.market_id`, "
+                "`min_order_size` or `self.min_order_size`, and "
+                "`neg_risk` or `self.neg_risk` "
+                "must not be None. Cannot compute hash for order book."
+            )
+
+        return dict_to_sha1(
+            self.to_dict(timestamp, "", market_id, min_order_size, neg_risk)
+        )
 
     def marketable_price(
         self, side: Literal["BUY", "SELL"] | "SIDE", amount: NumericAlias
@@ -680,6 +816,7 @@ class OrderBook:
 
 # noinspection PyProtectedMember
 class SharedOrderBook:
+    # todo implement classmethods from_dict, etc.
     def __init__(
         self,
         token_id: str,
@@ -687,6 +824,9 @@ class SharedOrderBook:
         create: bool,
         min_tick_size: float | None = 0.001,
         coerce_inbound_prices: bool = False,
+        market_id: str | None = None,
+        min_order_size: int | None = None,
+        neg_risk: bool | None = None,
         shm_tick_size: str | None = None,
         shm_bid_q: str | None = None,
         shm_ask_q: str | None = None,
@@ -694,7 +834,7 @@ class SharedOrderBook:
         shm_ask_p: str | None = None,
         shm_lock: str | None = None,
         shm_args: str | None = None,
-    ):
+    ) -> None:
         """Multiprocessing-safe OrderBookProtocol implementation.
 
         Currently, only supported dtype is Decimal.
@@ -714,9 +854,17 @@ class SharedOrderBook:
         shm_lock = shm_lock or f"_shm_{token_id}_lock"
         shm_args = shm_args or f"_shm_{token_id}_args"
 
-        # self.state.buf[0] -> coerce_inbound_prices
-        self.state = FinalizedSharedMemory(shm_args, create, 1)
-        self.state.buf[0] = int(coerce_inbound_prices)
+        # [0] -> coerce_inbound_prices: bool
+        # [1] -> market_id: str (hex)
+        # [2] -> min_order_size: int
+        # [3] -> neg_risk: bool
+        self.state = SharedArray(
+            shape=4, shm_name=shm_args, create=create, dtype="S128", fill_val=""
+        )
+        self.state[0] = msgspec.json.encode(coerce_inbound_prices)
+        self.state[1] = msgspec.json.encode(market_id)
+        self.state[2] = msgspec.json.encode(min_order_size)
+        self.state[3] = msgspec.json.encode(neg_risk)
 
         self._tick_size = SharedTickSize(
             tick_size,
@@ -786,6 +934,42 @@ class SharedOrderBook:
         self.cleanup()
 
     @property
+    def coerce_inbound_prices(self) -> bool:
+        return msgspec.json.decode(self.state[0])
+
+    @coerce_inbound_prices.setter
+    def coerce_inbound_prices(self, val: bool) -> None:
+        with self.lock:
+            self.state[0] = msgspec.json.encode(val)
+
+    @property
+    def market_id(self) -> str | None:
+        return msgspec.json.decode(self.state[1])
+
+    @market_id.setter
+    def market_id(self, val: str | None) -> None:
+        with self.lock:
+            self.state[1] = msgspec.json.encode(val)
+
+    @property
+    def min_order_size(self) -> int | None:
+        return msgspec.json.decode(self.state[2])
+
+    @min_order_size.setter
+    def min_order_size(self, val: int | None) -> None:
+        with self.lock:
+            self.state[2] = msgspec.json.encode(val)
+
+    @property
+    def neg_risk(self) -> bool | None:
+        return msgspec.json.decode(self.state[3])
+
+    @neg_risk.setter
+    def neg_risk(self, val: bool | None) -> None:
+        with self.lock:
+            self.state[3] = msgspec.json.encode(val)
+
+    @property
     def auto_cleanup(self):
         @contextmanager
         def _func():
@@ -831,8 +1015,14 @@ class SharedOrderBook:
     def sync(self, endpoint: str) -> None:
         with self.lock:
             response = get_book_summaries(endpoint, self.token_id)
+            # noinspection PyTypeChecker
             message_to_orderbook(response, self, None)
             # updates tick_size automatically via message_to_orderbook, because response is BookSummary
+
+    def sync_by_response(self, response: BookSummary | MarketEvent | dict) -> None:
+        with self.lock:
+            # noinspection PyTypeChecker
+            message_to_orderbook(response, self, None)
 
     @property
     def dtype(self) -> type:
@@ -928,7 +1118,7 @@ class SharedOrderBook:
 
         bid_idx = self._prices_to_indices(bid_prices)
 
-        if self.state.buf[0]:
+        if self.coerce_inbound_prices:
             bid_idx, bid_sizes = _coerce_inbound_idx(
                 bid_idx, bid_sizes, self._inv_min_tick + 1
             )
@@ -945,7 +1135,7 @@ class SharedOrderBook:
 
         ask_idx = self._prices_to_indices(ask_prices)
 
-        if self.state.buf[0]:
+        if self.coerce_inbound_prices:
             ask_idx, ask_sizes = _coerce_inbound_idx(
                 ask_idx, ask_sizes, self._inv_min_tick + 1
             )
@@ -970,7 +1160,7 @@ class SharedOrderBook:
             _check_quotes_shape(bid_prices, bid_sizes)
             bid_idx = self._prices_to_indices(bid_prices)
 
-            if self.state.buf[0]:
+            if self.coerce_inbound_prices:
                 bid_idx, bid_sizes = _coerce_inbound_idx(
                     bid_idx, bid_sizes, self._inv_min_tick + 1
                 )
@@ -992,7 +1182,7 @@ class SharedOrderBook:
             _check_quotes_shape(ask_prices, ask_sizes)
             ask_idx = self._prices_to_indices(ask_prices)
 
-            if self.state.buf[0]:
+            if self.coerce_inbound_prices:
                 ask_idx, ask_sizes = _coerce_inbound_idx(
                     ask_idx, ask_sizes, self._inv_min_tick + 1
                 )
@@ -1031,11 +1221,14 @@ class SharedOrderBook:
                 for p, s in zip(ask_p[::-1], ask_s[::-1])
             ]
 
+    # noinspection DuplicatedCode
     def to_dict(
         self,
-        market_id: str | None,
-        timestamp: int | float | str | None,
-        hash_str: str | None,
+        timestamp: int | float | str,
+        hash_str: str,
+        market_id: str,
+        min_order_size: str | int,
+        neg_risk: bool,
     ) -> dict[str, str]:
         if isinstance(timestamp, (int, float)):
             timestamp = f"{timestamp:.0f}"
@@ -1048,10 +1241,36 @@ class SharedOrderBook:
                 "hash": hash_str,
                 "bids": self.bids_summary,
                 "asks": self.asks_summary,
+                "min_order_size": str(min_order_size),
+                "tick_size": str(self.tick_size),
+                "neg_risk": neg_risk,
             }
 
-    def hash(self, market_id: str, timestamp: int | float | str) -> str:
-        return dict_to_sha1(self.to_dict(market_id, timestamp, ""))
+    # noinspection DuplicatedCode
+    def hash(
+        self,
+        timestamp: int | float | str,
+        market_id: str | None,
+        min_order_size: str | int | None,
+        neg_risk: bool | None,
+    ) -> str:
+        market_id = market_id if market_id is not None else self.market_id
+        min_order_size = (
+            min_order_size if min_order_size is not None else self.min_order_size
+        )
+        neg_risk = neg_risk if neg_risk is not None else self.neg_risk
+
+        if market_id is None or min_order_size is None or neg_risk is None:
+            raise OrderBookException(
+                "`market_id` or `self.market_id`, "
+                "`min_order_size` or `self.min_order_size`, and "
+                "`neg_risk` or `self.neg_risk` "
+                "must not be None. Cannot compute hash for order book."
+            )
+
+        return dict_to_sha1(
+            self.to_dict(timestamp, "", market_id, min_order_size, neg_risk)
+        )
 
     def marketable_price(
         self, side: Literal["BUY", "SELL"] | "SIDE", amount: NumericAlias
