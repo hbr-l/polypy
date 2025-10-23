@@ -4,7 +4,6 @@ import pytest
 from freezegun import freeze_time
 from py_clob_client.client import (
     ApiCreds,
-    ClobClient,
     OrderArgs,
     RequestArgs,
     Signer,
@@ -47,7 +46,13 @@ def test_build_hmac_signature(api_key, secret):
 
 @freeze_time("2024-12-19 17:05:55")
 def test_build_auth_header(
-    private_key, local_host_addr, fix_seed, api_key, passphrase, secret
+    private_key,
+    local_host_addr,
+    fix_seed,
+    api_key,
+    passphrase,
+    secret,
+    clob_client_factory,
 ):
     token_id = "123"
     price = 0.1
@@ -55,9 +60,18 @@ def test_build_auth_header(
 
     signer = Signer(private_key, POLYGON)
     creds = ApiCreds(api_key, secret, passphrase)
-    client = ClobClient(local_host_addr, POLYGON, private_key, creds)
-    client.get_tick_size = lambda x: "0.01"
-    client.get_neg_risk = lambda x: False
+    client = clob_client_factory(
+        "0.01",
+        False,
+        5,
+        "123456",
+        {},
+        {},
+        token_id,
+        "321",
+        local_host_addr,
+        private_key,
+    )
 
     # noinspection PyTypeChecker
     clob_order = fix_seed(client.create_order)(OrderArgs(token_id, price, size, BUY))
