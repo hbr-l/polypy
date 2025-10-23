@@ -222,8 +222,11 @@ def test_order_book_test_server_messages_txt():
             check_results = guess_check_orderbook_hash(
                 d["hash"],
                 book,
-                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
                 [int(d["timestamp"]) - i for i in range(1500)],
+                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
+                5,
+                True,
+                True,
             )
             print(check_results)
             assert check_results[0]
@@ -231,8 +234,11 @@ def test_order_book_test_server_messages_txt():
             check_results = guess_check_orderbook_hash(
                 d["price_changes"][0]["hash"],
                 book,
-                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
                 [int(d["timestamp"]) - i for i in range(1500)],
+                "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
+                5,
+                True,
+                True,
             )
             print(check_results)
             assert check_results[0]
@@ -272,8 +278,11 @@ def assert_market_streamer_state(
             guess_check_orderbook_hash(
                 expected_target_hash,
                 book,
-                market_id,
                 [int(expected_timestamp) - i for i in range(10)],
+                market_id,
+                5,
+                True,
+                True,
             )[0]
             is True
         )
@@ -303,6 +312,9 @@ def test_marketstream_partial_skip_no_request(mock_server_click_on, setup_stream
     streamer, book = setup_streamer(asset_id, CheckHashParams(3, 15), None, None)
 
     market_id = data[0][0]["market"]
+    book.market_id = market_id
+    book.neg_risk = True
+    book.min_order_size = 5
 
     # order of clicks:
     # 1. send - book
@@ -526,7 +538,7 @@ def test_marketstream_fallback_mock_request(mock_server_click_on, setup_streamer
     # mock request
     rest_data = copy.deepcopy(data[8])
     del rest_data["event_type"]
-    rest_data["min_order_size"] = "0.001"
+    rest_data["min_order_size"] = "5"
     rest_data["neg_risk"] = False
     rest_data["tick_size"] = "0.001"
     responses.get(f"https://test_endpoint.com/book?token_id={asset_id}", json=rest_data)
@@ -803,7 +815,7 @@ def test_marketstream_rest_denial_no_recursion(
     # mock request
     rest_data = copy.deepcopy(data[8])
     rest_data["hash"] = "1234"
-    rest_data["min_order_size"] = "0.001"
+    rest_data["min_order_size"] = "5"
     rest_data["neg_risk"] = False
     rest_data["tick_size"] = "0.01"
     del rest_data["event_type"]
@@ -989,6 +1001,14 @@ def test_marketstream_multi_book(mock_server_click_on):
     )
     market_id1 = "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8"
     market_id2 = "0x9d1f0296f3a016727193d2b45704e0debc3b8048fe0715f8bb1e91550d321872"
+
+    book1.market_id = market_id1
+    book1.neg_risk = True
+    book1.min_order_size = 5
+    book2.market_id = market_id2
+    book2.neg_risk = True
+    book2.min_order_size = 5
+
     streamer = MarketStream(
         "ws://localhost:8002/",
         [book1, book2],

@@ -18,6 +18,7 @@ from polypy.exceptions import EventTypeException, OrderBookException
 from polypy.order.common import SIDE
 from polypy.structs import (
     BookEvent,
+    BookSummary,
     PriceChangeEvent,
     PriceChangeSummary,
     TickSizeEvent,
@@ -49,7 +50,7 @@ def price_change_t1_ws_msg_hashed():
 @pytest.fixture
 def book_t1_rest_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return msgspec.convert(json.loads(f.readlines()[5]), BookEvent, strict=False)
+        return msgspec.convert(json.loads(f.readlines()[5]), BookSummary, strict=False)
 
 
 @pytest.fixture
@@ -63,11 +64,38 @@ def price_change_t2_ws_msg_hashed():
 @pytest.fixture
 def book_t2_rest_msg_hashed():
     with open(test_pth / "data/messages_hash.txt", "r") as f:
-        return msgspec.convert(json.loads(f.readlines()[9]), BookEvent, strict=False)
+        return msgspec.convert(json.loads(f.readlines()[9]), BookSummary, strict=False)
 
 
 def list_to_dec(x: list[NumericAlias]) -> list[Decimal]:
     return [dec(i) for i in x]
+
+
+def test_orderbook_properties():
+    book = SharedOrderBook("test_token_id", 0.01, True)
+
+    assert book.market_id is None
+    assert book.neg_risk is None
+    assert book.min_order_size is None
+
+    book.market_id = "0x123456"
+    book.neg_risk = True
+    book.min_order_size = 12
+
+    assert book.market_id == "0x123456"
+    assert book.neg_risk is True
+    assert book.min_order_size == 12
+
+    book.neg_risk = False
+    assert book.neg_risk is False
+
+    book.market_id = None
+    book.neg_risk = None
+    book.min_order_size = None
+
+    assert book.market_id is None
+    assert book.neg_risk is None
+    assert book.min_order_size is None
 
 
 def test_orderbook_set():
@@ -214,9 +242,7 @@ def test_orderbook_sync(book_t0_ws_msg_hashed):
     responses.get(f"{endpoint}/tick-size?token_id={book.token_id}", json=rest_data)
     book_data: dict = msgspec.to_builtins(copy.deepcopy(book_t0_ws_msg_hashed))
     del book_data["event_type"]
-    book_data.update(
-        {"min_order_size": "0.001", "neg_risk": False, "tick_size": "0.001"}
-    )
+    book_data.update({"min_order_size": "5", "neg_risk": False, "tick_size": "0.001"})
     responses.get(f"{endpoint}/book?token_id={book.token_id}", json=book_data)
 
     book.sync(endpoint)
@@ -558,22 +584,37 @@ def test_orderbook_book_hash(
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert book_t0_ws_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t0_ws_msg_hashed.timestamp,
+            market_id,
+            book_t1_rest_msg_hashed.min_order_size,
+            book_t1_rest_msg_hashed.neg_risk,
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
     # test updating
     orderbook = message_to_orderbook(book_t1_rest_msg_hashed, orderbook)
-    assert book_t1_rest_msg_hashed.event_type == "book"
+    assert book_t1_rest_msg_hashed.event_type == "summary"
     assert (
-        orderbook.hash(market_id, book_t1_rest_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t1_rest_msg_hashed.timestamp,
+            market_id,
+            book_t1_rest_msg_hashed.min_order_size,
+            book_t1_rest_msg_hashed.neg_risk,
+        )
         == book_t1_rest_msg_hashed.hash
     )
 
     orderbook = message_to_orderbook(book_t2_rest_msg_hashed, orderbook)
-    assert book_t2_rest_msg_hashed.event_type == "book"
+    assert book_t2_rest_msg_hashed.event_type == "summary"
     assert (
-        orderbook.hash(market_id, book_t2_rest_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t2_rest_msg_hashed.timestamp,
+            market_id,
+            book_t1_rest_msg_hashed.min_order_size,
+            book_t1_rest_msg_hashed.neg_risk,
+        )
         == book_t2_rest_msg_hashed.hash
     )
 
@@ -588,38 +629,48 @@ def test_orderbook_price_change_hash(
 ):
     asset_id = book_t0_ws_msg_hashed.asset_id
     market_id = book_t0_ws_msg_hashed.market
+    min_order_size = book_t1_rest_msg_hashed.min_order_size
+    neg_risk = book_t1_rest_msg_hashed.neg_risk
     orderbook = SharedOrderBook(asset_id, 0.01, True)
 
     # check hash against initial book message
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert book_t0_ws_msg_hashed.event_type == "book"
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t0_ws_msg_hashed.timestamp, market_id, min_order_size, neg_risk
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
     # check hash after updating first price change
     orderbook = message_to_orderbook(price_change_t1_ws_msg_hashed, orderbook)
     _, _, hash_t1 = guess_check_orderbook_hash(
-        price_change_t1_ws_msg_hashed.price_changes[0].hash,
+        price_change_t1_ws_msg_hashed.price_changes[1].hash,
         orderbook,
-        market_id,
         [int(price_change_t1_ws_msg_hashed.timestamp) - i for i in range(15)],
+        market_id,
+        min_order_size,
+        neg_risk,
+        True,
     )
     assert price_change_t1_ws_msg_hashed.event_type == "price_change"
     assert (
-        price_change_t1_ws_msg_hashed.price_changes[0].hash
+        price_change_t1_ws_msg_hashed.price_changes[1].hash
         == book_t1_rest_msg_hashed.hash
     )
-    assert hash_t1 == price_change_t1_ws_msg_hashed.price_changes[0].hash
+    assert hash_t1 == price_change_t1_ws_msg_hashed.price_changes[1].hash
 
     # check hash after updating second price change
     orderbook = message_to_orderbook(price_change_t2_ws_msg_hashed, orderbook)
     _, _, hash_t2 = guess_check_orderbook_hash(
         price_change_t2_ws_msg_hashed.price_changes[0].hash,
         orderbook,
-        market_id,
         [int(price_change_t2_ws_msg_hashed.timestamp) - i for i in range(15)],
+        market_id,
+        min_order_size,
+        neg_risk,
+        True,
     )
     assert price_change_t2_ws_msg_hashed.event_type == "price_change"
     assert (
@@ -634,31 +685,29 @@ def test_orderbook_price_change_hash(
 
 
 def test_orderbook_marketable_amount_buy(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed.asset_id
-    orderbook = SharedOrderBook(asset_id, 0.001, True)
+    orderbook = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.001, True)
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
-    price, amount = orderbook.marketable_price("BUY", 135.26)
-    assert math.isclose(price, dec(0.544))
-    assert math.isclose(amount, dec(135.26))
+    price, amount = orderbook.marketable_price("BUY", 347.8076)
+    assert math.isclose(price, 0.37)
+    assert math.isclose(amount, 347.8076)
 
-    price, amount = orderbook.marketable_price("BUY", 135.27)
-    assert math.isclose(price, dec(0.548))
-    assert math.isclose(amount, dec(667.42828))
+    price, amount = orderbook.marketable_price("BUY", 347.8077)
+    assert math.isclose(price, 0.38)
+    assert math.isclose(amount, 443.1534)
 
 
 def test_orderbook_marketable_amount_sell(book_t0_ws_msg_hashed):
-    asset_id = book_t0_ws_msg_hashed.asset_id
-    orderbook = SharedOrderBook(asset_id, 0.001, True)
+    orderbook = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.001, True)
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
-    price, amount = orderbook.marketable_price("SELL", 1917.82)
-    assert math.isclose(price, dec(0.53))
-    assert math.isclose(amount, dec(1917.82))
+    price, amount = orderbook.marketable_price("SELL", Decimal("193.7553"))
+    assert math.isclose(price, 0.32)
+    assert math.isclose(amount, 193.7553)
 
-    price, amount = orderbook.marketable_price("SELL", 1917.83)
-    assert math.isclose(price, dec(0.523))
-    assert math.isclose(amount, dec(2048.57))
+    price, amount = orderbook.marketable_price("SELL", 193.7554)
+    assert math.isclose(price, 0.3)
+    assert math.isclose(amount, 256.7523)
 
 
 def test_orderbook_marketable_amount_raises_unknown_side(book_t0_ws_msg_hashed):
@@ -677,7 +726,18 @@ def test_orderbook_marketable_amount_raises_unknown_max_liquidity(
     book_t0_ws_msg_hashed,
 ):
     asset_id = book_t0_ws_msg_hashed.asset_id
-    orderbook = SharedOrderBook(asset_id, 0.001, True)
+    orderbook = SharedOrderBook(
+        asset_id,
+        0.001,
+        True,
+        shm_tick_size="unknown_max_liquidity_1",
+        shm_lock="unknown_max_liquidity_2",
+        shm_args="unknown_max_liquidity_3",
+        shm_bid_q="unknown_max_liquidity_4",
+        shm_ask_p="unknown_max_liquidity_5",
+        shm_bid_p="unknown_max_liquidity_6",
+        shm_ask_q="unknown_max_liquidity_7",
+    )
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
     with pytest.raises(OrderBookException) as e:
@@ -690,23 +750,40 @@ def test_orderbook_marketable_amount_raises_unknown_max_liquidity(
 
 def test_orderbook_midpoint_price(book_t0_ws_msg_hashed):
     asset_id = book_t0_ws_msg_hashed.asset_id
-    orderbook = SharedOrderBook(asset_id, 0.001, True)
+    orderbook = SharedOrderBook(
+        asset_id,
+        0.001,
+        True,
+        shm_tick_size="midpoint_price_1",
+        shm_lock="midpoint_price_2",
+        shm_args="midpoint_price_3",
+        shm_bid_q="midpoint_price_4",
+        shm_ask_p="midpoint_price_5",
+        shm_bid_p="midpoint_price_6",
+        shm_ask_q="midpoint_price_7",
+    )
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
 
-    assert orderbook.midpoint_price == dec(0.5365)
+    assert orderbook.midpoint_price == dec(0.335)
 
 
 # noinspection DuplicatedCode
-def test_guess_orderbook_hash_int_timestamps(book_t0_ws_msg_hashed):
+def test_guess_orderbook_hash_int_timestamps(
+    book_t0_ws_msg_hashed, book_t1_rest_msg_hashed
+):
     asset_id = book_t0_ws_msg_hashed.asset_id
     market_id = book_t0_ws_msg_hashed.market
     timestamp = int(book_t0_ws_msg_hashed.timestamp)
+    min_order_size = book_t1_rest_msg_hashed.min_order_size
+    neg_risk = book_t1_rest_msg_hashed.neg_risk
     orderbook = SharedOrderBook(asset_id, 0.01, True)
 
     # check hash against initial book message
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t0_ws_msg_hashed.timestamp, market_id, min_order_size, neg_risk
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
@@ -714,24 +791,33 @@ def test_guess_orderbook_hash_int_timestamps(book_t0_ws_msg_hashed):
         guess_check_orderbook_hash(
             book_t0_ws_msg_hashed.hash,
             orderbook,
-            market_id,
             [timestamp - i for i in range(15)],
+            market_id,
+            min_order_size,
+            neg_risk,
+            True,
         )[0]
         is True
     )
 
 
 # noinspection DuplicatedCode
-def test_guess_orderbook_hash_str_timestamps(book_t0_ws_msg_hashed):
+def test_guess_orderbook_hash_str_timestamps(
+    book_t0_ws_msg_hashed, book_t1_rest_msg_hashed
+):
     asset_id = book_t0_ws_msg_hashed.asset_id
     market_id = book_t0_ws_msg_hashed.market
     timestamp = int(book_t0_ws_msg_hashed.timestamp)
+    min_order_size = book_t1_rest_msg_hashed.min_order_size
+    neg_risk = book_t1_rest_msg_hashed.neg_risk
     orderbook = SharedOrderBook(asset_id, 0.01, True)
 
     # check hash against initial book message
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t0_ws_msg_hashed.timestamp, market_id, min_order_size, neg_risk
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
@@ -739,28 +825,41 @@ def test_guess_orderbook_hash_str_timestamps(book_t0_ws_msg_hashed):
         guess_check_orderbook_hash(
             book_t0_ws_msg_hashed.hash,
             orderbook,
-            market_id,
             [str(timestamp - i) for i in range(15)],
+            market_id,
+            min_order_size,
+            neg_risk,
+            True,
         )[0]
         is True
     )
 
 
-def test_guess_orderbook_hash_false(book_t0_ws_msg_hashed):
+def test_guess_orderbook_hash_false(book_t0_ws_msg_hashed, book_t1_rest_msg_hashed):
     asset_id = book_t0_ws_msg_hashed.asset_id
     market_id = book_t0_ws_msg_hashed.market
+    min_order_size = book_t1_rest_msg_hashed.min_order_size
+    neg_risk = book_t1_rest_msg_hashed.neg_risk
     orderbook = SharedOrderBook(asset_id, 0.01, True)
 
     # check hash against initial book message
     orderbook = message_to_orderbook(book_t0_ws_msg_hashed, orderbook)
     assert (
-        orderbook.hash(market_id, book_t0_ws_msg_hashed.timestamp)
+        orderbook.hash(
+            book_t0_ws_msg_hashed.timestamp, market_id, min_order_size, neg_risk
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
     assert (
         guess_check_orderbook_hash(
-            book_t0_ws_msg_hashed.hash, orderbook, market_id, [0, 1, 2, 3, 4, 5, 6]
+            book_t0_ws_msg_hashed.hash,
+            orderbook,
+            [0, 1, 2, 3, 4, 5, 6],
+            market_id,
+            min_order_size,
+            neg_risk,
+            True,
         )[0]
         is False
     )
@@ -778,9 +877,11 @@ def test_orderbook_to_dict(book_t1_rest_msg_hashed):
 
     client_dict = client_orderbook.__dict__
     book_dict = orderbook.to_dict(
-        book_t1_rest_msg_hashed.market,
         book_t1_rest_msg_hashed.timestamp,
         book_t1_rest_msg_hashed.hash,
+        book_t1_rest_msg_hashed.market,
+        book_t1_rest_msg_hashed.min_order_size,
+        book_t1_rest_msg_hashed.neg_risk,
     )
 
     assert client_dict == book_dict
@@ -798,9 +899,11 @@ def test_orderbook_to_dict_int_timestamp(book_t1_rest_msg_hashed):
 
     client_dict = client_orderbook.__dict__
     book_dict = orderbook.to_dict(
-        book_t1_rest_msg_hashed.market,
         int(book_t1_rest_msg_hashed.timestamp),
         book_t1_rest_msg_hashed.hash,
+        book_t1_rest_msg_hashed.market,
+        book_t1_rest_msg_hashed.min_order_size,
+        book_t1_rest_msg_hashed.neg_risk,
     )
 
     assert client_dict == book_dict
@@ -822,9 +925,11 @@ def test_message_to_orderbook_empty_asks_book_msg(book_t0_ws_msg_hashed):
 
 
 # noinspection DuplicatedCode
-def test_message_to_orderbook_empty_asks_price_change_msg(
+def test_message_to_orderbook_empty_bids_price_change_msg(
     book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
 ):
+    # FIXME THIS TEST HAS BECOME OBSOLETE SINCE THE NEW PRICE_CHANGE MESSAGE STRUCTURE
+    #   (because each price_change message only holds one change now...)
     book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
     book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
@@ -836,19 +941,19 @@ def test_message_to_orderbook_empty_asks_price_change_msg(
     ask_vol = np.sum(book.asks[1])
 
     price_change_t1_ws_msg_hashed.price_changes = [
-        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "BUY"
+        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "SELL"
     ]
     book = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
 
     assert price_change_t1_ws_msg_hashed.event_type == "price_change"
-    assert np.sum(book.asks[1]) == dec(ask_vol)
-    assert np.sum(book.bids[1]) != dec(bid_vol)
+    assert np.sum(book.asks[1]) != ask_vol
+    assert np.sum(book.bids[1]) == bid_vol
     assert np.sum(book.asks[1]) > dec(0)
     assert np.sum(book.bids[1]) > dec(0)
 
 
 # noinspection DuplicatedCode
-def test_message_to_orderbook_zeroing_asks_price_change_msg(
+def test_message_to_orderbook_zeroing_bids_price_change_msg(
     book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
 ):
     book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
@@ -858,31 +963,65 @@ def test_message_to_orderbook_zeroing_asks_price_change_msg(
     assert np.sum(book.asks[1]) > dec(0)
     assert np.sum(book.bids[1]) > dec(0)
 
-    bid_vol = np.sum(book.bids[1])
+    ask_vol = np.sum(book.asks[1])
 
-    buy_changes = [
-        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "BUY"
-    ]
     ask_changes = [
+        d for d in price_change_t1_ws_msg_hashed.price_changes if d.side == "SELL"
+    ]
+    bid_changes = [
         PriceChangeSummary(
-            "72936048731589292555781174533757608024096898681344338816447372274344589246891",
+            book_t0_ws_msg_hashed.asset_id,
             str(i),
             "0",
-            SIDE.SELL,
+            SIDE.BUY,
             "",
             "0.0",
             "0.0",
         )
-        for i in book.ask_prices
+        for i in book.bid_prices
     ]
-    price_change_t1_ws_msg_hashed.price_changes = buy_changes + ask_changes
+    price_change_t1_ws_msg_hashed.price_changes = bid_changes + ask_changes
 
     book = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
 
     assert price_change_t1_ws_msg_hashed.event_type == "price_change"
-    assert np.sum(book.asks[1]) == dec(0)
-    assert np.sum(book.bids[1]) != dec(bid_vol)
-    assert np.sum(book.bids[1]) > dec(0)
+    assert np.sum(book.bids[1]) == 0
+    assert np.sum(book.asks[1]) != ask_vol
+    assert np.sum(book.asks[1]) > 0
+
+
+def test_message_to_orderbook_raise_empty_price_change_msg(
+    book_t0_ws_msg_hashed, price_change_t1_ws_msg_hashed
+):
+    book = SharedOrderBook(
+        book_t0_ws_msg_hashed.asset_id,
+        0.01,
+        True,
+        shm_tick_size="empty_price_change_msg_1",
+        shm_lock="empty_price_change_msg_2",
+        shm_args="empty_price_change_msg_3",
+        shm_bid_q="empty_price_change_msg_4",
+        shm_ask_p="empty_price_change_msg_5",
+        shm_bid_p="empty_price_change_msg_6",
+        shm_ask_q="empty_price_change_msg_7",
+    )
+    book = message_to_orderbook(book_t0_ws_msg_hashed, book)
+
+    ask_vol = np.sum(book.asks[1])
+    bid_vol = np.sum(book.bids[1])
+
+    price_change_t1_ws_msg_hashed.price_changes = [
+        p
+        for p in price_change_t1_ws_msg_hashed.price_changes
+        if p.asset_id != book.token_id
+    ]
+
+    with pytest.raises(OrderBookException) as e:
+        book = message_to_orderbook(price_change_t1_ws_msg_hashed, book)
+    assert "No bids and asks to parse." in str(e)
+
+    assert np.sum(book.asks[1]) == ask_vol
+    assert np.sum(book.bids[1]) == bid_vol
 
 
 def test_message_to_orderbook_raise_wrong_event_type(
@@ -915,24 +1054,26 @@ def test_message_to_orderbook_raise_wrong_event_type(
     book.cleanup()
 
 
-def test_message_to_orderbook_raise_specify_event_type(book_t1_rest_msg_hashed):
-    # rest response without event_type: fail
-    # rest response with event_type specified: success
-    msg = msgspec.to_builtins(book_t1_rest_msg_hashed)
+def test_message_to_orderbook_raise_specify_event_type(book_t0_ws_msg_hashed):
+    # response without event_type: fail
+    # response with event_type specified: success
+    msg = msgspec.to_builtins(book_t0_ws_msg_hashed)
     del msg["event_type"]
     msg["timestamp"] = str(msg["timestamp"])
 
-    book = SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, True)
+    book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, True)
     with pytest.raises(EventTypeException) as e:
         message_to_orderbook(msg, book)
     assert "Unknown" in str(e)
 
-    book = SharedOrderBook(book_t1_rest_msg_hashed.asset_id, 0.01, False)
-    message_to_orderbook(book_t1_rest_msg_hashed, book)
+    book = SharedOrderBook(book_t0_ws_msg_hashed.asset_id, 0.01, False)
+    message_to_orderbook(book_t0_ws_msg_hashed, book)
     book.cleanup()
 
 
-def test_message_to_orderbook_raise_unknown_event_type(book_t0_ws_msg_hashed):
+def test_message_to_orderbook_raise_unknown_event_type(
+    book_t0_ws_msg_hashed, book_t1_rest_msg_hashed
+):
     # weirdly, we have to define custom shm names to not intefere with other tests...
     book = SharedOrderBook(
         book_t0_ws_msg_hashed.asset_id,
@@ -949,7 +1090,12 @@ def test_message_to_orderbook_raise_unknown_event_type(book_t0_ws_msg_hashed):
     book = message_to_orderbook(book_t0_ws_msg_hashed, book)
 
     assert (
-        book.hash(book_t0_ws_msg_hashed.market, book_t0_ws_msg_hashed.timestamp)
+        book.hash(
+            book_t0_ws_msg_hashed.timestamp,
+            book_t0_ws_msg_hashed.market,
+            book_t1_rest_msg_hashed.min_order_size,
+            book_t1_rest_msg_hashed.neg_risk,
+        )
         == book_t0_ws_msg_hashed.hash
     )
 
@@ -964,7 +1110,19 @@ def test_message_to_orderbook_raise_unknown_event_type(book_t0_ws_msg_hashed):
 def test_message_to_orderbook_raise_asset_id(book_t0_ws_msg_hashed):
     with pytest.raises(OrderBookException):
         message_to_orderbook(
-            book_t0_ws_msg_hashed, SharedOrderBook("test_token_id", 0.01, True)
+            book_t0_ws_msg_hashed,
+            SharedOrderBook(
+                "test_token_id",
+                0.01,
+                True,
+                shm_tick_size="raise_asset_id_1",
+                shm_lock="raise_asset_id_2",
+                shm_args="raise_asset_id_3",
+                shm_bid_q="raise_asset_id_4",
+                shm_ask_p="raise_asset_id_5",
+                shm_bid_p="raise_asset_id_6",
+                shm_ask_q="raise_asset_id_7",
+            ),
         )
 
 
