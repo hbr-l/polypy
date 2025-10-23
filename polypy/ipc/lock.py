@@ -3,6 +3,7 @@ import platform
 import struct
 import threading
 import warnings
+from abc import ABC, abstractmethod
 from multiprocessing.util import Finalize
 from typing import Self
 
@@ -15,25 +16,30 @@ else:
     import posix_ipc
 
 
-class MixinLockContext:
+class MixinLockContext(ABC):
+    @abstractmethod
     def acquire(self, blocking: bool = True, timeout=None) -> bool:
-        raise NotImplementedError()
+        ...
 
+    @abstractmethod
     def release(self) -> None:
-        raise NotImplementedError()
+        ...
 
+    @abstractmethod
     def close(self) -> None:
         """Close handle"""
-        raise NotImplementedError()
+        ...
 
+    @abstractmethod
     def unlink(self) -> None:
         """Unlink handle. self.close() should be called before calling self.unlink()
         and should only be called once."""
-        raise NotImplementedError()
+        ...
 
+    @abstractmethod
     def cleanup(self) -> None:
         """Close and only if owner, then unlink (elif not owner, then do not unlink)."""
-        raise NotImplementedError
+        ...
 
     def __del__(self) -> None:
         self.cleanup()
