@@ -17,6 +17,9 @@ def return_clob_request_params(monkeypatch):
 
     def _intercept(endpoint: str, method: str, headers=None, data=None):
         headers = overloadHeaders(method, headers)
+
+        if "fee-rate" in endpoint:
+            return {"base_fee": 0}
         return endpoint, method, headers, data
 
     monkeypatch.setattr("py_clob_client.http_helpers.helpers.request", _intercept)
