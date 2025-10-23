@@ -164,6 +164,9 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/10/23
+- Fix new orderbook hashing procedure
+- New classmethods (factories) for `OrderBook` (more convenient order book creation)
 #### 2025/10/21
 - implement `tif` (`plp.TIME_IN_FORCE`) argument for market orders (FOK or FAK)
 - implement `tif`-checks for market (FOK, FAK) and limit orders (GTC, GTC)

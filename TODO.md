@@ -14,8 +14,11 @@ _(new/add)_
     - https://github.com/Polymarket/examples/blob/main/examples/safeWallet/redeem.ts
     - https://github.com/Polymarket/conditional-token-examples-py/blob/main/ctf_examples/redeem.py
 - [x] SharedMemory implementation of `polypy.book.OrderBook` (enables MarketStream to run in separate process instead of only thread) -> SharedOrderBook
-- [ ] __Implement function complement_book() in `polypy.book` to invert order book (complementary outcome)__
-- [ ] __Add callback at on_setattr of order.status, which is called everytime INSERT_STATUS changes (more sophisticated order management)__
+- [ ] __Better cache size handling__ (@lru_cache)
+- [ ] __Integrate rate limiting function__ (global var which holds callback function)
+- [ ] __Typing SharedOrderBook__ (currently not recognized as OrderBookProtocol)
+- [ ] Implement function complement_book() in `polypy.book` to invert order book (complementary outcome)
+- [ ] Add callback at on_setattr of order.status, which is called everytime INSERT_STATUS changes (more sophisticated order management)
 - [ ] Implement auto-redeem function (currently not implemented since we need conditionId and tokenId but position managers only hold tokenIds)
 - [ ] Add/implement more REST methods to polypy.rest.api.py
 - [ ] historical redeem data for wallet: http GET https://data-api.polymarket.com/activity?type=REDEEM&user=<wallet-id> -> see [Polymarket Data API](https://polymarket.notion.site/Polymarket-Data-API-Docs-15fd316c50d58062bf8ee1b4bcf3d461)
@@ -43,11 +46,12 @@ if trade was split into multiple separate transactions -> debatable: use `callba
 
 ## Refactoring
 _(backward-incompatible changes, changes in signatures)_
+- [ ] __price_change handling chaotic and inefficient (price change summaries): on_msg of MarketStream__
 - [ ] __replace `_get_or_create_position` with `get_by_id` in `rpc_proc.py` and remove `_get_or_create_position` from `PositionManagerProtocol`__
 - [ ] __remove buffer from `UserStream` and adapt test_userstream (no buffer tests anymore)__
 - [ ] __replace np.ndarray with NDArray for better type annotations__
-- [ ] __Standardize naming of `asset_id` vs `token_id`, `market_id` vs `condition_id`__
-- [ ] __More specialized exception classes (esp. in OrderManager, PositionManager, UserStream) of `PolyPyException`__
+- [ ] Standardize naming of `asset_id` vs `token_id`, `market_id` vs `condition_id`
+- [ ] More specialized exception classes (esp. in OrderManager, PositionManager, UserStream) of `PolyPyException`
 - [ ] Better substitute for `isinstance(...)` where possible
 - [ ] Specialized msgspec.Struct instead of dicts for get_markets_gamma_model and get_events_gamma_model to resolve tight coupling in 
   - PositionManager._fill_no_orderbook_midpoints(...)
@@ -60,11 +64,12 @@ _(backward-incompatible changes, changes in signatures)_
 _(backward-compatible changes, no changes in signatures)_
 - [x] `_tx_post_convert_positions` might induce numerical instability, alternative: set `price=0` and use separate `position_manager.deposit(size * (N - 1))`,
 but this might mess with specific `PositionProtocol` implementation (resolved: let user choose bookkeeping method via args)
-- [ ] __Rewrite `MarketStream`__: 
+- [x] Rewrite `MarketStream`: 
   - [x] use AbstractStreamer
-  - [ ] if specified, merge complement asset_id (invert before) into order book as well
+  - [x] if specified, merge complement asset_id (invert before) into order book as well (discarded)
   - [x] factor out _BookHashChecker_ for managing hash checks -> not necessary
   - [x] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
+- [x] Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now) -> this actually seems to be intended by Polymarket...
 - [ ] __test `ShareLock` and `SharedRLock` on Posix__
 - [ ] __`untrack_order_by_trade_terminal` in `UserStream` might fail in case of `CONFIRMED` status of `TradeWSInfo`-message was missed__
   (documentation: to be on the safe side, untrack/clean orders manually from `OrderManager` by `order.id` of return value when using
@@ -73,7 +78,6 @@ but this might mess with specific `PositionProtocol` implementation (resolved: l
   order.created_order < now-threshold (which also works for maker orders or partial taker orders !) - though this rarely should be the case because 
   this will only be necessary if `CONFIRMED` was missed)
 - [ ] __Port `polypy.stream.common.AbstractStreamer` to async (performance and buffering)__
-- [ ] __Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now)__
 - [ ] Optimize `_coerce_inbound_idx()` (though not urgent)
 - [ ] Parse `amount` in `_raise_post_order_exception` instead of defaulting to OrderPlacementFailure for better order update in case of an exception
 - [ ] Additional checks for `all_market_quintets` in `_check_conversion_all_quintets(...)` (used in PositionManager.convert_positions and its conversion cache) (necessary?, probably not and current implementation is sufficient)
