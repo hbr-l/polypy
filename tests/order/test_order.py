@@ -386,6 +386,7 @@ def test_limit_order_buy_against_clob(
             clob_client_factory(
                 tick_size,
                 neg_risk,
+                5,
                 *get_book(pth),
                 local_host_addr,
                 private_key,
@@ -433,7 +434,7 @@ def test_limit_order_sell_against_clob(
 
         pyclob_order = fix_seed(
             clob_client_factory(
-                tick_size, neg_risk, *get_book(pth), local_host_addr, private_key
+                tick_size, neg_risk, 5, *get_book(pth), local_host_addr, private_key
             ).create_order
         )(OrderArgs(token_id, price, size, SELL))
 
@@ -473,10 +474,12 @@ def test_market_buy_against_clob(
         )
 
         client = clob_client_factory(
-            tick_size, neg_risk, *get_book(pth), local_host_addr, private_key
+            tick_size, neg_risk, 5, *get_book(pth), local_host_addr, private_key
         )
         pyclob_order = fix_seed(client.create_market_order)(
-            MarketOrderArgs(token_id, amount)
+            MarketOrderArgs(
+                token_id=token_id, amount=amount, side=BUY, price=1 - tick_size
+            )
         )
 
         assert polypy_order.to_dict() == pyclob_order.dict()
@@ -494,9 +497,11 @@ def test_market_buy_against_clob(
         SIGNATURE_TYPE.EOA,
     )
     client = clob_client_factory(
-        tick_size, False, *get_book(pth), local_host_addr, private_key
+        tick_size, False, 5, *get_book(pth), local_host_addr, private_key
     )
-    pyclob_order = fix_seed(client.create_market_order)(MarketOrderArgs(token_id, 100))
+    pyclob_order = fix_seed(client.create_market_order)(
+        MarketOrderArgs(token_id=token_id, amount=100, side=BUY, price=1 - tick_size)
+    )
     assert polypy_order.to_dict() == pyclob_order.dict()
 
 
@@ -762,11 +767,14 @@ def test_market_sell_vs_clob_market_buy_complement(
 
         buy_order = fix_seed(
             clob_client_factory(
-                tick_size, False, *get_book(pth), local_host_addr, private_key
+                tick_size, False, 5, *get_book(pth), local_host_addr, private_key
             ).create_market_order
         )(
             MarketOrderArgs(
-                token_id=complement_token_id, amount=amount, price=1 - tick_size
+                token_id=complement_token_id,
+                amount=amount,
+                price=1 - tick_size,
+                side=BUY,
             )
         )
 
