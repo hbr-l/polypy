@@ -174,6 +174,7 @@ def clob_client_factory():
         def _closure(
             tick_size,
             neg_risk,
+            min_order_size,
             market_id,
             book,
             complement_book,
@@ -184,17 +185,21 @@ def clob_client_factory():
         ):
             if not isinstance(book, dict):
                 book = book.to_dict(
-                    market_id=market_id,
                     timestamp=int(time.time()),
                     hash_str=book.hash(market_id=market_id, timestamp=int(time.time())),
+                    market_id=market_id,
+                    min_order_size=min_order_size,
+                    neg_risk=neg_risk,
                 )
             if not isinstance(complement_book, dict):
                 complement_book = complement_book.to_dict(
-                    market_id=market_id,
                     timestamp=int(time.time()),
                     hash_str=complement_book.hash(
                         market_id=market_id, timestamp=int(time.time())
                     ),
+                    market_id=market_id,
+                    min_order_size=min_order_size,
+                    neg_risk=neg_risk,
                 )
 
             # todo complete http REST request mocking for other functionalities
@@ -209,6 +214,11 @@ def clob_client_factory():
                 json={"neg_risk": neg_risk},
             )
             rsps.add(responses.GET, f"{host}/book?token_id={token_id}", json=book)
+            rsps.add(
+                responses.GET,
+                f"{host}/fee-rate?token_id={token_id}",
+                json={"base_fee": 0},
+            )
 
             rsps.add(
                 responses.GET,
@@ -224,6 +234,11 @@ def clob_client_factory():
                 responses.GET,
                 f"{host}/book?token_id={complement_token_id}",
                 json=complement_book,
+            )
+            rsps.add(
+                responses.GET,
+                f"{host}/fee-rate?token_id={complement_token_id}",
+                json={"base_fee": 0},
             )
 
             return ClobClient(host, POLYGON, private_key)
