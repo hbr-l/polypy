@@ -164,6 +164,15 @@ Development
 - see [requirements.txt](requirements.txt).
 
 ### Change Log
+#### 2025/11/02
+- `OrderBook` and `SharedOrderBook`:
+  - use `OrderBookException` if no bids/asks for:
+    - `book.best_bid_price`, `book.best_ask_price`, `book.best_bid_size`, `book.best_ask_size`
+  - in `book.midpoint_price` assume (aligned with Polymarket behavior):
+    - no bid -> best_bid = 0
+    - no ask -> best_ask = 1
+    - avoids raising `OrderBookException`
+- fix protocol typing for `SharedOrderBook`
 #### 2025/10/23
 - Fix new orderbook hashing procedure
 - New classmethods (factories) for `OrderBook` (more convenient order book creation)
