@@ -558,28 +558,56 @@ class OrderBook:
     def best_bid_price(self) -> NumericAlias:
         # return np.nonzero(self._bid_quantities)[0][-1] / self._inv_min_tick_size
         with self.lock:
-            return self._bid_quote_levels[np.nonzero(self._bid_quantities[::-1])[0][0]]
+            try:
+                return self._bid_quote_levels[
+                    np.nonzero(self._bid_quantities[::-1])[0][0]
+                ]
+            except IndexError:
+                raise OrderBookException("No bids available.")
 
     @property
     def best_ask_price(self) -> NumericAlias:
         # return np.nonzero(self._ask_quantities)[0][0] / self._inv_min_tick_size
         with self.lock:
-            return self._ask_quote_levels[np.nonzero(self._ask_quantities)[0][0]]
+            try:
+                return self._ask_quote_levels[np.nonzero(self._ask_quantities)[0][0]]
+            except IndexError:
+                raise OrderBookException("No asks available")
 
     @property
     def midpoint_price(self) -> NumericAlias:
         with self.lock:
-            return (self.best_bid_price + self.best_ask_price) / 2
+            try:
+                best_bid_price = self.best_bid_price
+            except OrderBookException:
+                # that's how polymarket calculates midpoint in case of missing quotes
+                # no bids -> 0
+                best_bid_price = self._dtype_item("0")
+
+            try:
+                best_ask_price = self.best_ask_price
+            except OrderBookException:
+                # that's how polymarket calculates midpoint in case of missing quotes
+                # no asks -> 1
+                best_ask_price = self._dtype_item("1")
+
+            return (best_bid_price + best_ask_price) / 2
 
     @property
     def best_bid_size(self) -> NumericAlias:
         with self.lock:
-            return self._bid_quantities[np.nonzero(self._bid_quantities)[0][-1]]
+            try:
+                return self._bid_quantities[np.nonzero(self._bid_quantities)[0][-1]]
+            except IndexError:
+                raise OrderBookException("No bids available.")
 
     @property
     def best_ask_size(self) -> NumericAlias:
         with self.lock:
-            return self._ask_quantities[np.nonzero(self._ask_quantities)[0][0]]
+            try:
+                return self._ask_quantities[np.nonzero(self._ask_quantities)[0][0]]
+            except IndexError:
+                raise OrderBookException("No asks available.")
 
     def bid_size(self, price: NumericAlias) -> NumericAlias:
         if price < 0:
@@ -815,7 +843,7 @@ class OrderBook:
 
 
 # noinspection PyProtectedMember
-class SharedOrderBook:
+class SharedOrderBook(OrderBookProtocol):
     # todo implement classmethods from_dict, etc.
     def __init__(
         self,
@@ -942,6 +970,7 @@ class SharedOrderBook:
         with self.lock:
             self.state[0] = msgspec.json.encode(val)
 
+    # noinspection PyProtocol
     @property
     def market_id(self) -> str | None:
         return msgspec.json.decode(self.state[1])
@@ -951,6 +980,7 @@ class SharedOrderBook:
         with self.lock:
             self.state[1] = msgspec.json.encode(val)
 
+    # noinspection PyProtocol
     @property
     def min_order_size(self) -> int | None:
         return msgspec.json.decode(self.state[2])
@@ -960,6 +990,7 @@ class SharedOrderBook:
         with self.lock:
             self.state[2] = msgspec.json.encode(val)
 
+    # noinspection PyProtocol
     @property
     def neg_risk(self) -> bool | None:
         return msgspec.json.decode(self.state[3])
@@ -1062,28 +1093,54 @@ class SharedOrderBook:
     @property
     def best_bid_price(self) -> Decimal:
         with self.lock:
-            return self._bid_p[np.nonzero(self._bid_q._arr[::-1])[0][0]]
+            try:
+                return self._bid_p[np.nonzero(self._bid_q._arr[::-1])[0][0]]
+            except IndexError:
+                raise OrderBookException("No bids available.")
 
     # noinspection PyTypeChecker
     @property
     def best_ask_price(self) -> Decimal:
         with self.lock:
-            return self._ask_p[np.nonzero(self._ask_q._arr)[0][0]]
+            try:
+                return self._ask_p[np.nonzero(self._ask_q._arr)[0][0]]
+            except IndexError:
+                raise OrderBookException("No asks available.")
 
     @property
     def midpoint_price(self) -> Decimal:
         with self.lock:
-            return (self.best_bid_price + self.best_ask_price) / 2
+            try:
+                best_bid_price = self.best_bid_price
+            except OrderBookException:
+                # that's how polymarket calculates midpoint in case of missing quotes
+                # no bids -> 0
+                best_bid_price = Decimal("0")
+
+            try:
+                best_ask_price = self.best_ask_price
+            except OrderBookException:
+                # that's how polymarket calculates midpoint in case of missing quotes
+                # no asks -> 1
+                best_ask_price = Decimal("1")
+
+            return (best_bid_price + best_ask_price) / 2
 
     @property
     def best_bid_size(self) -> Decimal:
         with self.lock:
-            return self._bid_q[np.nonzero(self._bid_q._arr)[0][-1]]
+            try:
+                return self._bid_q[np.nonzero(self._bid_q._arr)[0][-1]]
+            except IndexError:
+                raise OrderBookException("No bids available.")
 
     @property
     def best_ask_size(self) -> Decimal:
         with self.lock:
-            return self._ask_q[np.nonzero(self._ask_q._arr)[0][0]]
+            try:
+                return self._ask_q[np.nonzero(self._ask_q._arr)[0][0]]
+            except IndexError:
+                raise OrderBookException("No asks available.")
 
     def bid_size(self, price: NumericAlias) -> Decimal:
         if price < 0:

@@ -818,6 +818,48 @@ def test_orderbook_midpoint_price(book_t0_ws_msg_hashed):
     assert orderbook.midpoint_price == 0.335
 
 
+def test_orderbook_best_bid_raises_no_bids():
+    orderbook = OrderBook("1234", 0.01)
+    orderbook.set_asks([0.5, 0.4], [2, 3])
+
+    with pytest.raises(OrderBookException):
+        _ = orderbook.best_bid_price
+
+    with pytest.raises(OrderBookException):
+        _ = orderbook.best_bid_size
+
+    assert orderbook.best_ask_price == 0.4
+    assert orderbook.best_ask_size == 3
+
+
+def test_orderbook_best_ask_raises_no_asks():
+    orderbook = OrderBook("1234", 0.01)
+    orderbook.set_bids([0.5, 0.4], [2, 3])
+
+    with pytest.raises(OrderBookException):
+        _ = orderbook.best_ask_price
+
+    with pytest.raises(OrderBookException):
+        _ = orderbook.best_ask_size
+
+    assert orderbook.best_bid_price == 0.5
+    assert orderbook.best_bid_size == 2
+
+
+def test_orderbook_midpoint_no_bids():
+    orderbook = OrderBook("1234", 0.01)
+    orderbook.set_asks([0.5, 0.4], [2, 3])
+
+    assert orderbook.midpoint_price == 0.2
+
+
+def test_orderbook_midpoint_no_asks():
+    orderbook = OrderBook("1234", 0.01)
+    orderbook.set_bids([0.5, 0.4], [2, 3])
+
+    assert orderbook.midpoint_price == 0.75
+
+
 # noinspection DuplicatedCode
 def test_guess_orderbook_hash_int_timestamps(
     book_t0_ws_msg_hashed, book_t1_rest_msg_hashed
