@@ -70,6 +70,7 @@ but this might mess with specific `PositionProtocol` implementation (resolved: l
   - [x] factor out _BookHashChecker_ for managing hash checks -> not necessary
   - [x] MarketStreamer._process_raw_message: really discard if locked? (original intention: minimize backpressure)
 - [x] Rounding `amount` in market order to `amount_digits` (4 to 5 decimal places) instead of currently to `order_size_digits` (2 decimal places) (py_clob_client behavior=order_size_digits for now) -> this actually seems to be intended by Polymarket...
+- [ ] __replace round_down with round_down_tenuis_up and Decimal shortcut for tenius methods__ (?)
 - [ ] __test `ShareLock` and `SharedRLock` on Posix__
 - [ ] __`untrack_order_by_trade_terminal` in `UserStream` might fail in case of `CONFIRMED` status of `TradeWSInfo`-message was missed__
   (documentation: to be on the safe side, untrack/clean orders manually from `OrderManager` by `order.id` of return value when using

@@ -144,7 +144,9 @@ in the future.
 - Floats incur so-called "floating point imprecision", e.g. `0.1 + 0.2 = 30000000000000004`. `polypy` tries to
 counteract this by appropriate rounding. Though, if precision is important, use Python's `decimal.Decimal` type.
 Future versions might implement fixed point types instead of floats. Due to rounding implementation, this also
-should be noticeable faster.
+should be noticeable faster. `polypy`'s implementation of float rounding improves upon `py_clob_client` implementation, 
+though corner cases might still result in incorrect results. 
+Example for failure case: `plp.round_down(123.46 - 0.2, 6) == py_clob_client.order_builder.helpers.round_down(123.46 - 0.2, 6) != 123.26 -> 123.259999`
 
 Todo and Planned Features
 -------------------------
@@ -173,6 +175,8 @@ Development
     - no ask -> best_ask = 1
     - avoids raising `OrderBookException`
 - fix protocol typing for `SharedOrderBook`
+- Use `N_DIGITS_USDC=6` for USDC position in `PositionManager`
+- fix Bug in `PositionManager.total` when redeemable position contained
 #### 2025/10/23
 - Fix new orderbook hashing procedure
 - New classmethods (factories) for `OrderBook` (more convenient order book creation)
