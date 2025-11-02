@@ -7,7 +7,7 @@ import pytest
 import responses
 
 from polypy.book import OrderBook
-from polypy.constants import CHAIN_ID, USDC
+from polypy.constants import CHAIN_ID, N_DIGITS_USDC, USDC
 from polypy.ctf import MarketIdQuintet
 from polypy.exceptions import (
     ManagerInvalidException,
@@ -32,7 +32,7 @@ def test_create_get_position(local_host_addr):
 
     assert list(list(pm.asset_ids)) == [USDC, "test"]
     assert pm.get_by_id(USDC).size == 10
-    assert pm.get_by_id(USDC).n_digits_size == 5
+    assert pm.get_by_id(USDC).n_digits_size == N_DIGITS_USDC
     assert pm.get_by_id(USDC).allow_neg == False
     assert pm.get_by_id("test").size == 10
     assert pm.get_by_id("test").n_digits_size == 3
@@ -201,8 +201,8 @@ def test_deposit_withdraw():
     pm.deposit(0.01)
     assert pm.balance == 123.46
 
-    pm.withdraw(0.2)
-    assert pm.balance == 123.26
+    pm.withdraw(0.3)
+    assert pm.balance == 123.16
 
 
 def test_raise_untrack_usdc():

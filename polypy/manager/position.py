@@ -20,7 +20,7 @@ from hexbytes import HexBytes
 from web3.types import TxReceipt
 
 from polypy.book.order_book import OrderBookProtocol
-from polypy.constants import ENDPOINT, N_DIGITS_SIZE, USDC
+from polypy.constants import ENDPOINT, N_DIGITS_SIZE, N_DIGITS_USDC, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.exceptions import (
     ManagerInvalidException,
@@ -181,7 +181,7 @@ class PositionManagerProtocol(Protocol):
             key: asset_id, value: NumericAlias (supplied midpoint), order book or None (REST call)
         tick_size: float | None
             if float: same tick_size for all assets
-            if None: use n_digits_size from USDC position (which defaults to 5)
+            if None: use n_digits_size from USDC position (which defaults to polypy.constants.N_DIGITS_USDC)
         """
         ...
 
@@ -436,7 +436,7 @@ class PositionManager(PositionManagerProtocol):
             USDC: usdc_position
             if _is_position(usdc_position)
             else self.position_factory(
-                asset_id=USDC, size=usdc_position, n_digits_size=5
+                asset_id=USDC, size=usdc_position, n_digits_size=N_DIGITS_USDC
             )
         }
 
@@ -661,7 +661,10 @@ class PositionManager(PositionManagerProtocol):
 
             rest_midpoints = get_midpoints(self.rest_endpoint, missed, numeric_type)
 
-            midpoints |= {asset_id: rest_midpoints[asset_id] for asset_id in missed}
+            midpoints |= {
+                asset_id: rest_midpoints[asset_id]
+                for asset_id in missed & rest_midpoints.keys()
+            }
 
         return midpoints
 

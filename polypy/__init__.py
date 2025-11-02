@@ -9,7 +9,7 @@ from polypy.book.parsing import (
     guess_tick_size,
     message_to_orderbook,
 )
-from polypy.constants import CHAIN_ID, ENDPOINT, N_DIGITS_SIZE, USDC
+from polypy.constants import CHAIN_ID, ENDPOINT, N_DIGITS_SIZE, N_DIGITS_USDC, USDC
 from polypy.ctf import MarketIdQuintet, MarketIdTriplet
 from polypy.ipc import SharedArray, SharedDecimalArray
 from polypy.manager import (
