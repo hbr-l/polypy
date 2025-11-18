@@ -253,17 +253,6 @@ class BookEvent(
         return "book"
 
 
-class LastTradePricePayload(msgspec.Struct, forbid_unknown_fields=True):
-    asset_id: str
-    fee_rate_bps: str
-    price: str
-    side: SIDE
-    size: str
-    timestamp: int
-    market: str | None = None
-    transaction_hash: str | None = None
-
-
 class PriceChangeEvent(
     msgspec.Struct,
     forbid_unknown_fields=True,
@@ -273,7 +262,7 @@ class PriceChangeEvent(
     market: str
     price_changes: list[PriceChangeSummary]
     timestamp: int
-    last_trade_price: LastTradePricePayload | None = None
+    last_trade_price: str | None = None
 
     @property
     def event_type(self) -> str:
