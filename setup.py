@@ -9,14 +9,14 @@ def read_requirements(filename: str):
         return [
             r
             for r in reqs
-            if not re.match(r".*\.txt.*requirements.*", r, re.IGNORECASE)
+            if not r.startswith("-")
         ]
 
 
 setup(
     name="polypy",
     version="0.0.0",
-    install_requirements=read_requirements("requirements.txt"),
+    install_requires=read_requirements("requirements.txt"),
     extras_require={
         "dev": read_requirements("requirements-dev.txt"),
         "examples": read_requirements("requirements-examples.txt"),

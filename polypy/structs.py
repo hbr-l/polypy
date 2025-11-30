@@ -246,6 +246,7 @@ class BookEvent(
     hash: str
     bids: list[OrderSummary]
     asks: list[OrderSummary]
+    last_trade_price: str | None = None
 
     @property
     def event_type(self) -> str:
@@ -297,6 +298,7 @@ class LastTradePriceEvent(
     side: SIDE
     size: str
     timestamp: int
+    transaction_hash: str
 
     @property
     def event_type(self) -> str:
