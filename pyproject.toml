@@ -19,3 +19,13 @@ dependencies = [
     "web3>=7.7.0",
     "websockets>=14.2",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "responses>=0.25.3",
+    "freezegun>=1.5.1",
+]
+examples = [
+    "matplotlib>=3.10.0",
+]
