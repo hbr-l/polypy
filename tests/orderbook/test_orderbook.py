@@ -256,6 +256,7 @@ def test_orderbook_sync(book_t0_ws_msg_hashed):
     responses.get(f"{endpoint}/tick-size?token_id={book.token_id}", json=rest_data)
     book_data: dict = msgspec.to_builtins(copy.deepcopy(book_t0_ws_msg_hashed))
     del book_data["event_type"]
+    del book_data["last_trade_price"]
     book_data.update({"min_order_size": "5", "neg_risk": False, "tick_size": "0.001"})
     responses.get(f"{endpoint}/book?token_id={book.token_id}", json=book_data)
 
