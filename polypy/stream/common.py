@@ -206,9 +206,13 @@ class MessageStreamer(BaseStreamer):
             self.callback_msg(self, msg)
 
     def on_bytes_msg(self, bytes_msg: bytes) -> None:
-        msgs = msgspec.json.decode(
-            bytes_msg, type=self.msgspec_type, strict=self.msgspec_strict
-        )
+        try:
+            msgs = msgspec.json.decode(
+                bytes_msg, type=self.msgspec_type, strict=self.msgspec_strict
+            )
+        except msgspec.ValidationError as e:
+            e.add_note(bytes_msg.decode())
+            raise e
 
         # some messages come as bulk in a list, some are separate arrays
         if not isinstance(msgs, list):
