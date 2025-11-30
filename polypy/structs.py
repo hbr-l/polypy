@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 import msgspec
 
@@ -11,10 +11,11 @@ class PostOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
     success: bool
     errorMsg: str
     orderID: str
-    transactionsHashes: tuple[str] | None
     status: str
     takingAmount: str
     makingAmount: str
+    transactionsHashes: tuple[str] | None = None
+    
 
 
 class CancelOrdersResponse(msgspec.Struct, forbid_unknown_fields=True):
@@ -25,7 +26,6 @@ class CancelOrdersResponse(msgspec.Struct, forbid_unknown_fields=True):
 
 
 class OpenOrderInfo(msgspec.Struct, forbid_unknown_fields=True):
-    associate_trades: list[str]
     id: str
     status: INSERT_STATUS
     market: str
@@ -40,6 +40,7 @@ class OpenOrderInfo(msgspec.Struct, forbid_unknown_fields=True):
     expiration: int
     order_type: TIME_IN_FORCE
     created_at: int
+    associate_trades: list[str] = []
 
 
 class OpenOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
@@ -166,7 +167,6 @@ class OrderWSInfo(
     cache_hash=True,
 ):
     asset_id: str
-    associate_trades: tuple[str] | None
     created_at: int
     expiration: int
     id: str
@@ -183,6 +183,7 @@ class OrderWSInfo(
     status: INSERT_STATUS
     timestamp: int
     type: Literal["PLACEMENT", "UPDATE", "CANCELLATION"]
+    associate_trades: list[str] | None = ()
 
     @property
     def event_type(self) -> str:
@@ -262,6 +263,7 @@ class PriceChangeEvent(
     market: str
     price_changes: list[PriceChangeSummary]
     timestamp: int
+    last_trade_price: str | None = None
 
     @property
     def event_type(self) -> str:
@@ -298,7 +300,8 @@ class LastTradePriceEvent(
     side: SIDE
     size: str
     timestamp: int
-    transaction_hash: str
+    transaction_hash: str | None = None
+    last_trade_price: dict[str, Any] | None = None
 
     @property
     def event_type(self) -> str:
