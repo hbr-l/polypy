@@ -180,7 +180,7 @@ class MarketStream(MessageStreamer):
 
         # not implemented as dicts: enable sharedMemory if necessary
         self.last_traded_price_arr = self.last_traded_arr_factory(
-            (len(self._book_idx), 6), dtype=np.dtype("U80")
+            (len(self._book_idx), 7), dtype=np.dtype("U80")
         )
         self.last_traded_price_arr[:] = ""  # just to be sure...
         self.status_arr = self.status_arr_factory(len(self._book_idx), dtype=int)
@@ -301,6 +301,7 @@ class MarketStream(MessageStreamer):
         self.last_traded_price_arr[book_id, 3] = msg.timestamp
         self.last_traded_price_arr[book_id, 4] = msg.fee_rate_bps
         self.last_traded_price_arr[book_id, 5] = msg.market
+        self.last_traded_price_arr[book_id, 6] = msg.transaction_hash
 
     def _update_last_traded_price(self, msg: LastTradePriceEvent) -> None:
         asset_id = msg.asset_id
@@ -311,6 +312,7 @@ class MarketStream(MessageStreamer):
             self._write_last_traded_price_arr(arr_id, msg)
             return
 
+        # todo necessary to compare timestamps?
         if int(self.last_traded_price_arr[arr_id, 3]) < int(msg.timestamp):
             # only update, if msg is newer than last update
             self._write_last_traded_price_arr(arr_id, msg)
@@ -330,6 +332,7 @@ class MarketStream(MessageStreamer):
             side=self.last_traded_price_arr[arr_id, 1],
             size=self.last_traded_price_arr[arr_id, 2],
             timestamp=self.last_traded_price_arr[arr_id, 3],
+            transaction_hash=self.last_traded_price_arr[arr_id, 6],
         )
 
     def status_orderbook(
@@ -408,7 +411,7 @@ def last_traded_price_shared(
 
     if isinstance(shared_array, str):
         shared_array = SharedArray(
-            (len(books), 6), shared_array, False, np.dtype("U80"), ""
+            (len(books), 7), shared_array, False, np.dtype("U80"), ""
         )
 
     return LastTradePriceEvent(
@@ -419,4 +422,5 @@ def last_traded_price_shared(
         side=shared_array[idx, 1],
         size=shared_array[idx, 2],
         timestamp=shared_array[idx, 3],
+        transaction_hash=shared_array[idx, 6],
     )
