@@ -18,6 +18,52 @@ it is also comparably slow, i.e. it uses JSON-parsing from stdlib instead of muc
 > POLYPY IS NOT AN OFFICIAL POLYMARKET IMPLEMENTATION OR AFFILIATED WITH POLYMARKET IN ANY WAY!
 > Please mind, that PolyPy is just a hobby project, might be subject to bugs, and is no professional software!
 
+Installation
+------------
+
+### Install as a Library
+
+Install PolyPy directly from GitHub:
+
+```bash
+# Using pip
+pip install git+https://github.com/hbr-l/polypy
+
+# Using uv
+uv pip install git+https://github.com/hbr-l/polypy
+```
+
+### Optional Dependencies
+
+PolyPy provides optional dependency groups for development and examples:
+
+- **`dev`**: Development dependencies (pytest, responses, freezegun)
+- **`examples`**: Example dependencies (matplotlib)
+
+Install with optional dependencies:
+
+```bash
+# Using pip
+pip install "git+https://github.com/hbr-l/polypy[dev]"          # Install with dev dependencies
+pip install "git+https://github.com/hbr-l/polypy[examples]"     # Install with example dependencies
+pip install "git+https://github.com/hbr-l/polypy[dev,examples]" # Install with both
+
+# Using uv
+uv pip install "git+https://github.com/hbr-l/polypy[dev]"
+uv pip install "git+https://github.com/hbr-l/polypy[examples]"
+uv pip install "git+https://github.com/hbr-l/polypy[dev,examples]"
+```
+
+### Local Development Installation
+
+For local development, clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/hbr-l/polypy.git
+cd polypy
+pip install -e ".[dev]"  # Editable install with dev dependencies
+```
+
 Quickstart
 ----------
 

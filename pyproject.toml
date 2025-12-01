@@ -1,0 +1,31 @@
+[project]
+name = "polypy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "attrs>=24.2.0",
+    "eth-account>=0.13.4",
+    "eth-keys>=0.6.0",
+    "eth-typing>=5.0.1",
+    "eth-utils>=5.1.0",
+    "hexbytes>=1.2.1",
+    "msgspec>=0.18.6",
+    "numpy>=2.2.2",
+    "posix-ipc>=1.2.0 ; os_name == 'posix'",
+    "pywin32>=306 ; os_name == 'nt'",
+    "requests>=2.32.3",
+    "web3>=7.7.0",
+    "websockets>=14.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "responses>=0.25.3",
+    "freezegun>=1.5.1",
+]
+examples = [
+    "matplotlib>=3.10.0",
+]
