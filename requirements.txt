@@ -1,3 +1,6 @@
+# Runtime dependencies are now declared in `pyproject.toml` under
+# [project.dependencies]. This file is kept for users who still prefer:
+#   pip install -r requirements.txt
 numpy>=2.2.2
 attrs>=24.2.0
 msgspec>=0.18.6

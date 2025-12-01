@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polypy"
+version = "0.0.0"
+description = "polypy core library"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "polypy contributors" },
+]
+dependencies = [
+    "numpy>=2.2.2",
+    "attrs>=24.2.0",
+    "msgspec>=0.18.6",
+    "websockets>=14.2",
+    "eth-account>=0.13.4",
+    "eth-keys>=0.6.0",
+    "eth-typing>=5.0.1",
+    "eth-utils>=5.1.0",
+    "hexbytes>=1.2.1",
+    "requests>=2.32.3",
+    "web3>=7.7.0",
+    'pywin32>=306; os_name == "nt"',
+    'posix-ipc>=1.2.0; os_name == "posix"',
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "responses>=0.25.3",
+    "freezegun>=1.5.1",
+]
+examples = [
+    "matplotlib>=3.10.0",
+]
+
+[tool.setuptools]
+packages = { find = { exclude = ["docs*", "profiling*", "tests*", "examples*"] } }
+
+

@@ -1,2 +1,6 @@
--r requirements.txt
+# Example-specific dependencies are now also declared in `pyproject.toml`
+# under [project.optional-dependencies.examples]. This file is kept so
+# existing example scripts that reference it continue to work, but new
+# environments should prefer:
+#   pip install -e .[examples]
 matplotlib>=3.10.0
