@@ -163,7 +163,7 @@ Development
 
 ### Requirements
 - __python >= 3.11__ 
-- see [requirements.txt](requirements.txt).
+- see _dependencies_ in [pyproject.toml](pyproject.toml).
 
 ### Change Log
 #### 2025/11/02

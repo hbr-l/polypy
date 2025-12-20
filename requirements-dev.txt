@@ -1,8 +1,0 @@
-# Development dependencies are now defined in `pyproject.toml` under
-# [project.optional-dependencies]. This file is kept for backward
-# compatibility with existing workflows (e.g. `pip install -r`), but
-# new setups should prefer:
-#   pip install -e .[dev]
-pytest>=7.4.4
-responses>=0.25.3
-freezegun>=1.5.1
