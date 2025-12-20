@@ -1,17 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=80.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "polypy"
 version = "0.0.0"
-description = "polypy core library"
+description = "PolyPy - Polymarket Python Wrapper"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [
-    { name = "polypy contributors" },
-]
 dependencies = [
     "numpy>=2.2.2",
     "attrs>=24.2.0",
@@ -27,16 +24,24 @@ dependencies = [
     'pywin32>=306; os_name == "nt"',
     'posix-ipc>=1.2.0; os_name == "posix"',
 ]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+homepage = 'https://github.com/hbr-l/polypy'
+documentation = 'https://github.com/hbr-l/polypy/tree/main/docs'
+source = 'https://github.com/hbr-l/polypy'
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.4",
-    "responses>=0.25.3",
-    "freezegun>=1.5.1",
-]
-examples = [
-    "matplotlib>=3.10.0",
-]
+dev = ["pytest>=7.4.4", "responses>=0.25.3", "freezegun>=1.5.1"]
+examples = ["matplotlib>=3.10.0"]
 
 [tool.setuptools]
 packages = { find = { exclude = ["docs*", "profiling*", "tests*", "examples*"] } }
