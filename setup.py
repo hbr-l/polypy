@@ -1,25 +1,19 @@
-import re
+"""
+Legacy setup.py kept for backward compatibility.
 
-from setuptools import find_packages, setup
+The project now uses pyproject.toml (PEP 621) for build and dependency
+configuration. New installations should prefer:
+
+    pip install .
+or
+    pip install -e .[dev]
+
+This stub is only here to avoid breaking older tooling that still
+expects a setup.py file.
+"""
+
+from setuptools import setup
 
 
-def read_requirements(filename: str):
-    with open(filename) as fn:
-        reqs = fn.read().splitlines()
-        return [
-            r
-            for r in reqs
-            if not r.startswith("-")
-        ]
-
-
-setup(
-    name="polypy",
-    version="0.0.0",
-    install_requires=read_requirements("requirements.txt"),
-    extras_require={
-        "dev": read_requirements("requirements-dev.txt"),
-        "examples": read_requirements("requirements-examples.txt"),
-    },
-    packages=find_packages(exclude=["docs", "profiling", "tests", "examples"]),
-)
+if __name__ == "__main__":
+    setup()
