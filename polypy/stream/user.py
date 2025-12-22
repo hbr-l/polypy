@@ -764,7 +764,7 @@ class UserStream(MessageStreamer):
     def _order_message(self, msg: OrderWSInfo) -> int:
         tpl_mngs_idx = self._filter_tuple_mngs(msg.id)
 
-        for tm_idx in tpl_mngs_idx:
+        for tm_idx in tpl_mngs_idx.copy():
             # in some cases, order_id still might be cached
             #   that's wyh we use a try except
             try:
