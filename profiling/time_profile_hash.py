@@ -8,10 +8,39 @@ iter over timestamp range:  0.1489447579998523 ms
 
 import json
 import timeit
+from typing import Sequence
 
 from polypy.book import OrderBook, dict_to_sha1, message_to_orderbook
 from polypy.book.hashing import str_to_sha1
-from polypy.book.parsing import stringify_orderbook
+from polypy.book.order_book import OrderBookProtocol
+from polypy.typing import NumericAlias
+
+
+def _stringify_quotes(
+    prices: Sequence[str | NumericAlias], sizes: Sequence[str | NumericAlias]
+) -> list[str]:
+    return [
+        f'{{"price":"{price}","size":"{str(size).rstrip("0").rstrip(".")}"}}'
+        for price, size in zip(reversed(prices), reversed(sizes))
+    ]
+
+
+def stringify_orderbook(
+    book: OrderBookProtocol,
+    hash_str: str,
+    timestamp: int | float | str,
+    market_id: str,
+    min_order_size: str | int,
+    neg_risk: bool,
+) -> str:
+    bids = _stringify_quotes(book.bid_prices, book.bid_sizes)
+    asks = _stringify_quotes(book.ask_prices, book.ask_sizes)
+
+    return (
+        f'{{"market":"{market_id}","asset_id":"{book.token_id}","timestamp":"{timestamp}",'
+        f'"hash":"{hash_str}","bids":[{",".join(bids)}],"asks":[{",".join(asks)}],"min_order_size":"{min_order_size}",'
+        f'"tick_size":"{book.tick_size}","neg_risk":{str(neg_risk).lower()}}}'
+    )
 
 
 def main():

@@ -45,5 +45,3 @@ examples = ["matplotlib>=3.10.0"]
 
 [tool.setuptools]
 packages = { find = { exclude = ["docs*", "profiling*", "tests*", "examples*"] } }
-
-
