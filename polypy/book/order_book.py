@@ -468,6 +468,7 @@ class OrderBook:
             tick_size_factory=tick_size_factory,
             min_tick_size=min_tick_size,
             coerce_inbound_prices=coerce_inbound_prices,
+            market_id=book_msg_dict.market,
         )
 
         return _set_book_event(book_msg_dict, order_book, order_book.dtype)
