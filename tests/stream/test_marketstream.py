@@ -17,7 +17,7 @@ from websockets.sync.client import connect
 from polypy.book import (
     OrderBook,
     SharedOrderBook,
-    guess_check_orderbook_hash,
+    check_orderbook_hash,
     message_to_orderbook,
 )
 from polypy.book.order_book import OrderBookProtocol
@@ -219,25 +219,23 @@ def test_order_book_test_server_messages_txt():
         book = message_to_orderbook(d, book)
 
         if d["event_type"] == "book":
-            check_results = guess_check_orderbook_hash(
+            check_results = check_orderbook_hash(
                 d["hash"],
                 book,
                 [int(d["timestamp"]) - i for i in range(1500)],
                 "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
                 5,
                 True,
-                True,
             )
             print(check_results)
             assert check_results[0]
         elif d["event_type"] == "price_change":
-            check_results = guess_check_orderbook_hash(
+            check_results = check_orderbook_hash(
                 d["price_changes"][0]["hash"],
                 book,
                 [int(d["timestamp"]) - i for i in range(1500)],
                 "0x84c0ffe3f56cb357ff5ff8bc5d2182ae90be4dd6718e8403a6af472b452dbfa8",
                 5,
-                True,
                 True,
             )
             print(check_results)
@@ -275,13 +273,12 @@ def assert_market_streamer_state(
 
     if expected_target_hash is not None:
         assert (
-            guess_check_orderbook_hash(
+            check_orderbook_hash(
                 expected_target_hash,
                 book,
                 [int(expected_timestamp) - i for i in range(10)],
                 market_id,
                 5,
-                True,
                 True,
             )[0]
             is True

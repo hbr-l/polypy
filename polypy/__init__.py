@@ -1,4 +1,4 @@
-from polypy.book.hashing import guess_check_orderbook_hash
+from polypy.book.hashing import check_orderbook_hash
 from polypy.book.order_book import (
     OrderBook,
     SharedOrderBook,

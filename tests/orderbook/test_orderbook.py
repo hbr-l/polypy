@@ -14,7 +14,7 @@ from py_clob_client.clob_types import OrderSummary
 from py_clob_client.utilities import parse_raw_orderbook_summary
 
 from polypy.book import message_to_orderbook
-from polypy.book.hashing import guess_check_orderbook_hash
+from polypy.book.hashing import check_orderbook_hash
 from polypy.book.order_book import OrderBook, _coerce_inbound_idx
 from polypy.book.parsing import (
     _quotes_from_price_change_event,
@@ -700,14 +700,13 @@ def test_orderbook_price_change_hash(
 
     # check hash after updating first price change
     orderbook = message_to_orderbook(price_change_t1_ws_msg_hashed, orderbook)
-    _, _, hash_t1 = guess_check_orderbook_hash(
+    _, _, hash_t1 = check_orderbook_hash(
         price_change_t1_ws_msg_hashed.price_changes[1].hash,
         orderbook,
         [int(price_change_t1_ws_msg_hashed.timestamp) - i for i in range(15)],
         market_id,
         min_order_size,
         neg_risk,
-        True,
     )
     assert price_change_t1_ws_msg_hashed.event_type == "price_change"
     assert (
@@ -718,14 +717,13 @@ def test_orderbook_price_change_hash(
 
     # check hash after updating second price change
     orderbook = message_to_orderbook(price_change_t2_ws_msg_hashed, orderbook)
-    _, _, hash_t2 = guess_check_orderbook_hash(
+    _, _, hash_t2 = check_orderbook_hash(
         price_change_t2_ws_msg_hashed.price_changes[0].hash,
         orderbook,
         [int(price_change_t2_ws_msg_hashed.timestamp) - i for i in range(15)],
         market_id,
         min_order_size,
         neg_risk,
-        True,
     )
     assert price_change_t2_ws_msg_hashed.event_type == "price_change"
     assert (
@@ -882,14 +880,13 @@ def test_guess_orderbook_hash_int_timestamps(
     )
 
     assert (
-        guess_check_orderbook_hash(
+        check_orderbook_hash(
             book_t0_ws_msg_hashed.hash,
             orderbook,
             [timestamp - i for i in range(15)],
             market_id,
             min_order_size,
             neg_risk,
-            True,
         )[0]
         is True
     )
@@ -916,14 +913,13 @@ def test_guess_orderbook_hash_str_timestamps(
     )
 
     assert (
-        guess_check_orderbook_hash(
+        check_orderbook_hash(
             book_t0_ws_msg_hashed.hash,
             orderbook,
             [str(timestamp - i) for i in range(15)],
             market_id,
             min_order_size,
             neg_risk,
-            True,
         )[0]
         is True
     )
@@ -946,14 +942,13 @@ def test_guess_orderbook_hash_false(book_t0_ws_msg_hashed, book_t1_rest_msg_hash
     )
 
     assert (
-        guess_check_orderbook_hash(
+        check_orderbook_hash(
             book_t0_ws_msg_hashed.hash,
             orderbook,
             [0, 1, 2, 3, 4, 5, 6],
             market_id,
             min_order_size,
             neg_risk,
-            True,
         )[0]
         is False
     )

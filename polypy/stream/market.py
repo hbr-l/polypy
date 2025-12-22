@@ -8,7 +8,7 @@ from typing import Any, Callable, Literal, Self
 
 import numpy as np
 
-from polypy.book.hashing import guess_check_orderbook_hash
+from polypy.book.hashing import check_orderbook_hash
 from polypy.book.order_book import OrderBookProtocol
 from polypy.book.parsing import message_to_orderbook
 from polypy.constants import ENDPOINT
@@ -272,14 +272,8 @@ class MarketStream(MessageStreamer):
         else:
             raise StreamException(f"Cannot find hash for assetid={asset_id} in {msg}")
 
-        if guess_check_orderbook_hash(
-            msg_hash,
-            self.book_dict[asset_id],
-            timestamps,
-            msg.market,
-            None,
-            None,
-            False,
+        if check_orderbook_hash(
+            msg_hash, self.book_dict[asset_id], timestamps, msg.market, None, None
         )[0]:
             # good to go, reset counter
             self.counter_dict[asset_id] = 0

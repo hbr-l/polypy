@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import msgspec
 
@@ -216,30 +216,3 @@ def message_to_orderbook(
         return _set_tick_size_event(msg, book)
 
     raise EventTypeException(f"Unknown msg: {msg}.")
-
-
-def _stringify_quotes(
-    prices: Sequence[str | NumericAlias], sizes: Sequence[str | NumericAlias]
-) -> list[str]:
-    return [
-        f'{{"price":"{price}","size":"{str(size).rstrip("0").rstrip(".")}"}}'
-        for price, size in zip(reversed(prices), reversed(sizes))
-    ]
-
-
-def stringify_orderbook(
-    book: "OrderBookProtocol",
-    hash_str: str,
-    timestamp: int | float | str,
-    market_id: str,
-    min_order_size: str | int,
-    neg_risk: bool,
-) -> str:
-    bids = _stringify_quotes(book.bid_prices, book.bid_sizes)
-    asks = _stringify_quotes(book.ask_prices, book.ask_sizes)
-
-    return (
-        f'{{"market":"{market_id}","asset_id":"{book.token_id}","timestamp":"{timestamp}",'
-        f'"hash":"{hash_str}","bids":[{",".join(bids)}],"asks":[{",".join(asks)}],"min_order_size":"{min_order_size}",'
-        f'"tick_size":"{book.tick_size}","neg_risk":{str(neg_risk).lower()}}}'
-    )
