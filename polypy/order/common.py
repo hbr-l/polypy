@@ -9,15 +9,31 @@ from polypy.typing import NumericAlias
 
 # noinspection PyPep8Naming
 class INSERT_STATUS(StrEnum):
-    # Polymarket status
+    # Polymarket status: official Polymarket insert status
     LIVE = "LIVE"
     MATCHED = "MATCHED"
     DELAYED = "DELAYED"
     UNMATCHED = "UNMATCHED"
+    CANCELED_MARKET_RESOLVED = "CANCELED_MARKET_RESOLVED"
 
-    # PolyPy status
+    # PolyPy status: additional PolyPy insert status for order handling
     DEFINED = "DEFINED"
     CANCELED = "CANCELED"
+
+
+TERMINAL_INSERT_STATI = (
+    INSERT_STATUS.CANCELED,
+    INSERT_STATUS.MATCHED,
+    INSERT_STATUS.UNMATCHED,
+    INSERT_STATUS.CANCELED_MARKET_RESOLVED,
+)
+
+
+CANCELABLE_INSERT_STATI = (
+    INSERT_STATUS.DEFINED,  # todo necessary?
+    INSERT_STATUS.LIVE,
+    INSERT_STATUS.DELAYED,
+)
 
 
 # noinspection PyPep8Naming
@@ -41,20 +57,6 @@ TIME_IN_FORCE_LIMIT = {TIME_IN_FORCE.GTC, TIME_IN_FORCE.GTD}
 class SIDE(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
-
-
-TERMINAL_INSERT_STATI = (
-    INSERT_STATUS.CANCELED,
-    INSERT_STATUS.MATCHED,
-    INSERT_STATUS.UNMATCHED,
-)
-
-
-CANCELABLE_INSERT_STATI = (
-    INSERT_STATUS.DEFINED,  # todo necessary?
-    INSERT_STATUS.LIVE,
-    INSERT_STATUS.DELAYED,
-)
 
 
 class OrderProtocol(Protocol):

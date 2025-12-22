@@ -34,7 +34,7 @@ def _not_frozen(orders: OrderProtocol | list[OrderProtocol]) -> None:
 
 
 # todo test
-def _find_status_unmatched_delayed_from_exc_note(
+def _find_status_from_exc_note(
     note: str, default_return: INSERT_STATUS
 ) -> INSERT_STATUS:
     search_note = note.lower()
@@ -42,13 +42,13 @@ def _find_status_unmatched_delayed_from_exc_note(
     if "status" not in search_note:
         return default_return
 
-    if re.search(r'["\']?status["\']?\s*:\s*["\']?unmatched["\']?', search_note):
-        return INSERT_STATUS.UNMATCHED
-    elif re.search(r'["\']?status["\']?\s*:\s*["\']?delayed["\']?', search_note):
-        return INSERT_STATUS.DELAYED
-
-    # live and matched would not have caused an exception in the first place
-    #   and in any other case (e.g. market not ready) we just leave it as INSERT_STATUS.DEFINED
+    # noinspection PyUnresolvedReferences
+    for status in [mem.name.lower() for mem in INSERT_STATUS]:
+        if re.search(
+            rf'["\']?status["\']?\s*:\s*["\']?{re.escape(status)}["\']?', search_note
+        ):
+            # noinspection PyTypeChecker
+            return INSERT_STATUS[status.upper()]
 
     return default_return
 
@@ -105,11 +105,11 @@ def _raise_post_order_exception(
         exc_msg = f"{amt_exc}Order marketable, but subject to matching delay. {exc_str}"
         exc_type = OrderPlacementFailure if amt_exc else OrderPlacementDelayed
     elif re.search(r"not\s+.*?\s+ready", note, re.IGNORECASE):
-        order.status = _find_status_unmatched_delayed_from_exc_note(note, order.status)
+        order.status = _find_status_from_exc_note(note, order.status)
         exc_msg = f"{amt_exc}The market is not yet ready to process orders. {exc_str}"
         exc_type = OrderPlacementFailure if amt_exc else OrderPlacementMarketNotReady
     else:
-        order.status = _find_status_unmatched_delayed_from_exc_note(note, order.status)
+        order.status = _find_status_from_exc_note(note, order.status)
         exc_msg = f"{amt_exc}Order placement failed. {exc_str}"
         exc_type = OrderPlacementFailure
 
