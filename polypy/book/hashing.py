@@ -3,8 +3,6 @@ from typing import TYPE_CHECKING, Sequence
 
 from msgspec import json as msgspec_json
 
-from polypy.exceptions import OrderBookException
-
 if TYPE_CHECKING:
     # noinspection PyUnresolvedReferences
     from polypy.book.order_book import OrderBookProtocol
@@ -34,7 +32,7 @@ def _book_to_dict(
         )
 
     if market_id is not None:
-        book["market_id"] = market_id
+        book["market"] = market_id
     if min_order_size is not None:
         book["min_order_size"] = min_order_size
     if neg_risk is not None:
@@ -55,7 +53,7 @@ def check_orderbook_hash(
 ) -> tuple[bool, int | None, str | None]:
     book = _book_to_dict(book, market_id, min_order_size, neg_risk)
 
-    assert None not in (book["market_id"], book["min_order_size"], book["neg_risk"]), (
+    assert None not in (book["market"], book["min_order_size"], book["neg_risk"]), (
         "`market_id`, `min_order_size` or `neg_risk` must not be None AFTER parsing. "
         "Cannot compute hash for order book."
     )
