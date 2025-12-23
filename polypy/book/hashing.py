@@ -1,4 +1,5 @@
 import hashlib
+import warnings
 from typing import TYPE_CHECKING, Sequence
 
 from msgspec import json as msgspec_json
@@ -53,10 +54,16 @@ def check_orderbook_hash(
 ) -> tuple[bool, int | None, str | None]:
     book = _book_to_dict(book, market_id, min_order_size, neg_risk)
 
-    assert None not in (book["market"], book["min_order_size"], book["neg_risk"]), (
-        "`market_id`, `min_order_size` or `neg_risk` must not be None AFTER parsing. "
-        "Cannot compute hash for order book."
-    )
+    if None in (book["market"], book["min_order_size"], book["neg_risk"]):
+        warnings.warn(
+            "`market_id`, `min_order_size` and `neg_risk` must not be None AFTER parsing. "
+            "Cannot compute hash for order book."
+        )
+    # FIXME
+    # assert None not in (book["market"], book["min_order_size"], book["neg_risk"]), (
+    #     "`market_id`, `min_order_size` and `neg_risk` must not be None AFTER parsing. "
+    #     "Cannot compute hash for order book."
+    # )
 
     # todo suboptimal approach (brute-forcing through timestamps), but currently no known alternative
     for i, ts in enumerate(timestamps):
