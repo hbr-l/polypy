@@ -51,7 +51,7 @@ from polypy.rest.api import get_markets_gamma_model, get_midpoints
 from polypy.rounding import round_down, round_down_tenuis_up
 from polypy.structs import RelayerResponse
 from polypy.trade import TRADE_STATUS
-from polypy.typing import NumericAlias, infer_numeric_type
+from polypy.typing import NumericAlias, batched, infer_numeric_type
 
 if TYPE_CHECKING:
     from polypy.manager.order import OrderManagerProtocol
@@ -674,9 +674,17 @@ class PositionManager(PositionManagerProtocol):
         if missed:
             numeric_type = infer_numeric_type(self.position_dict[USDC].size)
 
-            markets: list[dict] = get_markets_gamma_model(
-                self.gamma_endpoint, token_ids=missed
-            )
+            # get_markets_gamma_model can only retrieve 20 queries at once, so we have to batch
+            markets: list[dict] = []
+            for missed_tokens in batched(missed, 20):
+                markets.extend(
+                    get_markets_gamma_model(
+                        self.gamma_endpoint, token_ids=missed_tokens
+                    )
+                )
+            # markets: list[dict] = get_markets_gamma_model(
+            #     self.gamma_endpoint, token_ids=missed
+            # )
 
             for market in markets:
                 # todo tight coupling: refactor to Struct instead of dict

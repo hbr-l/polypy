@@ -55,6 +55,7 @@ DEFAULT_HEADERS = {
     "Connection": "keep-alive",
     "Content-Type": "application/json",
 }
+PROXIES: dict | None = None
 
 
 def build_auth_header(
@@ -105,7 +106,9 @@ def _request(
     **kwargs,
 ) -> requests.Response:
     headers = _overload_headers(headers, method)
-    resp = requests.request(method, url, json=data, headers=headers, **kwargs)
+    resp = requests.request(
+        method, url, json=data, headers=headers, proxies=PROXIES, **kwargs
+    )
 
     try:
         resp.raise_for_status()
@@ -557,6 +560,42 @@ def get_tick_size(endpoint: str | ENDPOINT, asset_id: str) -> float:
 def get_neg_risk(endpoint: str | ENDPOINT, asset_id: str) -> bool:
     resp = _request(f"{endpoint}/neg-risk?token_id={asset_id}", "GET", None, None)
     return msgspec.json.decode(resp.text)["neg_risk"]
+
+
+def _get_price(
+    endpoint: str | ENDPOINT,
+    asset_param: tuple[str, SIDE],
+    numeric_type: type[NumericAlias] | Callable[[str], NumericAlias],
+) -> NumericAlias:
+    resp = _request(
+        f"{endpoint}/price?token_id={asset_param[0]}&side={asset_param[1]}",
+        "GET",
+        None,
+        None,
+    )
+    resp = msgspec.json.decode(resp.text)
+    return numeric_type(resp["price"])
+
+
+def get_prices(
+    endpoint: str | ENDPOINT,
+    asset_params: tuple[str, SIDE] | list[tuple[str, SIDE]],
+    numeric_type: type[NumericAlias] | Callable[[str], NumericAlias],
+) -> NumericAlias | dict[str, NumericAlias]:
+    if isinstance(asset_params[0], str):
+        return _get_price(endpoint, asset_params, numeric_type)
+
+    body = [{"token_id": t, "side": s} for t, s in asset_params]
+    resp = _request(f"{endpoint}/prices", "POST", None, body)
+    resp = msgspec.json.decode(resp.text)
+    # {[asset_id]: {[side]: price}}
+
+    assert len(next(iter(resp.values())))
+    # we do this assertion because the next line relies on the fact
+    #   that each asset contains a 1-element dict
+
+    # {asset_id: price}
+    return {k: numeric_type(next(iter(v.values()))) for k, v in resp.items()}
 
 
 def _get_last_trade_price(

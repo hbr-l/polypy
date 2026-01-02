@@ -1,4 +1,5 @@
 from decimal import Decimal
+from itertools import islice
 from typing import Any, Iterable, Optional, Protocol, Sequence, TypeAlias, TypeVar
 
 import numpy as np
@@ -55,7 +56,7 @@ class ZerosProtocol(ArrayInterface):
         shape: int | tuple[int, ...],
         dtype: Optional[type | np.dtype] = None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         ...
 
@@ -82,3 +83,14 @@ class ZerosFactoryFunc(Protocol):
 def first_iterable_element(s: set[T] | Iterable[T]) -> T:
     for e in s:
         return e
+
+
+def batched(iterable, n):
+    """Batch data into tuples of length n. The last batch may be shorter
+    (https://docs.python.org/3.11/library/itertools.html#itertools.batched)"""
+    # batched('ABCDEFG', 3) --> ABC DEF G
+    if n < 1:
+        raise ValueError("n must be at least one")
+    it = iter(iterable)
+    while batch := tuple(islice(it, n)):
+        yield batch

@@ -166,6 +166,10 @@ Development
 - see _dependencies_ in [pyproject.toml](pyproject.toml).
 
 ### Change Log
+#### 2026/01/02
+- added `polpy.get_prices(...)` function to get price info via CLOB
+- added `polypy.rest.api.PROXIES` to customize proxies used with `requests` package (https://requests.readthedocs.io/en/latest/user/advanced/#proxies)
+- fixed bug in `PositionManager.total` which previously failed when retrieving more than 20 values via GAMMA API
 #### 2025/11/02
 - `OrderBook` and `SharedOrderBook`:
   - use `OrderBookException` if no bids/asks for:
