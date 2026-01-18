@@ -590,7 +590,7 @@ def get_prices(
     resp = msgspec.json.decode(resp.text)
     # {[asset_id]: {[side]: price}}
 
-    assert len(next(iter(resp.values())))
+    assert len(next(iter(resp.values()))) if len(resp) else True
     # we do this assertion because the next line relies on the fact
     #   that each asset contains a 1-element dict
 
