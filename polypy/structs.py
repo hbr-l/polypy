@@ -214,6 +214,7 @@ class BookSummary(msgspec.Struct, forbid_unknown_fields=True):
     hash: str
     bids: list[OrderSummary]
     asks: list[OrderSummary]
+    last_trade_price: str
 
     min_order_size: str
     tick_size: str
