@@ -166,6 +166,8 @@ Development
 - see _dependencies_ in [pyproject.toml](pyproject.toml).
 
 ### Change Log
+#### 2026/01/18
+- added `last_trade_price` to `polypy.structs.BookSummary` (undocumented changes made by Polymarket)
 #### 2026/01/02
 - added `polpy.get_prices(...)` function to get price info via CLOB
 - added `polypy.rest.api.PROXIES` to customize proxies used with `requests` package (https://requests.readthedocs.io/en/latest/user/advanced/#proxies)
