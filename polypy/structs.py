@@ -249,6 +249,9 @@ class BookEvent(
     asks: list[OrderSummary]
     last_trade_price: str | None = None
 
+    # this field is not contained in every message (initial only), so it's not reliable to use
+    tick_size: str | None = None
+
     @property
     def event_type(self) -> str:
         return "book"

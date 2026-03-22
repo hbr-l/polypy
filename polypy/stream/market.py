@@ -43,7 +43,6 @@ class STATUS_ORDERBOOK(IntEnum):
     VERIFIED = 1
 
 
-# todo decouple in OrderBookStream message type from procedure
 # todo factor out BookHashChecker
 class MarketStream(MessageStreamer):
     def __init__(
@@ -147,10 +146,10 @@ class MarketStream(MessageStreamer):
             self.nth_price_change = None
 
         params = {
-            "auth": {},
-            "markets": [],
             "assets_ids": list(self.book_dict.keys()),
             "type": "market",
+            "initial_dump": True,
+            "custom_feature_enabled": False,
         }
 
         def _closure_callback_exc(_, exc: Exception) -> None:

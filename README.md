@@ -166,6 +166,10 @@ Development
 - see _dependencies_ in [pyproject.toml](pyproject.toml).
 
 ### Change Log
+#### 2026/03/22
+- adjust `MarketStream` to new API struct:
+  - subscribe struct
+  - new `tick_size` field in book event
 #### 2026/01/18
 - added `last_trade_price` to `polypy.structs.BookSummary` (undocumented changes made by Polymarket)
 #### 2026/01/02
